@@ -14,17 +14,17 @@ async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
 
 // ─── Auth ───
 
-export function signup(email: string) {
+export function signup(email: string, password: string) {
   return fetchAPI<{ user_id: string; email: string }>("/api/auth/signup", {
     method: "POST",
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email, password }),
   });
 }
 
-export function login(email: string) {
+export function login(email: string, password: string) {
   return fetchAPI<{ user_id: string; email: string }>("/api/auth/login", {
     method: "POST",
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email, password }),
   });
 }
 

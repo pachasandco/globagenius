@@ -1,10 +1,15 @@
 import asyncio
 import secrets
+import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+import bcrypt
 from app.db import db
 from app.config import settings
+from app.notifications.welcome_email import send_welcome_email as _send_welcome_email
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -12,8 +17,17 @@ VALID_AIRPORTS = settings.MVP_AIRPORTS
 VALID_OFFER_TYPES = ["package", "flight", "accommodation"]
 
 
+def _hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
+def _verify_password(password: str, hashed: str) -> bool:
+    return bcrypt.checkpw(password.encode(), hashed.encode())
+
+
 class SignupRequest(BaseModel):
     email: str
+    password: str
 
 
 class PreferencesRequest(BaseModel):
@@ -123,40 +137,57 @@ async def trigger_job(job_name: str):
 # ─── AUTH ───
 
 @router.post("/api/auth/signup")
-def signup(req: SignupRequest):
+async def signup(req: SignupRequest):
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
-    # Check if user exists
+    if len(req.password) < 6:
+        raise HTTPException(status_code=400, detail="Le mot de passe doit contenir au moins 6 caracteres")
+
     existing = db.table("users").select("id").eq("email", req.email).execute()
     if existing.data:
-        raise HTTPException(status_code=409, detail="Email already registered")
+        raise HTTPException(status_code=409, detail="Cet email est deja utilise")
 
-    # Create user
-    user = db.table("users").insert({"email": req.email}).execute()
+    user = db.table("users").insert({
+        "email": req.email,
+        "password_hash": _hash_password(req.password),
+    }).execute()
     if not user.data:
-        raise HTTPException(status_code=500, detail="Failed to create user")
+        raise HTTPException(status_code=500, detail="Erreur lors de la creation du compte")
 
     user_id = user.data[0]["id"]
 
-    # Create default preferences
     db.table("user_preferences").insert({
         "user_id": user_id,
         "airport_codes": ["CDG"],
         "offer_types": ["package", "flight", "accommodation"],
     }).execute()
 
+    # Send welcome email (fire and forget)
+    try:
+        await _send_welcome_email(req.email)
+    except Exception as e:
+        logger.warning(f"Failed to send welcome email: {e}")
+
     return {"user_id": user_id, "email": req.email}
 
 
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
 @router.post("/api/auth/login")
-def login(req: SignupRequest):
+def login(req: LoginRequest):
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
     user = db.table("users").select("*").eq("email", req.email).execute()
     if not user.data:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+
+    if not _verify_password(req.password, user.data[0]["password_hash"]):
+        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
 
     return {"user_id": user.data[0]["id"], "email": user.data[0]["email"]}
 
