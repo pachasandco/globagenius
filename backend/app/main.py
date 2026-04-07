@@ -12,6 +12,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+import os
+
+logger.info(f"Starting Globe Genius Pipeline — ENV={os.getenv('APP_ENV', 'unknown')} PORT={os.getenv('PORT', 'not set')}")
+
 scheduler = AsyncIOScheduler()
 
 
