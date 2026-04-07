@@ -61,6 +61,19 @@ IATA_TO_CITY = {
     "HER": "Heraklion",
     "SPU": "Split",
     "DBV": "Dubrovnik",
+    # Long-courrier
+    "JFK": "New York",
+    "YUL": "Montreal",
+    "CUN": "Cancun",
+    "PUJ": "Punta Cana",
+    "BKK": "Bangkok",
+    "NRT": "Tokyo",
+    "DXB": "Dubai",
+    "MLE": "Male",
+    "MRU": "Mauritius",
+    "RUN": "Saint-Denis",
+    "PPT": "Papeete",
+    "GIG": "Rio de Janeiro",
 }
 
 DESTINATION_POPULARITY = {
@@ -71,6 +84,10 @@ DESTINATION_POPULARITY = {
     "OSL": 58, "ARN": 62, "WAW": 55, "ZAG": 50, "TUN": 52,
     "CMN": 56, "CAI": 64, "TLV": 66, "AGP": 79, "PMI": 81,
     "TFS": 77, "HER": 71, "SPU": 69, "DBV": 73,
+    # Long-courrier
+    "JFK": 92, "YUL": 70, "CUN": 78, "PUJ": 76, "BKK": 88,
+    "NRT": 85, "DXB": 90, "MLE": 82, "MRU": 80, "RUN": 72,
+    "PPT": 65, "GIG": 74,
 }
 
 settings = Settings()

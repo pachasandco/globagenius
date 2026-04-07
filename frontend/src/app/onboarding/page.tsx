@@ -22,7 +22,7 @@ const OFFER_TYPES = [
   { id: "accommodation", label: "Hebergements seuls", desc: "Hotels et logements en promo", icon: "🏨" },
 ];
 
-const DESTINATIONS = [
+const DESTINATIONS_EUROPE = [
   { code: "LIS", label: "Lisbonne", emoji: "🇵🇹" },
   { code: "BCN", label: "Barcelone", emoji: "🇪🇸" },
   { code: "FCO", label: "Rome", emoji: "🇮🇹" },
@@ -35,6 +35,21 @@ const DESTINATIONS = [
   { code: "MAD", label: "Madrid", emoji: "🇪🇸" },
   { code: "BER", label: "Berlin", emoji: "🇩🇪" },
   { code: "DUB", label: "Dublin", emoji: "🇮🇪" },
+];
+
+const DESTINATIONS_LONG_COURRIER = [
+  { code: "JFK", label: "New York", emoji: "🇺🇸" },
+  { code: "YUL", label: "Montreal", emoji: "🇨🇦" },
+  { code: "CUN", label: "Cancun", emoji: "🇲🇽" },
+  { code: "PUJ", label: "Punta Cana", emoji: "🇩🇴" },
+  { code: "BKK", label: "Bangkok", emoji: "🇹🇭" },
+  { code: "NRT", label: "Tokyo", emoji: "🇯🇵" },
+  { code: "DXB", label: "Dubai", emoji: "🇦🇪" },
+  { code: "MLE", label: "Maldives", emoji: "🇲🇻" },
+  { code: "MRU", label: "Maurice", emoji: "🇲🇺" },
+  { code: "RUN", label: "La Reunion", emoji: "🇫🇷" },
+  { code: "PPT", label: "Tahiti", emoji: "🇵🇫" },
+  { code: "GIG", label: "Rio de Janeiro", emoji: "🇧🇷" },
 ];
 
 export default function OnboardingPage() {
@@ -228,21 +243,44 @@ export default function OnboardingPage() {
               Optionnel — selectionnez vos destinations favorites ou laissez vide pour tout recevoir.
             </p>
 
-            <div className="grid grid-cols-3 gap-2 mb-8">
-              {DESTINATIONS.map((d) => (
-                <button
-                  key={d.code}
-                  onClick={() => toggleDestination(d.code)}
-                  className="p-3 rounded-xl border-2 text-center transition-all"
-                  style={{
-                    borderColor: destinations.includes(d.code) ? "#06b6d4" : "#e5e7eb",
-                    background: destinations.includes(d.code) ? "#ecfeff" : "white",
-                  }}
-                >
-                  <div className="text-lg mb-0.5">{d.emoji}</div>
-                  <div className="text-xs font-medium">{d.label}</div>
-                </button>
-              ))}
+            <div className="mb-3">
+              <div className="text-xs font-bold text-gray-400 tracking-wider uppercase mb-2">Europe & Maghreb</div>
+              <div className="grid grid-cols-3 gap-2">
+                {DESTINATIONS_EUROPE.map((d) => (
+                  <button
+                    key={d.code}
+                    onClick={() => toggleDestination(d.code)}
+                    className="p-2.5 rounded-xl border-2 text-center transition-all"
+                    style={{
+                      borderColor: destinations.includes(d.code) ? "#06b6d4" : "#e5e7eb",
+                      background: destinations.includes(d.code) ? "#ecfeff" : "white",
+                    }}
+                  >
+                    <div className="text-base mb-0.5">{d.emoji}</div>
+                    <div className="text-[11px] font-medium">{d.label}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <div className="text-xs font-bold text-gray-400 tracking-wider uppercase mb-2">Long-courrier</div>
+              <div className="grid grid-cols-3 gap-2">
+                {DESTINATIONS_LONG_COURRIER.map((d) => (
+                  <button
+                    key={d.code}
+                    onClick={() => toggleDestination(d.code)}
+                    className="p-2.5 rounded-xl border-2 text-center transition-all"
+                    style={{
+                      borderColor: destinations.includes(d.code) ? "#06b6d4" : "#e5e7eb",
+                      background: destinations.includes(d.code) ? "#ecfeff" : "white",
+                    }}
+                  >
+                    <div className="text-base mb-0.5">{d.emoji}</div>
+                    <div className="text-[11px] font-medium">{d.label}</div>
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="flex gap-3">
