@@ -171,6 +171,16 @@ async def _compose_packages_for_flight(flight: dict, flight_baseline: dict):
     )
 
     for pkg in packages:
+        # AI enrichment (non-blocking)
+        try:
+            from app.agents.enricher import enrich_package
+            acc_for_enrich = next((a for a in acc_resp.data if a["id"] == pkg["accommodation_id"]), None)
+            enrichment = enrich_package(pkg, flight=flight, accommodation=acc_for_enrich)
+            if enrichment:
+                pkg.update(enrichment)
+        except Exception as e:
+            logger.warning(f"AI enrichment failed, saving without: {e}")
+
         db.table("packages").insert(pkg).execute()
 
         if pkg["score"] >= settings.MIN_SCORE_ALERT:

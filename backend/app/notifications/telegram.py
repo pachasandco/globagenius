@@ -13,16 +13,44 @@ def _get_bot() -> Bot | None:
 
 
 def format_deal_alert(package: dict, flight: dict, accommodation: dict) -> str:
-    return (
-        f"✈️ GLOBE GENIUS DEAL ALERT\n\n"
-        f"🌍 {package['origin']} → {package['destination']}\n"
-        f"📅 Depart : {package['departure_date']} | Retour : {package['return_date']}\n"
-        f"🏨 {accommodation['name']} ⭐ {accommodation.get('rating', 'N/A')}/5\n"
-        f"💰 Total : {package['total_price']}€  |  🔥 -{package['discount_pct']}% vs marche\n"
-        f"🎯 Score : {package['score']}/100\n\n"
-        f"👉 Vol : {flight.get('source_url', 'N/A')}\n"
-        f"👉 Hotel : {accommodation.get('source_url', 'N/A')}"
-    )
+    from app.config import IATA_TO_CITY
+    origin_city = IATA_TO_CITY.get(package["origin"], package["origin"])
+    dest_city = IATA_TO_CITY.get(package["destination"], package["destination"])
+
+    # Check if AI-enriched
+    ai_desc = package.get("ai_description")
+    ai_reason = package.get("ai_reason")
+    ai_tip = package.get("ai_tip")
+    ai_tags = package.get("ai_tags")
+
+    if ai_desc:
+        # Enriched format
+        tags_str = " ".join(ai_tags) if ai_tags else ""
+        return (
+            f"✈️ GLOBE GENIUS DEAL ALERT\n\n"
+            f"🌍 {origin_city} → {dest_city}\n"
+            f"📅 {package['departure_date']} – {package['return_date']}\n\n"
+            f"{ai_desc}\n\n"
+            f"💰 {package['total_price']}€ au lieu de {package['baseline_total']}€ · -{package['discount_pct']}%\n"
+            f"📊 {ai_reason}\n\n"
+            f"💡 {ai_tip}\n\n"
+            f"🎯 Score : {package['score']}/100\n"
+            f"{tags_str}\n\n"
+            f"👉 Vol : {flight.get('source_url', 'N/A')}\n"
+            f"👉 Hotel : {accommodation.get('source_url', 'N/A')}"
+        )
+    else:
+        # Basic format (fallback)
+        return (
+            f"✈️ GLOBE GENIUS DEAL ALERT\n\n"
+            f"🌍 {origin_city} → {dest_city}\n"
+            f"📅 {package['departure_date']} – {package['return_date']}\n"
+            f"🏨 {accommodation['name']} ⭐ {accommodation.get('rating', 'N/A')}/5\n"
+            f"💰 {package['total_price']}€  |  🔥 -{package['discount_pct']}% vs marche\n"
+            f"🎯 Score : {package['score']}/100\n\n"
+            f"👉 Vol : {flight.get('source_url', 'N/A')}\n"
+            f"👉 Hotel : {accommodation.get('source_url', 'N/A')}"
+        )
 
 
 def format_digest(packages: list[dict]) -> str:
