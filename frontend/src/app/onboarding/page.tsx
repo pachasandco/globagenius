@@ -39,7 +39,7 @@ const DESTINATIONS = [
 
 export default function OnboardingPage() {
   const [step, setStep] = useState(1);
-  const [airport, setAirport] = useState("CDG");
+  const [airports, setAirports] = useState<string[]>(["CDG"]);
   const [offerTypes, setOfferTypes] = useState<string[]>(["package", "flight", "accommodation"]);
   const [destinations, setDestinations] = useState<string[]>([]);
   const [telegramLink, setTelegramLink] = useState("");
@@ -72,7 +72,7 @@ export default function OnboardingPage() {
     setLoading(true);
     try {
       await updatePreferences(userId, {
-        airport_code: airport,
+        airport_codes: airports.length > 0 ? airports : ["CDG"],
         offer_types: offerTypes.length > 0 ? offerTypes : ["package"],
         preferred_destinations: destinations.length > 0 ? destinations : null,
       });
@@ -121,34 +121,49 @@ export default function OnboardingPage() {
         {step === 1 && (
           <div>
             <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-center mb-2">
-              Votre aeroport de depart
+              Vos aeroports de depart
             </h2>
             <p className="text-gray-400 text-sm text-center mb-6">
-              On surveillera les vols au depart de cet aeroport.
+              Selectionnez un ou plusieurs aeroports. On surveillera les vols au depart de chacun.
             </p>
 
             <div className="grid grid-cols-2 gap-3 mb-8">
-              {AIRPORTS.map((ap) => (
-                <button
-                  key={ap.code}
-                  onClick={() => setAirport(ap.code)}
-                  className="text-left p-3 rounded-xl border-2 transition-all"
-                  style={{
-                    borderColor: airport === ap.code ? "#06b6d4" : "#e5e7eb",
-                    background: airport === ap.code ? "#ecfeff" : "white",
-                  }}
-                >
-                  <div className="font-semibold text-sm">{ap.code}</div>
-                  <div className="text-xs text-gray-400">{ap.label}</div>
-                </button>
-              ))}
+              {AIRPORTS.map((ap) => {
+                const selected = airports.includes(ap.code);
+                return (
+                  <button
+                    key={ap.code}
+                    onClick={() =>
+                      setAirports((prev) =>
+                        selected ? prev.filter((c) => c !== ap.code) : [...prev, ap.code]
+                      )
+                    }
+                    className="text-left p-3 rounded-xl border-2 transition-all relative"
+                    style={{
+                      borderColor: selected ? "#06b6d4" : "#e5e7eb",
+                      background: selected ? "#ecfeff" : "white",
+                    }}
+                  >
+                    <div className="font-semibold text-sm">{ap.code}</div>
+                    <div className="text-xs text-gray-400">{ap.label}</div>
+                    {selected && (
+                      <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-cyan-500 flex items-center justify-center">
+                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
             <button
               onClick={() => setStep(2)}
-              className="w-full bg-gray-900 text-white font-semibold py-3 rounded-xl hover:bg-black transition-colors"
+              disabled={airports.length === 0}
+              className="w-full bg-gray-900 text-white font-semibold py-3 rounded-xl hover:bg-black transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Continuer
+              Continuer ({airports.length} aeroport{airports.length !== 1 ? "s" : ""})
             </button>
           </div>
         )}

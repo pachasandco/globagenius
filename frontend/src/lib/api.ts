@@ -33,7 +33,7 @@ export function login(email: string) {
 export interface UserPreferences {
   id: string;
   user_id: string;
-  airport_code: string;
+  airport_codes: string[];
   offer_types: string[];
   min_discount: number;
   max_budget: number | null;
@@ -48,7 +48,7 @@ export function getPreferences(userId: string) {
 }
 
 export function updatePreferences(userId: string, prefs: {
-  airport_code: string;
+  airport_codes: string[];
   offer_types: string[];
   min_discount?: number;
   max_budget?: number | null;

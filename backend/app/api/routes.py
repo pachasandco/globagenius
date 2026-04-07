@@ -17,7 +17,7 @@ class SignupRequest(BaseModel):
 
 
 class PreferencesRequest(BaseModel):
-    airport_code: str
+    airport_codes: list[str]
     offer_types: list[str]
     min_discount: int = 40
     max_budget: int | None = None
@@ -142,7 +142,7 @@ def signup(req: SignupRequest):
     # Create default preferences
     db.table("user_preferences").insert({
         "user_id": user_id,
-        "airport_code": "CDG",
+        "airport_codes": ["CDG"],
         "offer_types": ["package", "flight", "accommodation"],
     }).execute()
 
@@ -180,15 +180,16 @@ def update_preferences(user_id: str, req: PreferencesRequest):
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
-    if req.airport_code not in VALID_AIRPORTS:
-        raise HTTPException(status_code=400, detail=f"Invalid airport. Valid: {VALID_AIRPORTS}")
+    for ac in req.airport_codes:
+        if ac not in VALID_AIRPORTS:
+            raise HTTPException(status_code=400, detail=f"Invalid airport '{ac}'. Valid: {VALID_AIRPORTS}")
 
     for ot in req.offer_types:
         if ot not in VALID_OFFER_TYPES:
             raise HTTPException(status_code=400, detail=f"Invalid offer type. Valid: {VALID_OFFER_TYPES}")
 
     update_data = {
-        "airport_code": req.airport_code,
+        "airport_codes": req.airport_codes,
         "offer_types": req.offer_types,
         "min_discount": req.min_discount,
         "max_budget": req.max_budget,
