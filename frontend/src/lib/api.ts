@@ -1,12 +1,78 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-async function fetchAPI<T>(path: string): Promise<T> {
+async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
-    next: { revalidate: 120 },
+    headers: { "Content-Type": "application/json" },
+    ...options,
   });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `API error: ${res.status}`);
+  }
   return res.json();
 }
+
+// ─── Auth ───
+
+export function signup(email: string) {
+  return fetchAPI<{ user_id: string; email: string }>("/api/auth/signup", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function login(email: string) {
+  return fetchAPI<{ user_id: string; email: string }>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+// ─── Preferences ───
+
+export interface UserPreferences {
+  id: string;
+  user_id: string;
+  airport_code: string;
+  offer_types: string[];
+  min_discount: number;
+  max_budget: number | null;
+  preferred_destinations: string[] | null;
+  telegram_connected: boolean;
+  telegram_chat_id: number | null;
+  notifications_enabled: boolean;
+}
+
+export function getPreferences(userId: string) {
+  return fetchAPI<UserPreferences>(`/api/users/${userId}/preferences`);
+}
+
+export function updatePreferences(userId: string, prefs: {
+  airport_code: string;
+  offer_types: string[];
+  min_discount?: number;
+  max_budget?: number | null;
+  preferred_destinations?: string[] | null;
+}) {
+  return fetchAPI<UserPreferences>(`/api/users/${userId}/preferences`, {
+    method: "PUT",
+    body: JSON.stringify(prefs),
+  });
+}
+
+// ─── Telegram ───
+
+export function generateTelegramLink(userId: string) {
+  return fetchAPI<{ link: string; token: string }>(`/api/users/${userId}/telegram/generate-link`, {
+    method: "POST",
+  });
+}
+
+export function getTelegramStatus(userId: string) {
+  return fetchAPI<{ connected: boolean; chat_id: number | null }>(`/api/users/${userId}/telegram/status`);
+}
+
+// ─── Packages ───
 
 export interface Package {
   id: string;
@@ -55,9 +121,7 @@ export interface PipelineStatus {
 }
 
 export function getPackages(minScore = 0, limit = 20) {
-  return fetchAPI<{ packages: Package[] }>(
-    `/api/packages?min_score=${minScore}&limit=${limit}`
-  );
+  return fetchAPI<{ packages: Package[] }>(`/api/packages?min_score=${minScore}&limit=${limit}`);
 }
 
 export function getPackage(id: string) {
@@ -67,15 +131,9 @@ export function getPackage(id: string) {
 export function getQualifiedItems(type = "", limit = 20) {
   const params = new URLSearchParams({ limit: String(limit) });
   if (type) params.set("type_filter", type);
-  return fetchAPI<{ items: QualifiedItem[] }>(
-    `/api/qualified-items?${params}`
-  );
+  return fetchAPI<{ items: QualifiedItem[] }>(`/api/qualified-items?${params}`);
 }
 
 export function getPipelineStatus() {
   return fetchAPI<PipelineStatus>("/api/status");
-}
-
-export function getHealth() {
-  return fetchAPI<{ status: string; timestamp: string }>("/health");
 }
