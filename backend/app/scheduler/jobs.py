@@ -112,8 +112,23 @@ async def _analyze_new_flights(flights: list[dict]):
         return
 
     for flight in flights:
-        route_key = f"{flight['origin']}-{flight['destination']}"
+        # Calculate days ahead for this flight to pick the right baseline window
+        try:
+            dep = datetime.strptime(flight["departure_date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            days_ahead = (dep - datetime.now(timezone.utc)).days
+        except (ValueError, TypeError):
+            days_ahead = 30
+
+        from app.scraper.flights import _window_label
+        window = _window_label(max(days_ahead, 15))
+        route_key = f"{flight['origin']}-{flight['destination']}-{window}"
+
+        # Try window-specific baseline first, then generic
         baseline_resp = db.table("price_baselines").select("*").eq("route_key", route_key).eq("type", "flight").execute()
+        if not baseline_resp.data:
+            # Fallback: try without window
+            generic_key = f"{flight['origin']}-{flight['destination']}"
+            baseline_resp = db.table("price_baselines").select("*").eq("route_key", generic_key).eq("type", "flight").execute()
         if not baseline_resp.data:
             continue
 
