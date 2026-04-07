@@ -10,15 +10,17 @@ logger = logging.getLogger(__name__)
 FLIGHT_ACTOR_ID = "johnvc/Google-Flights-Data-Scraper-Flight-and-Price-Search"
 SOURCE = "google_flights"
 
-# Sample dates across 15 days to 6 months window
-SAMPLE_WINDOWS = [15, 30, 60, 90, 120, 180]  # days ahead
-TRIP_DURATIONS = [5, 7]
+# 3 time windows: short, medium, long term
+SAMPLE_WINDOWS = [30, 90, 180]  # 1m, 3m, 6m
+TRIP_DURATIONS = [7]  # 7 nights only (most popular)
 
-# Top destinations to search (IATA codes)
+# Top 8 destinations (most popular, best deals)
 TOP_DESTINATIONS = [
-    "LIS", "BCN", "FCO", "ATH", "AMS", "PRG", "BUD", "RAK",
-    "IST", "MAD", "BER", "DUB", "NAP", "OPO",
+    "LIS", "BCN", "FCO", "ATH", "PRG", "RAK", "IST", "AMS",
 ]
+
+# Rotate airports: each cycle scrapes 2 airports, full rotation in 4 cycles (24h at 6h intervals)
+AIRPORTS_PER_CYCLE = 2
 
 
 def _generate_sample_dates() -> list[tuple[str, int]]:
@@ -218,13 +220,32 @@ def scrape_flights_for_airport(origin: str) -> tuple[list[dict], list[dict]]:
     return all_normalized, baselines
 
 
+# Persistent counter for airport rotation
+_cycle_counter = 0
+
+
 def scrape_all_flights() -> tuple[list[dict], int, list[dict]]:
-    """Scrape flights for all MVP airports. Returns (flights, errors, baselines)."""
+    """Scrape flights for a rotating subset of airports. Returns (flights, errors, baselines).
+
+    Each cycle scrapes AIRPORTS_PER_CYCLE airports. Full rotation of all 8 airports
+    happens in 4 cycles (24h at 6h intervals)."""
+    global _cycle_counter
+
+    airports = settings.MVP_AIRPORTS
+    start_idx = (_cycle_counter * AIRPORTS_PER_CYCLE) % len(airports)
+    cycle_airports = []
+    for i in range(AIRPORTS_PER_CYCLE):
+        idx = (start_idx + i) % len(airports)
+        cycle_airports.append(airports[idx])
+    _cycle_counter += 1
+
+    logger.info(f"Cycle {_cycle_counter}: scraping airports {cycle_airports} ({AIRPORTS_PER_CYCLE}/{len(airports)})")
+
     all_flights = []
     all_baselines = []
     errors = 0
 
-    for airport in settings.MVP_AIRPORTS:
+    for airport in cycle_airports:
         try:
             flights, baselines = scrape_flights_for_airport(airport)
             all_flights.extend(flights)

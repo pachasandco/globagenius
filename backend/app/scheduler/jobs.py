@@ -195,11 +195,26 @@ async def _compose_packages_for_flight(flight: dict, flight_baseline: dict):
     )
 
     for pkg in packages:
-        # AI enrichment (non-blocking)
+        acc_for_pkg = next((a for a in acc_resp.data if a["id"] == pkg["accommodation_id"]), None)
+
+        # Step 1: AI curation — validate the deal before publishing
+        try:
+            from app.agents.curator import curate_deal
+            curation = curate_deal(pkg, flight_data=flight, accommodation_data=acc_for_pkg)
+            if curation and not curation.get("valid", True):
+                logger.info(f"Deal rejected by curator: {pkg['origin']}→{pkg['destination']} — {curation.get('reason')}")
+                continue  # Skip this deal
+            if curation:
+                pkg["ai_curated"] = True
+                pkg["ai_is_error_fare"] = curation.get("is_error_fare", False)
+                pkg["ai_urgency"] = curation.get("urgency", "medium")
+        except Exception as e:
+            logger.warning(f"AI curation failed, approving by default: {e}")
+
+        # Step 2: AI enrichment — generate description
         try:
             from app.agents.enricher import enrich_package
-            acc_for_enrich = next((a for a in acc_resp.data if a["id"] == pkg["accommodation_id"]), None)
-            enrichment = enrich_package(pkg, flight=flight, accommodation=acc_for_enrich)
+            enrichment = enrich_package(pkg, flight=flight, accommodation=acc_for_pkg)
             if enrichment:
                 pkg.update(enrichment)
         except Exception as e:
