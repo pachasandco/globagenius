@@ -220,7 +220,7 @@ def generate_telegram_link(user_id: str):
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }).eq("user_id", user_id).execute()
 
-    bot_username = "GlobeGeniusBot"
+    bot_username = "Globegenius_bot"
     deep_link = f"https://t.me/{bot_username}?start={token}"
 
     return {"link": deep_link, "token": token}
