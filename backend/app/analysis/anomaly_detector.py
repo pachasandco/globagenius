@@ -1,0 +1,39 @@
+from dataclasses import dataclass
+from app.config import settings
+
+Z_SCORE_THRESHOLD = 2.0
+
+
+@dataclass
+class QualifiedItem:
+    price: float
+    baseline_price: float
+    discount_pct: float
+    z_score: float
+
+
+def detect_anomaly(price: float, baseline: dict) -> QualifiedItem | None:
+    avg_price = baseline["avg_price"]
+    std_dev = baseline["std_dev"]
+
+    if std_dev <= 0:
+        return None
+
+    if price >= avg_price:
+        return None
+
+    z_score = (avg_price - price) / std_dev
+    discount_pct = (avg_price - price) / avg_price * 100
+
+    if z_score < Z_SCORE_THRESHOLD:
+        return None
+
+    if discount_pct < settings.MIN_DISCOUNT_PCT:
+        return None
+
+    return QualifiedItem(
+        price=round(price, 2),
+        baseline_price=round(avg_price, 2),
+        discount_pct=round(discount_pct, 2),
+        z_score=round(z_score, 2),
+    )
