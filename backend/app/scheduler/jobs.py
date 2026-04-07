@@ -63,11 +63,20 @@ async def job_scrape_flights():
     logger.info("Starting flight scraping job")
     started_at = datetime.now(timezone.utc)
 
-    flights, errors = scrape_all_flights()
+    flights, errors, baselines = scrape_all_flights()
 
     if not db:
         logger.warning("No database connection, skipping insert")
         return
+
+    # Save bootstrapped baselines from Google Flights price insights
+    for baseline in baselines:
+        try:
+            db.table("price_baselines").upsert(baseline, on_conflict="route_key").execute()
+        except Exception as e:
+            logger.warning(f"Failed to save baseline: {e}")
+    if baselines:
+        logger.info(f"Bootstrapped {len(baselines)} baselines from Google Flights price insights")
 
     inserted = 0
     for flight in flights:
