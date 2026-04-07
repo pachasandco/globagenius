@@ -3,5 +3,5 @@ dockerfilePath = "Dockerfile"
 dockerBuildArgs = ["NEXT_PUBLIC_API_URL"]
 
 [deploy]
-startCommand = "npx next start --port ${PORT:-3000}"
+startCommand = "node start.js"
 healthcheckPath = "/"

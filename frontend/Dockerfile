@@ -12,4 +12,4 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 RUN npm run build
 
-CMD ["npx", "next", "start", "--port", "3000"]
+CMD ["node", "start.js"]
