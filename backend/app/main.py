@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.api.routes import router
+from app.notifications.bot_handler import bot_router
 from app.scheduler.jobs import get_scheduler_jobs
 
 logging.basicConfig(
@@ -61,3 +62,4 @@ app.add_middleware(
 )
 
 app.include_router(router)
+app.include_router(bot_router)

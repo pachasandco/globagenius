@@ -226,6 +226,18 @@ def generate_telegram_link(user_id: str):
     return {"link": deep_link, "token": token}
 
 
+@router.post("/api/telegram/setup-webhook")
+async def setup_telegram_webhook():
+    """Set Telegram webhook to point to our API."""
+    import httpx
+    webhook_url = f"https://globagenius-production-f9a1.up.railway.app/api/telegram/webhook"
+    telegram_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/setWebhook"
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(telegram_url, json={"url": webhook_url})
+        return resp.json()
+
+
 @router.get("/api/users/{user_id}/telegram/status")
 def telegram_status(user_id: str):
     if not db:
