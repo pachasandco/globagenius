@@ -91,6 +91,10 @@ export interface Package {
   status: string;
   created_at: string;
   expires_at: string;
+  ai_description?: string;
+  ai_reason?: string;
+  ai_tip?: string;
+  ai_tags?: string[];
 }
 
 export interface QualifiedItem {
@@ -120,8 +124,8 @@ export interface PipelineStatus {
   active_baselines: number;
 }
 
-export function getPackages(minScore = 0, limit = 20) {
-  return fetchAPI<{ packages: Package[] }>(`/api/packages?min_score=${minScore}&limit=${limit}`);
+export function getPackages(minScore = 0, limit = 20, plan = "free") {
+  return fetchAPI<{ packages: Package[]; plan: string }>(`/api/packages?min_score=${minScore}&limit=${limit}&plan=${plan}`);
 }
 
 export function getPackage(id: string) {

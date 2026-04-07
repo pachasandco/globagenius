@@ -72,20 +72,20 @@ def status():
 
 
 @router.get("/api/packages")
-def list_packages(min_score: int = 0, limit: int = 20):
+def list_packages(min_score: int = 0, limit: int = 20, plan: str = "free"):
+    """List packages. plan=free returns 20-39% deals, plan=premium returns 40%+ deals."""
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
-    resp = (
-        db.table("packages")
-        .select("*")
-        .eq("status", "active")
-        .gte("score", min_score)
-        .order("score", desc=True)
-        .limit(limit)
-        .execute()
-    )
-    return {"packages": resp.data or []}
+    query = db.table("packages").select("*").eq("status", "active").gte("score", min_score)
+
+    if plan == "free":
+        query = query.gte("discount_pct", 20).lt("discount_pct", 40)
+    else:
+        query = query.gte("discount_pct", 40)
+
+    resp = query.order("score", desc=True).limit(limit).execute()
+    return {"packages": resp.data or [], "plan": plan}
 
 
 @router.get("/api/packages/{package_id}")

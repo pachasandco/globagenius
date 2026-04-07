@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from app.config import settings
 
-Z_SCORE_THRESHOLD = 2.0
+Z_SCORE_THRESHOLD = 1.0  # Lowered to capture 20%+ deals (free plan)
+MIN_FREE_DISCOUNT = 20  # Minimum discount for free plan
 
 
 @dataclass
@@ -28,7 +29,7 @@ def detect_anomaly(price: float, baseline: dict) -> QualifiedItem | None:
     if z_score < Z_SCORE_THRESHOLD:
         return None
 
-    if discount_pct < settings.MIN_DISCOUNT_PCT:
+    if discount_pct < MIN_FREE_DISCOUNT:
         return None
 
     return QualifiedItem(

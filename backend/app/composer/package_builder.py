@@ -67,7 +67,7 @@ def build_packages(
 
         discount_pct = (baseline_total - total_price) / baseline_total * 100
 
-        if discount_pct < settings.MIN_DISCOUNT_PCT:
+        if discount_pct < 20:  # Accept 20%+ for free plan, 40%+ for premium
             continue
 
         score = compute_score(
