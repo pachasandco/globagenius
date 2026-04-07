@@ -282,3 +282,65 @@ def telegram_status(user_id: str):
         "connected": prefs.data[0].get("telegram_connected", False),
         "chat_id": prefs.data[0].get("telegram_chat_id"),
     }
+
+
+# ─── ARTICLES ───
+
+@router.get("/api/articles")
+def list_articles():
+    """List all generated destination articles."""
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    resp = db.table("articles").select("*").order("created_at", desc=True).execute()
+    return {"articles": resp.data or []}
+
+
+@router.get("/api/articles/{slug}")
+def get_article(slug: str):
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    resp = db.table("articles").select("*").eq("slug", slug).execute()
+    if not resp.data:
+        raise HTTPException(status_code=404, detail="Article not found")
+    return resp.data[0]
+
+
+@router.post("/api/articles/generate")
+async def generate_article_endpoint(destination: str, country: str):
+    """Generate a new destination article via AI."""
+    from app.agents.article_writer import generate_article
+
+    article = generate_article(destination, country)
+    if not article:
+        raise HTTPException(status_code=500, detail="Failed to generate article")
+
+    slug = destination.lower().replace(" ", "-").replace("'", "")
+    article["slug"] = slug
+
+    if db:
+        db.table("articles").upsert(article, on_conflict="slug").execute()
+
+    return article
+
+
+# ─── TRAVEL PLANNER ───
+
+class PlannerMessage(BaseModel):
+    message: str
+
+
+@router.post("/api/planner/{user_id}/chat")
+async def planner_chat(user_id: str, req: PlannerMessage):
+    """Chat with the travel planner agent."""
+    from app.agents.travel_planner import get_or_create_session
+    session = get_or_create_session(user_id)
+    response = session.chat(req.message)
+    return response or {"type": "error", "message": "Pas de reponse"}
+
+
+@router.post("/api/planner/{user_id}/reset")
+async def planner_reset(user_id: str):
+    """Reset the planner conversation."""
+    from app.agents.travel_planner import reset_session
+    reset_session(user_id)
+    return {"status": "reset"}
