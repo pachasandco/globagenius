@@ -94,8 +94,8 @@ export default function Dashboard() {
           getPackages(0, 50, "premium"),
           getPipelineStatus(),
         ]);
-        setFreePackages(freeRes.packages);
-        setPremiumPackages(premiumRes.packages);
+        setFreePackages(freeRes.packages || freeRes.items || []);
+        setPremiumPackages(premiumRes.packages || premiumRes.items || []);
         setStatus(statusRes);
       } catch {
         setError("Impossible de se connecter au pipeline.");

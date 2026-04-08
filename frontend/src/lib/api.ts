@@ -134,7 +134,7 @@ export interface PipelineStatus {
 }
 
 export function getPackages(minScore = 0, limit = 20, plan = "free") {
-  return fetchAPI<{ packages: Package[]; plan: string }>(`/api/packages?min_score=${minScore}&limit=${limit}&plan=${plan}`);
+  return fetchAPI<{ packages?: Package[]; items?: Package[]; plan: string }>(`/api/packages?min_score=${minScore}&limit=${limit}&plan=${plan}`);
 }
 
 export function getPackage(id: string) {
