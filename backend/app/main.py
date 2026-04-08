@@ -35,7 +35,12 @@ async def lifespan(app: FastAPI):
                 kwargs["minutes"] = job_def["minutes"]
             scheduler.add_job(func, "interval", id=job_id, **kwargs)
         elif trigger == "cron":
-            scheduler.add_job(func, "cron", id=job_id, hour=job_def.get("hour", 0))
+            cron_kwargs = {}
+            if "hour" in job_def:
+                cron_kwargs["hour"] = job_def["hour"]
+            if "day_of_week" in job_def:
+                cron_kwargs["day_of_week"] = job_def["day_of_week"]
+            scheduler.add_job(func, "cron", id=job_id, **cron_kwargs)
 
     scheduler.start()
     logger.info(f"Scheduler started with {len(scheduler.get_jobs())} jobs")

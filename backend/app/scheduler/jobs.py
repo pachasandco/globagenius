@@ -20,18 +20,47 @@ logger = logging.getLogger(__name__)
 
 def get_scheduler_jobs() -> list[dict]:
     return [
+        # ── VOLS : 3 scrapes/jour aux creneaux strategiques ──
+        # Mardi-mercredi 2h : promos compagnies publiees lundi soir
+        # Tous les jours 4h : error fares (minuit-6h = window d'erreurs de pricing)
+        # Tous les jours 14h : rattraper les promos du matin
         {
-            "id": "scrape_flights",
+            "id": "scrape_flights_early",
             "func": job_scrape_flights,
-            "trigger": "interval",
-            "hours": settings.SCRAPE_FLIGHTS_INTERVAL_HOURS,
+            "trigger": "cron",
+            "hour": 4,
         },
         {
-            "id": "scrape_accommodations",
-            "func": job_scrape_accommodations,
-            "trigger": "interval",
-            "hours": settings.SCRAPE_ACCOMMODATIONS_INTERVAL_HOURS,
+            "id": "scrape_flights_afternoon",
+            "func": job_scrape_flights,
+            "trigger": "cron",
+            "hour": 14,
         },
+        {
+            "id": "scrape_flights_tuesday",
+            "func": job_scrape_flights,
+            "trigger": "cron",
+            "day_of_week": "tue",
+            "hour": 2,
+        },
+        # ── HOTELS : 2 scrapes/jour ──
+        # Lundi 3h : meilleurs prix en debut de semaine
+        # Jeudi 3h : capturer les baisses avant le weekend
+        {
+            "id": "scrape_accommodations_monday",
+            "func": job_scrape_accommodations,
+            "trigger": "cron",
+            "day_of_week": "mon",
+            "hour": 3,
+        },
+        {
+            "id": "scrape_accommodations_thursday",
+            "func": job_scrape_accommodations,
+            "trigger": "cron",
+            "day_of_week": "thu",
+            "hour": 3,
+        },
+        # ── BASELINES & MAINTENANCE ──
         {
             "id": "recalculate_baselines",
             "func": job_recalculate_baselines,
@@ -41,8 +70,8 @@ def get_scheduler_jobs() -> list[dict]:
         {
             "id": "expire_stale_data",
             "func": job_expire_stale_data,
-            "trigger": "interval",
-            "minutes": 30,
+            "trigger": "cron",
+            "hour": 5,  # Une fois par jour a 5h suffit
         },
         {
             "id": "daily_digest",
