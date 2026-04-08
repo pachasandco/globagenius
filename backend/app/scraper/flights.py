@@ -16,7 +16,6 @@ TOP_DESTINATIONS = [
 ]
 
 AIRPORTS_PER_CYCLE = 2
-_cycle_counter = 0
 
 
 def _window_label(days_ahead: int) -> str:
@@ -215,17 +214,17 @@ async def scrape_flights_for_airport(origin: str) -> tuple[list[dict], list[dict
 
 async def scrape_all_flights() -> tuple[list[dict], int, list[dict]]:
     """Scrape flights for a rotating subset of airports."""
-    global _cycle_counter
-
     airports = settings.MVP_AIRPORTS
-    start_idx = (_cycle_counter * AIRPORTS_PER_CYCLE) % len(airports)
+    # Use current hour to rotate airports (survives restarts)
+    hour = datetime.now(timezone.utc).hour
+    cycle_index = hour // 4  # 0-5, changes every 4 hours
+    start_idx = (cycle_index * AIRPORTS_PER_CYCLE) % len(airports)
     cycle_airports = [
         airports[(start_idx + i) % len(airports)]
         for i in range(AIRPORTS_PER_CYCLE)
     ]
-    _cycle_counter += 1
 
-    logger.info(f"Cycle {_cycle_counter}: scraping airports {cycle_airports}")
+    logger.info(f"Cycle (hour={hour}, idx={cycle_index}): scraping airports {cycle_airports}")
 
     all_flights = []
     all_baselines = []

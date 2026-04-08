@@ -1,10 +1,13 @@
 import asyncio
+import re
 import secrets
 import logging
-from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from datetime import datetime, timezone, timedelta
+from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel, field_validator
 import bcrypt
+import jwt
 from app.db import db
 from app.config import settings
 from app.notifications.welcome_email import send_welcome_email as _send_welcome_email
@@ -12,9 +15,26 @@ from app.notifications.welcome_email import send_welcome_email as _send_welcome_
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+security = HTTPBearer(auto_error=False)
 
 VALID_AIRPORTS = settings.MVP_AIRPORTS
 VALID_OFFER_TYPES = ["package", "flight", "accommodation"]
+EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+
+# Simple in-memory rate limiter
+_rate_limits: dict[str, list[float]] = {}
+RATE_LIMIT_WINDOW = 60  # seconds
+RATE_LIMIT_MAX = 10  # max requests per window
+
+
+def _check_rate_limit(key: str):
+    now = datetime.now(timezone.utc).timestamp()
+    if key not in _rate_limits:
+        _rate_limits[key] = []
+    _rate_limits[key] = [t for t in _rate_limits[key] if t > now - RATE_LIMIT_WINDOW]
+    if len(_rate_limits[key]) >= RATE_LIMIT_MAX:
+        raise HTTPException(status_code=429, detail="Trop de requetes. Reessayez dans une minute.")
+    _rate_limits[key].append(now)
 
 
 def _hash_password(password: str) -> str:
@@ -25,9 +45,52 @@ def _verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode(), hashed.encode())
 
 
+def _create_jwt(user_id: str, email: str) -> str:
+    payload = {
+        "sub": user_id,
+        "email": email,
+        "exp": datetime.now(timezone.utc) + timedelta(days=30),
+        "iat": datetime.now(timezone.utc),
+    }
+    return jwt.encode(payload, settings.JWT_SECRET, algorithm="HS256")
+
+
+def _verify_jwt(token: str) -> dict | None:
+    try:
+        return jwt.decode(token, settings.JWT_SECRET, algorithms=["HS256"])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expire")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Token invalide")
+
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    """Extract and verify JWT from Authorization header."""
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Authentification requise")
+    payload = _verify_jwt(credentials.credentials)
+    return payload
+
+
+def _require_admin(request: Request):
+    """Check admin API key in X-Admin-Key header."""
+    admin_key = request.headers.get("X-Admin-Key", "")
+    if not settings.ADMIN_API_KEY:
+        return  # No admin key configured = dev mode, allow all
+    if admin_key != settings.ADMIN_API_KEY:
+        raise HTTPException(status_code=403, detail="Acces admin requis")
+
+
 class SignupRequest(BaseModel):
     email: str
     password: str
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        if not EMAIL_REGEX.match(v):
+            raise ValueError("Format email invalide")
+        return v.lower().strip()
 
 
 class PreferencesRequest(BaseModel):
@@ -72,8 +135,9 @@ def status():
 
 
 @router.get("/api/debug/data")
-def debug_data():
-    """Debug endpoint: show sample data from each table."""
+def debug_data(request: Request):
+    """Debug endpoint: show sample data from each table. Admin only."""
+    _require_admin(request)
     if not db:
         return {"error": "no db"}
 
@@ -165,7 +229,8 @@ def list_qualified_items(type_filter: str = "", limit: int = 20):
 
 
 @router.post("/api/trigger/{job_name}")
-async def trigger_job(job_name: str):
+async def trigger_job(job_name: str, request: Request):
+    _require_admin(request)
     from app.scheduler.jobs import (
         job_scrape_flights,
         job_scrape_accommodations,
@@ -190,7 +255,8 @@ async def trigger_job(job_name: str):
 # ─── AUTH ───
 
 @router.post("/api/auth/signup")
-async def signup(req: SignupRequest):
+async def signup(req: SignupRequest, request: Request):
+    _check_rate_limit(f"signup:{request.client.host if request.client else 'unknown'}")
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
@@ -222,7 +288,8 @@ async def signup(req: SignupRequest):
     except Exception as e:
         logger.warning(f"Failed to send welcome email: {e}")
 
-    return {"user_id": user_id, "email": req.email}
+    token = _create_jwt(user_id, req.email)
+    return {"user_id": user_id, "email": req.email, "token": token}
 
 
 class LoginRequest(BaseModel):
@@ -231,24 +298,28 @@ class LoginRequest(BaseModel):
 
 
 @router.post("/api/auth/login")
-def login(req: LoginRequest):
+def login(req: LoginRequest, request: Request):
+    _check_rate_limit(f"login:{request.client.host if request.client else 'unknown'}")
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
-    user = db.table("users").select("*").eq("email", req.email).execute()
+    user = db.table("users").select("*").eq("email", req.email.lower().strip()).execute()
     if not user.data:
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
 
     if not _verify_password(req.password, user.data[0]["password_hash"]):
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
 
-    return {"user_id": user.data[0]["id"], "email": user.data[0]["email"]}
+    user_id = user.data[0]["id"]
+    email = user.data[0]["email"]
+    token = _create_jwt(user_id, email)
+    return {"user_id": user_id, "email": email, "token": token}
 
 
 # ─── PREFERENCES ───
 
 @router.get("/api/users/{user_id}/preferences")
-def get_preferences(user_id: str):
+def get_preferences(user_id: str, user: dict = Depends(get_current_user)):
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
@@ -260,7 +331,7 @@ def get_preferences(user_id: str):
 
 
 @router.put("/api/users/{user_id}/preferences")
-def update_preferences(user_id: str, req: PreferencesRequest):
+def update_preferences(user_id: str, req: PreferencesRequest, user: dict = Depends(get_current_user)):
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
@@ -291,7 +362,7 @@ def update_preferences(user_id: str, req: PreferencesRequest):
 # ─── TELEGRAM CONNECT ───
 
 @router.post("/api/users/{user_id}/telegram/generate-link")
-def generate_telegram_link(user_id: str):
+def generate_telegram_link(user_id: str, user: dict = Depends(get_current_user)):
     """Generate a unique link for user to connect their Telegram."""
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
@@ -313,7 +384,8 @@ def generate_telegram_link(user_id: str):
 
 
 @router.post("/api/telegram/setup-webhook")
-async def setup_telegram_webhook():
+async def setup_telegram_webhook(request: Request):
+    _require_admin(request)
     """Set Telegram webhook to point to our API."""
     import httpx
     webhook_url = "https://globagenius-production-b887.up.railway.app/api/telegram/webhook"
@@ -361,7 +433,8 @@ def get_article(slug: str):
 
 
 @router.post("/api/articles/generate")
-async def generate_article_endpoint(destination: str, country: str):
+async def generate_article_endpoint(destination: str, country: str, request: Request):
+    _require_admin(request)
     """Generate a new destination article via AI."""
     from app.agents.article_writer import generate_article
 

@@ -21,6 +21,7 @@ export default function LoginPage() {
       const res = await login(email, password);
       localStorage.setItem("gg_user_id", res.user_id);
       localStorage.setItem("gg_email", res.email);
+      localStorage.setItem("gg_token", res.token);
       router.push("/dashboard");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Erreur de connexion");

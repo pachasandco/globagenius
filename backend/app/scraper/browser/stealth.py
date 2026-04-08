@@ -43,8 +43,8 @@ Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 0 });
 """
 
 
-async def create_browser() -> Browser:
-    """Launch a stealth Chromium browser."""
+async def create_browser() -> tuple[Browser, object]:
+    """Launch a stealth Chromium browser. Returns (browser, playwright_instance)."""
     pw = await async_playwright().start()
     browser = await pw.chromium.launch(
         headless=True,
@@ -56,7 +56,7 @@ async def create_browser() -> Browser:
             "--window-size=1440,900",
         ],
     )
-    return browser
+    return browser, pw
 
 
 async def create_stealth_context(browser: Browser) -> BrowserContext:

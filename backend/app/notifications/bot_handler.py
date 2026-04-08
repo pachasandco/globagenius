@@ -11,6 +11,13 @@ bot_router = APIRouter()
 @bot_router.post("/api/telegram/webhook")
 async def telegram_webhook(request: Request):
     """Handle incoming Telegram messages (webhook mode)."""
+    # Verify Telegram secret token
+    from app.config import settings
+    if settings.TELEGRAM_WEBHOOK_SECRET:
+        header_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+        if header_secret != settings.TELEGRAM_WEBHOOK_SECRET:
+            return {"ok": False, "error": "unauthorized"}
+
     if not db:
         return {"ok": True}
 

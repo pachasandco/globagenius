@@ -102,7 +102,7 @@ async def job_scrape_flights():
     logger.info("Starting flight scraping job")
     started_at = datetime.now(timezone.utc)
 
-    flights, errors, baselines = scrape_all_flights()
+    flights, errors, baselines = await scrape_all_flights()
 
     if not db:
         logger.warning("No database connection, skipping insert")
@@ -401,7 +401,9 @@ async def job_expire_stale_data():
     now = datetime.now(timezone.utc).isoformat()
 
     db.table("packages").update({"status": "expired"}).eq("status", "active").lt("expires_at", now).execute()
-    db.table("qualified_items").update({"status": "expired"}).eq("status", "active").execute()
+    # Expire qualified items older than 24h (they don't have expires_at)
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    db.table("qualified_items").update({"status": "expired"}).eq("status", "active").lt("created_at", yesterday).execute()
 
     logger.info("Expired stale packages and qualified items")
 

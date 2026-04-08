@@ -1,8 +1,17 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+function _getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("gg_token");
+}
+
 async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = _getToken();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
   const res = await fetch(`${API_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers,
     ...options,
   });
   if (!res.ok) {
@@ -15,14 +24,14 @@ async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
 // ─── Auth ───
 
 export function signup(email: string, password: string) {
-  return fetchAPI<{ user_id: string; email: string }>("/api/auth/signup", {
+  return fetchAPI<{ user_id: string; email: string; token: string }>("/api/auth/signup", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
 }
 
 export function login(email: string, password: string) {
-  return fetchAPI<{ user_id: string; email: string }>("/api/auth/login", {
+  return fetchAPI<{ user_id: string; email: string; token: string }>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });

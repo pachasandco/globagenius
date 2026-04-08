@@ -46,8 +46,9 @@ async def scrape_hotels_page(city: str, check_in: str, check_out: str) -> dict |
     logger.info(f"Scraping Google Hotels: {city} {check_in}→{check_out}")
 
     browser = None
+    pw = None
     try:
-        browser = await create_browser()
+        browser, pw = await create_browser()
         context = await create_stealth_context(browser)
         page = await context.new_page()
 
@@ -69,6 +70,8 @@ async def scrape_hotels_page(city: str, check_in: str, check_out: str) -> dict |
     finally:
         if browser:
             await browser.close()
+        if pw:
+            await pw.stop()
 
 
 def _extract_with_llm(text: str, city: str, check_in: str, check_out: str) -> dict | None:

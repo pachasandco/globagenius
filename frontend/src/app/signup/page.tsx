@@ -31,6 +31,7 @@ export default function SignupPage() {
       const res = await signup(email, password);
       localStorage.setItem("gg_user_id", res.user_id);
       localStorage.setItem("gg_email", res.email);
+      localStorage.setItem("gg_token", res.token);
       router.push("/onboarding");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Erreur lors de l'inscription");

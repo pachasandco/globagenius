@@ -54,8 +54,9 @@ async def scrape_flights_page(origin: str, destination: str, dep_date: str, ret_
     logger.info(f"Scraping Google Flights: {origin}→{destination} {dep_date}")
 
     browser = None
+    pw = None
     try:
-        browser = await create_browser()
+        browser, pw = await create_browser()
         context = await create_stealth_context(browser)
         page = await context.new_page()
 
@@ -80,6 +81,8 @@ async def scrape_flights_page(origin: str, destination: str, dep_date: str, ret_
     finally:
         if browser:
             await browser.close()
+        if pw:
+            await pw.stop()
 
 
 def _extract_with_llm(text: str, origin: str, destination: str, dep_date: str, ret_date: str) -> dict | None:
