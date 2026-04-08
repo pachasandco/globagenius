@@ -13,6 +13,8 @@ class Settings:
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_ADMIN_CHAT_ID: str = os.getenv("TELEGRAM_ADMIN_CHAT_ID", "")
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
+    AMADEUS_API_KEY: str = os.getenv("AMADEUS_API_KEY", "")
+    AMADEUS_API_SECRET: str = os.getenv("AMADEUS_API_SECRET", "")
     APP_ENV: str = os.getenv("APP_ENV", "development")
     SMTP_HOST: str = os.getenv("SMTP_HOST", "")
     SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
