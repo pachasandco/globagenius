@@ -37,12 +37,12 @@ Si tu ne trouves pas de vols, retourne {"flights": [], "price_insights": null}""
 
 
 def _build_flights_url(origin: str, destination: str, dep_date: str, ret_date: str, currency: str = "EUR") -> str:
-    """Build Google Flights search URL."""
+    """Build Google Flights search URL (same format as Fairtrail)."""
     return (
         f"https://www.google.com/travel/flights?"
         f"q=flights+from+{origin}+to+{destination}"
         f"+on+{dep_date}+to+{ret_date}"
-        f"&curr={currency}&gl=FR&hl=fr"
+        f"&curr={currency}&hl=en"
     )
 
 
@@ -60,12 +60,14 @@ async def scrape_flights_page(origin: str, destination: str, dep_date: str, ret_
         context = await create_stealth_context(browser)
         page = await context.new_page()
 
-        # Google Flights uses [data-gs] for flight results, but we use a broader selector
-        text = await navigate_and_extract(page, url, "div[class*='result'], li[class*='flight']", timeout=25000)
+        # [data-gs] is the flight result container on Google Flights (from Fairtrail)
+        text = await navigate_and_extract(page, url, "[data-gs]", timeout=20000)
 
-        if not text or len(text) < 100:
+        if not text or len(text) < 50:
             logger.warning(f"No content extracted for {origin}→{destination}")
             return None
+
+        logger.info(f"Extracted {len(text)} chars for {origin}→{destination}. Preview: {text[:200]}")
 
         # Truncate to ~4KB for LLM (like Fairtrail)
         if len(text) > 4000:

@@ -34,7 +34,7 @@ def _build_hotels_url(city: str, check_in: str, check_out: str, currency: str = 
         f"https://www.google.com/travel/hotels?"
         f"q=hotels+in+{city.replace(' ', '+')}"
         f"&dates={check_in},{check_out}"
-        f"&curr={currency}&gl=FR&hl=fr"
+        f"&curr={currency}&hl=en"
     )
 
 
@@ -52,7 +52,7 @@ async def scrape_hotels_page(city: str, check_in: str, check_out: str) -> dict |
         context = await create_stealth_context(browser)
         page = await context.new_page()
 
-        text = await navigate_and_extract(page, url, "div[class*='hotel'], div[class*='property']", timeout=25000)
+        text = await navigate_and_extract(page, url, "div[class*='price'], span[class*='price']", timeout=20000)
 
         if not text or len(text) < 100:
             logger.warning(f"No content extracted for hotels in {city}")
