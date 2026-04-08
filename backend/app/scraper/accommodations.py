@@ -1,59 +1,73 @@
 import logging
+import asyncio
 from datetime import datetime, timedelta, timezone
 from app.config import IATA_TO_CITY
-from app.scraper.apify_client import run_actor
 from app.scraper.normalizer import normalize_accommodation
 
 logger = logging.getLogger(__name__)
 
-# voyager/booking-scraper — 3.3M runs, most popular
-ACCOMMODATION_ACTOR_ID = "voyager/booking-scraper"
-SOURCE = "booking"
+SOURCE = "google_hotels"
 
 
-def _extract_accommodations(items: list[dict], city: str, check_in: str, check_out: str) -> list[dict]:
-    """Map Booking.com actor output to our normalizer format."""
-    extracted = []
-    for item in items:
-        price = item.get("price")
-        if not price:
-            continue
+async def _scrape_city_playwright(city: str, check_in: str, check_out: str) -> list[dict]:
+    """Scrape hotels using Playwright + LLM (free)."""
+    from app.scraper.browser.google_hotels import scrape_hotels_page
 
-        total_price = float(price)
+    result = await scrape_hotels_page(city, check_in, check_out)
+    if not result:
+        return []
 
-        # Calculate nights
+    try:
+        ci = datetime.strptime(check_in, "%Y-%m-%d")
+        co = datetime.strptime(check_out, "%Y-%m-%d")
+        nights = max((co - ci).days, 1)
+    except (ValueError, TypeError):
+        nights = 7
+
+    normalized = []
+    for hotel in result.get("hotels", []):
         try:
-            ci = datetime.strptime(check_in, "%Y-%m-%d")
-            co = datetime.strptime(check_out, "%Y-%m-%d")
-            nights = max((co - ci).days, 1)
-        except (ValueError, TypeError):
-            nights = 1
+            ppn = float(hotel.get("price_per_night", 0))
+            total = float(hotel.get("total_price", 0))
+            if not ppn and not total:
+                continue
+            if not total:
+                total = ppn * nights
+            if not ppn:
+                ppn = round(total / nights, 2)
 
-        # Rating: Booking uses /10
-        raw_rating = item.get("rating")
-        if raw_rating:
-            rating = round(float(raw_rating) / 2, 1)  # Convert /10 to /5
-        else:
-            rating = None
+            rating = hotel.get("rating")
+            if rating:
+                rating = float(rating)
+                if rating > 5:
+                    rating = round(rating / 2, 1)
 
-        extracted.append({
-            "name": item.get("name", "Unknown"),
-            "city": city,
-            "pricePerNight": round(total_price / nights, 2),
-            "totalPrice": total_price,
-            "currency": "EUR",
-            "rating": rating,
-            "checkIn": check_in,
-            "checkOut": check_out,
-            "url": item.get("url", ""),
-            "source": SOURCE,
-        })
+            raw = {
+                "name": hotel.get("name", "Hotel"),
+                "city": city,
+                "pricePerNight": ppn,
+                "totalPrice": total,
+                "currency": "EUR",
+                "rating": rating,
+                "checkIn": check_in,
+                "checkOut": check_out,
+                "url": hotel.get("url", ""),
+                "source": SOURCE,
+            }
+            normalized.append(normalize_accommodation(raw))
+        except (KeyError, TypeError, ValueError) as e:
+            logger.warning(f"Failed to normalize hotel: {e}")
 
-    return extracted
+    return normalized
 
 
-def scrape_accommodations_for_city(city: str, check_in: str, check_out: str) -> list[dict]:
-    """Scrape accommodations for a specific city and date range."""
+def _scrape_city_apify(city: str, check_in: str, check_out: str) -> list[dict]:
+    """Fallback: scrape via Apify Booking.com actor."""
+    try:
+        from app.scraper.apify_client import run_actor
+    except ImportError:
+        return []
+
     run_input = {
         "search": city,
         "checkIn": check_in,
@@ -66,24 +80,60 @@ def scrape_accommodations_for_city(city: str, check_in: str, check_out: str) -> 
     }
 
     try:
-        raw_items = run_actor(ACCOMMODATION_ACTOR_ID, run_input)
+        raw_items = run_actor("voyager/booking-scraper", run_input)
     except Exception as e:
-        logger.warning(f"Booking actor failed for {city} {check_in}: {e}")
+        logger.warning(f"Apify fallback failed for {city}: {e}")
         return []
 
-    accommodations = _extract_accommodations(raw_items, city, check_in, check_out)
+    try:
+        ci = datetime.strptime(check_in, "%Y-%m-%d")
+        co = datetime.strptime(check_out, "%Y-%m-%d")
+        nights = max((co - ci).days, 1)
+    except (ValueError, TypeError):
+        nights = 7
 
     normalized = []
-    for acc in accommodations:
+    for item in raw_items:
+        price = item.get("price")
+        if not price:
+            continue
+        total_price = float(price)
+        raw_rating = item.get("rating")
+        rating = round(float(raw_rating) / 2, 1) if raw_rating else None
+
+        raw = {
+            "name": item.get("name", "Unknown"),
+            "city": city,
+            "pricePerNight": round(total_price / nights, 2),
+            "totalPrice": total_price,
+            "currency": "EUR",
+            "rating": rating,
+            "checkIn": check_in,
+            "checkOut": check_out,
+            "url": item.get("url", ""),
+            "source": "booking",
+        }
         try:
-            normalized.append(normalize_accommodation(acc))
-        except (KeyError, TypeError, ValueError) as e:
-            logger.warning(f"Failed to normalize accommodation: {e}")
+            normalized.append(normalize_accommodation(raw))
+        except Exception:
+            pass
 
     return normalized
 
 
-def scrape_accommodations_for_destinations(destinations: set[str]) -> tuple[list[dict], int]:
+async def scrape_accommodations_for_city(city: str, check_in: str, check_out: str) -> list[dict]:
+    """Scrape hotels: try Playwright first, fallback to Apify."""
+    # Primary: Playwright (free)
+    hotels = await _scrape_city_playwright(city, check_in, check_out)
+    if hotels:
+        return hotels
+
+    # Fallback: Apify
+    logger.info(f"Playwright returned no hotels, falling back to Apify for {city}")
+    return _scrape_city_apify(city, check_in, check_out)
+
+
+async def scrape_accommodations_for_destinations(destinations: set[str]) -> tuple[list[dict], int]:
     """Scrape accommodations for destination IATA codes."""
     all_accommodations = []
     errors = 0
@@ -98,7 +148,6 @@ def scrape_accommodations_for_destinations(destinations: set[str]) -> tuple[list
     for iata_code in destinations:
         city = IATA_TO_CITY.get(iata_code)
         if not city:
-            logger.warning(f"No city mapping for {iata_code}, skipping")
             continue
 
         city_count = 0
@@ -106,12 +155,14 @@ def scrape_accommodations_for_destinations(destinations: set[str]) -> tuple[list
             check_in = dep.strftime("%Y-%m-%d")
             check_out = (dep + timedelta(days=duration)).strftime("%Y-%m-%d")
             try:
-                items = scrape_accommodations_for_city(city, check_in, check_out)
+                items = await scrape_accommodations_for_city(city, check_in, check_out)
                 all_accommodations.extend(items)
                 city_count += len(items)
             except Exception as e:
                 errors += 1
-                logger.error(f"Failed to scrape {city} ({check_in}): {e}")
+                logger.error(f"Failed to scrape {city}: {e}")
+
+            await asyncio.sleep(2)
 
         if city_count:
             logger.info(f"Scraped {city_count} accommodations in {city}")

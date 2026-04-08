@@ -1,144 +1,25 @@
 import logging
+import asyncio
 from datetime import datetime, timedelta, timezone
 from app.config import settings, IATA_TO_CITY
-from app.scraper.apify_client import run_actor
 from app.scraper.normalizer import normalize_flight
 
 logger = logging.getLogger(__name__)
 
-# Best actor: johnvc/Google-Flights-Data-Scraper-Flight-and-Price-Search
-FLIGHT_ACTOR_ID = "johnvc/Google-Flights-Data-Scraper-Flight-and-Price-Search"
 SOURCE = "google_flights"
 
-# 3 time windows: short, medium, long term
-SAMPLE_WINDOWS = [30, 90, 180]  # 1m, 3m, 6m
-TRIP_DURATIONS = [7]  # 7 nights only (most popular)
+SAMPLE_WINDOWS = [30, 90, 180]
+TRIP_DURATIONS = [7]
 
-# Top 8 destinations (most popular, best deals)
 TOP_DESTINATIONS = [
     "LIS", "BCN", "FCO", "ATH", "PRG", "RAK", "IST", "AMS",
 ]
 
-# Rotate airports: each cycle scrapes 2 airports, full rotation in 4 cycles (24h at 6h intervals)
 AIRPORTS_PER_CYCLE = 2
-
-
-def _generate_sample_dates() -> list[tuple[str, int]]:
-    """Generate sample departure dates with their window (days ahead).
-    Returns [(date_str, days_ahead), ...]"""
-    now = datetime.now(timezone.utc)
-    return [
-        ((now + timedelta(days=d)).strftime("%Y-%m-%d"), d)
-        for d in SAMPLE_WINDOWS
-    ]
-
-
-def _extract_price_insights(result: dict) -> dict | None:
-    """Extract Google Flights price insights (history, typical range)."""
-    insights = result.get("price_insights")
-    if not insights:
-        return None
-
-    return {
-        "lowest_price": insights.get("lowest_price"),
-        "price_level": insights.get("price_level"),  # "low", "typical", "high"
-        "typical_price_range": insights.get("typical_price_range", []),
-        "price_history": insights.get("price_history", []),  # [[timestamp, price], ...]
-    }
-
-
-def _extract_flights_from_result(result: dict, origin: str) -> list[dict]:
-    """Extract individual flights from the actor's nested output format."""
-    extracted = []
-
-    # Get price insights for this route (provided by Google Flights)
-    insights = _extract_price_insights(result)
-    typical_range = insights.get("typical_price_range", []) if insights else []
-    typical_avg = sum(typical_range) / len(typical_range) if typical_range else None
-
-    for category in ["best_flights", "other_flights"]:
-        flights_list = result.get(category, [])
-        for flight_group in flights_list:
-            flights = flight_group.get("flights", [])
-            price = flight_group.get("price")
-            if not price or not flights:
-                continue
-
-            first_leg = flights[0]
-            last_leg = flights[-1]
-
-            dep_airport = first_leg.get("departure_airport", {})
-            arr_airport = last_leg.get("arrival_airport", {})
-
-            dep_code = dep_airport.get("id", origin)
-            arr_code = arr_airport.get("id", "")
-
-            if not arr_code:
-                continue
-
-            dep_time = dep_airport.get("time", "")
-            dep_date = dep_time.split(" ")[0] if " " in dep_time else ""
-
-            airline = first_leg.get("airline", "")
-            stops = len(flights) - 1
-
-            flight_data = {
-                "price": float(price),
-                "currency": "EUR",
-                "origin": dep_code,
-                "destination": arr_code,
-                "departureDate": dep_date,
-                "returnDate": result.get("search_parameters", {}).get("return_date", ""),
-                "airline": airline,
-                "stops": stops,
-                "url": f"https://www.google.com/travel/flights?q=flights+from+{dep_code}+to+{arr_code}",
-            }
-
-            # Attach price insights for baseline bootstrapping
-            if typical_avg:
-                flight_data["_typical_avg"] = typical_avg
-                flight_data["_typical_range"] = typical_range
-                flight_data["_price_level"] = insights.get("price_level", "")
-
-            extracted.append(flight_data)
-
-    return extracted, insights
-
-
-def scrape_flights_for_route(origin: str, destination: str, dep_date: str, ret_date: str) -> tuple[list[dict], dict | None]:
-    """Scrape flights for a specific route and dates. Returns (flights, price_insights)."""
-    run_input = {
-        "departure_airport_code": origin,
-        "arrival_airport_code": destination,
-        "departure_date": dep_date,
-        "return_date": ret_date,
-        "adults": 1,
-        "currency": "EUR",
-    }
-
-    try:
-        raw_items = run_actor(FLIGHT_ACTOR_ID, run_input)
-    except Exception as e:
-        logger.warning(f"Actor failed for {origin}→{destination} {dep_date}: {e}")
-        return [], None
-
-    normalized = []
-    route_insights = None
-    for item in raw_items:
-        flights, insights = _extract_flights_from_result(item, origin)
-        if insights:
-            route_insights = insights
-        for flight_data in flights:
-            try:
-                normalized.append(normalize_flight(flight_data, source=SOURCE))
-            except (KeyError, TypeError, ValueError) as e:
-                logger.warning(f"Failed to normalize flight: {e}")
-
-    return normalized, route_insights
+_cycle_counter = 0
 
 
 def _window_label(days_ahead: int) -> str:
-    """Convert days ahead to a window label: 1m, 2m, 3m, 4m, 6m."""
     if days_ahead <= 30:
         return "1m"
     elif days_ahead <= 60:
@@ -151,47 +32,157 @@ def _window_label(days_ahead: int) -> str:
         return "6m"
 
 
+def _generate_sample_dates() -> list[tuple[str, int]]:
+    now = datetime.now(timezone.utc)
+    return [
+        ((now + timedelta(days=d)).strftime("%Y-%m-%d"), d)
+        for d in SAMPLE_WINDOWS
+    ]
+
+
 def bootstrap_baseline_from_insights(origin: str, destination: str, insights: dict, days_ahead: int = 30) -> dict | None:
-    """Create a baseline from Google Flights price insights.
-    Route key includes time window: CDG-LIS-3m (for 3 month ahead trips)."""
-    typical_range = insights.get("typical_price_range", [])
-    price_history = insights.get("price_history", [])
+    """Create baseline from price insights (Google Flights typical range)."""
+    typical_low = insights.get("typical_low")
+    typical_high = insights.get("typical_high")
 
-    if not typical_range and not price_history:
+    if not typical_low or not typical_high:
         return None
 
-    if price_history:
-        prices = [p[1] for p in price_history]
-        import numpy as np
-        avg_price = round(float(np.mean(prices)), 2)
-        std_dev = round(float(np.std(prices)), 2)
-        sample_count = len(prices)
-    elif typical_range:
-        avg_price = round(sum(typical_range) / len(typical_range), 2)
-        std_dev = round((typical_range[1] - typical_range[0]) / 4, 2)
-        sample_count = 2
-    else:
-        return None
+    avg_price = round((typical_low + typical_high) / 2, 2)
+    std_dev = round((typical_high - typical_low) / 4, 2)
 
     window = _window_label(days_ahead)
 
-    # Save both: route-specific baseline AND route+window baseline
     return {
         "route_key": f"{origin}-{destination}-{window}",
         "type": "flight",
         "avg_price": avg_price,
         "std_dev": max(std_dev, 1.0),
-        "sample_count": sample_count,
+        "sample_count": 2,
         "calculated_at": datetime.now(timezone.utc).isoformat(),
     }
 
 
-def scrape_flights_for_airport(origin: str) -> tuple[list[dict], list[dict]]:
-    """Scrape flights for one origin to all top destinations across multiple time windows.
-    Returns (normalized_flights, bootstrapped_baselines)."""
+async def _scrape_route_playwright(origin: str, destination: str, dep_date: str, ret_date: str) -> tuple[list[dict], dict | None]:
+    """Scrape a route using Playwright + LLM (Fairtrail approach). Zero API cost."""
+    from app.scraper.browser.google_flights import scrape_flights_page
+
+    result = await scrape_flights_page(origin, destination, dep_date, ret_date)
+    if not result:
+        return [], None
+
+    normalized = []
+    for flight in result.get("flights", []):
+        try:
+            mapped = {
+                "price": float(flight.get("price", 0)),
+                "currency": "EUR",
+                "origin": flight.get("origin", origin),
+                "destination": flight.get("destination", destination),
+                "departureDate": dep_date,
+                "returnDate": ret_date,
+                "airline": flight.get("airline", ""),
+                "stops": int(flight.get("stops", 0)),
+                "url": flight.get("url", ""),
+            }
+            if mapped["price"] > 0:
+                normalized.append(normalize_flight(mapped, source=SOURCE))
+        except (KeyError, TypeError, ValueError) as e:
+            logger.warning(f"Failed to normalize flight: {e}")
+
+    insights = result.get("price_insights")
+    return normalized, insights
+
+
+def _scrape_route_apify(origin: str, destination: str, dep_date: str, ret_date: str) -> tuple[list[dict], dict | None]:
+    """Fallback: scrape via Apify actor."""
+    try:
+        from app.scraper.apify_client import run_actor
+    except ImportError:
+        return [], None
+
+    run_input = {
+        "departure_airport_code": origin,
+        "arrival_airport_code": destination,
+        "departure_date": dep_date,
+        "return_date": ret_date,
+        "adults": 1,
+        "currency": "EUR",
+    }
+
+    try:
+        raw_items = run_actor("johnvc/Google-Flights-Data-Scraper-Flight-and-Price-Search", run_input)
+    except Exception as e:
+        logger.warning(f"Apify fallback failed: {e}")
+        return [], None
+
+    normalized = []
+    insights = None
+    for item in raw_items:
+        # Extract price insights
+        pi = item.get("price_insights")
+        if pi:
+            typical_range = pi.get("typical_price_range", [])
+            if typical_range and len(typical_range) == 2:
+                insights = {"typical_low": typical_range[0], "typical_high": typical_range[1], "price_level": pi.get("price_level")}
+
+            # Extract flights from nested format
+            price_history = pi.get("price_history", [])
+            if price_history:
+                import numpy as np
+                prices = [p[1] for p in price_history]
+                insights = insights or {}
+                insights["typical_low"] = insights.get("typical_low", float(np.percentile(prices, 25)))
+                insights["typical_high"] = insights.get("typical_high", float(np.percentile(prices, 75)))
+
+        for category in ["best_flights", "other_flights"]:
+            for fg in item.get(category, []):
+                price = fg.get("price")
+                flights = fg.get("flights", [])
+                if not price or not flights:
+                    continue
+                first = flights[0]
+                last = flights[-1]
+                arr = last.get("arrival_airport", {}).get("id", "")
+                if not arr:
+                    continue
+                dep_time = first.get("departure_airport", {}).get("time", "")
+                mapped = {
+                    "price": float(price),
+                    "currency": "EUR",
+                    "origin": first.get("departure_airport", {}).get("id", origin),
+                    "destination": arr,
+                    "departureDate": dep_time.split(" ")[0] if " " in dep_time else dep_date,
+                    "returnDate": ret_date,
+                    "airline": first.get("airline", ""),
+                    "stops": len(flights) - 1,
+                    "url": f"https://www.google.com/travel/flights?q=flights+from+{origin}+to+{arr}",
+                }
+                try:
+                    normalized.append(normalize_flight(mapped, source=SOURCE))
+                except Exception:
+                    pass
+
+    return normalized, insights
+
+
+async def scrape_flights_for_route(origin: str, destination: str, dep_date: str, ret_date: str) -> tuple[list[dict], dict | None]:
+    """Scrape flights: try Playwright first, fallback to Apify."""
+    # Primary: Playwright (free)
+    flights, insights = await _scrape_route_playwright(origin, destination, dep_date, ret_date)
+    if flights:
+        return flights, insights
+
+    # Fallback: Apify (paid)
+    logger.info(f"Playwright returned no results, falling back to Apify for {origin}→{destination}")
+    return _scrape_route_apify(origin, destination, dep_date, ret_date)
+
+
+async def scrape_flights_for_airport(origin: str) -> tuple[list[dict], list[dict]]:
+    """Scrape flights for one origin to all top destinations."""
     all_normalized = []
     baselines = []
-    sample_dates = _generate_sample_dates()  # [(date, days_ahead), ...]
+    sample_dates = _generate_sample_dates()
 
     for dest in TOP_DESTINATIONS:
         if dest == origin:
@@ -202,44 +193,39 @@ def scrape_flights_for_airport(origin: str) -> tuple[list[dict], list[dict]]:
                 dep = datetime.strptime(dep_date, "%Y-%m-%d")
                 ret_date = (dep + timedelta(days=duration)).strftime("%Y-%m-%d")
 
-                flights, insights = scrape_flights_for_route(origin, dest, dep_date, ret_date)
+                flights, insights = await scrape_flights_for_route(origin, dest, dep_date, ret_date)
                 all_normalized.extend(flights)
 
-                # Bootstrap baseline per time window (1m, 2m, 3m, 4m, 6m)
                 window = _window_label(days_ahead)
                 if insights and window not in seen_windows:
                     baseline = bootstrap_baseline_from_insights(origin, dest, insights, days_ahead)
                     if baseline:
                         baselines.append(baseline)
                         seen_windows.add(window)
-                        logger.info(f"  Baseline {origin}-{dest}-{window}: avg={baseline['avg_price']}€ std={baseline['std_dev']}€ ({baseline['sample_count']} pts)")
+                        logger.info(f"  Baseline {origin}-{dest}-{window}: avg={baseline['avg_price']}€")
 
                 if flights:
                     logger.info(f"  {origin}→{dest} {dep_date} ({duration}n, {window}): {len(flights)} flights")
 
+                # Delay between requests to avoid detection
+                await asyncio.sleep(2)
+
     return all_normalized, baselines
 
 
-# Persistent counter for airport rotation
-_cycle_counter = 0
-
-
-def scrape_all_flights() -> tuple[list[dict], int, list[dict]]:
-    """Scrape flights for a rotating subset of airports. Returns (flights, errors, baselines).
-
-    Each cycle scrapes AIRPORTS_PER_CYCLE airports. Full rotation of all 8 airports
-    happens in 4 cycles (24h at 6h intervals)."""
+async def scrape_all_flights() -> tuple[list[dict], int, list[dict]]:
+    """Scrape flights for a rotating subset of airports."""
     global _cycle_counter
 
     airports = settings.MVP_AIRPORTS
     start_idx = (_cycle_counter * AIRPORTS_PER_CYCLE) % len(airports)
-    cycle_airports = []
-    for i in range(AIRPORTS_PER_CYCLE):
-        idx = (start_idx + i) % len(airports)
-        cycle_airports.append(airports[idx])
+    cycle_airports = [
+        airports[(start_idx + i) % len(airports)]
+        for i in range(AIRPORTS_PER_CYCLE)
+    ]
     _cycle_counter += 1
 
-    logger.info(f"Cycle {_cycle_counter}: scraping airports {cycle_airports} ({AIRPORTS_PER_CYCLE}/{len(airports)})")
+    logger.info(f"Cycle {_cycle_counter}: scraping airports {cycle_airports}")
 
     all_flights = []
     all_baselines = []
@@ -247,7 +233,7 @@ def scrape_all_flights() -> tuple[list[dict], int, list[dict]]:
 
     for airport in cycle_airports:
         try:
-            flights, baselines = scrape_flights_for_airport(airport)
+            flights, baselines = await scrape_flights_for_airport(airport)
             all_flights.extend(flights)
             all_baselines.extend(baselines)
             logger.info(f"Scraped {len(flights)} flights + {len(baselines)} baselines from {airport}")
