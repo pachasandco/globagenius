@@ -252,6 +252,8 @@ def generate_telegram_link(user_id: str):
     }).eq("user_id", user_id).execute()
 
     bot_username = "Globegenius_bot"
+    # Update webhook URL to use custom domain
+    webhook_url = "https://api.globegenius.app/api/telegram/webhook"
     deep_link = f"https://t.me/{bot_username}?start={token}"
 
     return {"link": deep_link, "token": token}
@@ -261,7 +263,7 @@ def generate_telegram_link(user_id: str):
 async def setup_telegram_webhook():
     """Set Telegram webhook to point to our API."""
     import httpx
-    webhook_url = f"https://globagenius-production-f9a1.up.railway.app/api/telegram/webhook"
+    webhook_url = "https://api.globegenius.app/api/telegram/webhook"
     telegram_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/setWebhook"
 
     async with httpx.AsyncClient() as client:
