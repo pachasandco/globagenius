@@ -1,8 +1,8 @@
 import json
 import logging
 from datetime import datetime, timezone
-from anthropic import Anthropic
 from app.config import settings
+from app.agents.llm_client import get_client
 
 logger = logging.getLogger(__name__)
 
@@ -29,16 +29,15 @@ Reponds UNIQUEMENT en JSON valide."""
 
 def generate_article(destination: str, country: str) -> dict | None:
     """Generate a destination article using Claude."""
-    if not settings.ANTHROPIC_API_KEY:
+    client = get_client()
+    if not client:
         logger.warning("ANTHROPIC_API_KEY not set")
         return None
-
-    client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
 
     try:
         response = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=2000,
+            max_tokens=3000,
             system=SYSTEM_PROMPT,
             messages=[{
                 "role": "user",

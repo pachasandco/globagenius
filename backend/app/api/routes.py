@@ -1,4 +1,5 @@
 import asyncio
+import json
 import re
 import secrets
 import logging
@@ -453,15 +454,39 @@ async def generate_article_endpoint(destination: str, country: str, request: Req
     """Generate a new destination article via AI."""
     from app.agents.article_writer import generate_article
 
-    article = generate_article(destination, country)
+    try:
+        article = generate_article(destination, country)
+    except Exception as e:
+        logger.error(f"Article generation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)[:200]}")
+
     if not article:
-        raise HTTPException(status_code=500, detail="Failed to generate article")
+        raise HTTPException(status_code=500, detail="Failed to generate article — LLM returned no data")
 
     slug = destination.lower().replace(" ", "-").replace("'", "")
-    article["slug"] = slug
+
+    # Filter to only columns that exist in the DB
+    db_article = {
+        "slug": slug,
+        "destination": article.get("destination", destination),
+        "country": article.get("country", country),
+        "title": article.get("title", ""),
+        "subtitle": article.get("subtitle", ""),
+        "intro": article.get("intro", ""),
+        "sections": json.dumps(article.get("sections", [])),
+        "best_time": article.get("best_time", ""),
+        "budget_tip": article.get("budget_tip", ""),
+        "tags": article.get("tags", []),
+        "cover_photo": article.get("cover_photo", ""),
+        "photo_query": article.get("photo_query", ""),
+        "generated_at": article.get("generated_at"),
+    }
 
     if db:
-        db.table("articles").upsert(article, on_conflict="slug").execute()
+        try:
+            db.table("articles").upsert(db_article, on_conflict="slug").execute()
+        except Exception as e:
+            logger.error(f"Failed to save article: {e}")
 
     return article
 
