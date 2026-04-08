@@ -190,19 +190,34 @@ def debug_data(request: Request):
 
 @router.get("/api/packages")
 def list_packages(min_score: int = 0, limit: int = 20, plan: str = "free"):
-    """List packages. plan=free returns 20-39% deals, plan=premium returns 40%+ deals."""
+    """List deals. free=vols seuls 20-39%, premium=packages vol+hotel (vol -40%+, hotel -20%+)."""
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
-    query = db.table("packages").select("*").eq("status", "active").gte("score", min_score)
-
-    if plan == "free":
-        query = query.gte("discount_pct", 20).lt("discount_pct", 40)
+    if plan == "premium":
+        # Packages (vol+hotel) — premium only
+        resp = (
+            db.table("packages").select("*")
+            .eq("status", "active")
+            .gte("score", min_score)
+            .order("score", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return {"packages": resp.data or [], "plan": plan}
     else:
-        query = query.gte("discount_pct", 40)
-
-    resp = query.order("score", desc=True).limit(limit).execute()
-    return {"packages": resp.data or [], "plan": plan}
+        # Vols seuls (-20 a -39%) — free plan
+        resp = (
+            db.table("qualified_items").select("*")
+            .eq("status", "active")
+            .eq("type", "flight")
+            .gte("discount_pct", 20)
+            .lt("discount_pct", 40)
+            .order("score", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return {"items": resp.data or [], "plan": plan}
 
 
 @router.get("/api/packages/{package_id}")

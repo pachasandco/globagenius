@@ -67,8 +67,18 @@ def build_packages(
 
         discount_pct = (baseline_total - total_price) / baseline_total * 100
 
-        if discount_pct < 20:  # Accept 20%+ for free plan, 40%+ for premium
-            continue
+        # Package rules:
+        # - Flight must have >= 40% discount (vs its own baseline)
+        # - Hotel must have >= 20% discount (vs its own baseline)
+        # - Only premium users get packages
+        flight_discount = (flight_baseline["avg_price"] - flight["price"]) / flight_baseline["avg_price"] * 100 if flight_baseline["avg_price"] > 0 else 0
+        acc_discount = (acc_baseline["avg_price"] - acc["total_price"]) / acc_baseline["avg_price"] * 100 if acc_baseline["avg_price"] > 0 else 0
+
+        if flight_discount < 40:
+            continue  # Flight must be at least -40% for a package
+
+        if acc_discount < 20:
+            continue  # Hotel must be at least -20% for a package
 
         score = compute_score(
             discount_pct=discount_pct,
