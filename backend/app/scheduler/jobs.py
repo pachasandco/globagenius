@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timedelta, timezone
-from app.config import settings
+from app.config import settings, IATA_TO_CITY
 from app.db import db
 from app.scraper.flights import scrape_all_flights
 from app.scraper.accommodations import scrape_accommodations_for_destinations
@@ -282,20 +282,45 @@ async def job_scrape_accommodations():
     if not db:
         return
 
+    # Get unique (destination, departure_date, return_date) from active flights
     flights_resp = (
         db.table("raw_flights")
-        .select("destination")
+        .select("destination, departure_date, return_date")
         .gte("expires_at", datetime.now(timezone.utc).isoformat())
         .execute()
     )
-    destinations = {f["destination"] for f in (flights_resp.data or [])}
 
-    if not destinations:
-        logger.info("No active flight destinations, skipping accommodation scrape")
+    if not flights_resp.data:
+        logger.info("No active flights, skipping accommodation scrape")
         return
 
+    # Deduplicate by (destination, dates)
+    route_dates = set()
+    for f in flights_resp.data:
+        route_dates.add((f["destination"], f["departure_date"], f["return_date"]))
+
+    destinations = {rd[0] for rd in route_dates}
+    logger.info(f"Scraping accommodations for {len(destinations)} destinations, {len(route_dates)} date combos")
+
     started_at = datetime.now(timezone.utc)
-    accommodations, errors = scrape_accommodations_for_destinations(destinations)
+
+    # Scrape accommodations for exact flight dates (not generic sample dates)
+    from app.scraper.accommodations import scrape_accommodations_for_city
+    all_accommodations = []
+    errors = 0
+    for dest_code, dep_date, ret_date in route_dates:
+        city = IATA_TO_CITY.get(dest_code)
+        if not city:
+            continue
+        try:
+            items = await scrape_accommodations_for_city(city, dep_date, ret_date)
+            all_accommodations.extend(items)
+            if items:
+                logger.info(f"  {city} {dep_date}→{ret_date}: {len(items)} hotels")
+        except Exception as e:
+            errors += 1
+            logger.warning(f"Failed to scrape hotels in {city}: {e}")
+    accommodations = all_accommodations
 
     inserted = 0
     for acc in accommodations:
