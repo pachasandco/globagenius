@@ -153,7 +153,7 @@ export default function Landing() {
             </Link>
             <Link href="/signup" className="text-sm font-semibold bg-[#222] text-white px-5 py-2.5 rounded-full hover:bg-black transition-colors">
               S'inscrire
-            </Link>}
+            </Link>
           </div>
         </div>
       </nav>
