@@ -1,7 +1,7 @@
 import json
 import logging
-from anthropic import Anthropic
 from app.config import settings
+from app.agents.llm_client import get_client
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ def curate_deal(package: dict, flight_data: dict | None = None, accommodation_da
     if not settings.ANTHROPIC_API_KEY:
         return {"valid": True, "confidence": 0.5, "reason": "No API key, auto-approved", "is_error_fare": False, "urgency": "medium"}
 
-    client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = get_client()
 
     from app.config import IATA_TO_CITY
     origin_city = IATA_TO_CITY.get(package.get("origin", ""), package.get("origin", ""))

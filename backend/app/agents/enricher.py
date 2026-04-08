@@ -1,8 +1,8 @@
 import json
 import logging
 from datetime import datetime, timezone
-from anthropic import Anthropic
 from app.config import settings
+from app.agents.llm_client import get_client
 
 logger = logging.getLogger(__name__)
 
@@ -20,11 +20,11 @@ Reponds UNIQUEMENT en JSON valide :
 {"description": "...", "reason": "...", "tip": "...", "tags": ["#...", "#..."]}"""
 
 
-def _get_client() -> Anthropic | None:
-    if not settings.ANTHROPIC_API_KEY:
+def _get_client():
+    client = get_client()
+    if not client:
         logger.warning("ANTHROPIC_API_KEY not set, skipping enrichment")
-        return None
-    return Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+    return client
 
 
 def enrich_package(package: dict, flight: dict | None = None, accommodation: dict | None = None) -> dict | None:
@@ -66,9 +66,13 @@ def enrich_package(package: dict, flight: dict | None = None, accommodation: dic
     }, ensure_ascii=False)
 
     try:
+        # Use Sonnet for top deals (score >= 80), Haiku for the rest
+        score = package.get("score", 0)
+        model = "claude-sonnet-4-6" if score >= 80 else "claude-haiku-4-5"
+
         response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=400,
+            model=model,
+            max_tokens=350,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_msg}],
         )

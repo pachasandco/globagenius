@@ -1,12 +1,18 @@
 """Scrape Google Flights using Playwright + LLM extraction.
-Inspired by Fairtrail approach: browser → visible text → LLM → structured data."""
+Inspired by Fairtrail approach: browser → visible text → LLM → structured data.
+Includes content hash cache to avoid redundant LLM calls."""
 
 import json
+import hashlib
 import logging
 from datetime import datetime, timezone
-from anthropic import Anthropic
 from app.config import settings
+from app.agents.llm_client import get_client
 from app.scraper.browser.stealth import create_browser, create_stealth_context, navigate_and_extract
+
+# Cache: hash of page text → extracted result. Avoids re-calling LLM if page content unchanged.
+_extraction_cache: dict[str, dict] = {}
+_CACHE_MAX_SIZE = 200
 
 logger = logging.getLogger(__name__)
 
@@ -67,14 +73,24 @@ async def scrape_flights_page(origin: str, destination: str, dep_date: str, ret_
             logger.warning(f"No content extracted for {origin}→{destination}")
             return None
 
-        logger.info(f"Extracted {len(text)} chars for {origin}→{destination}. Preview: {text[:200]}")
+        logger.info(f"Extracted {len(text)} chars for {origin}→{destination}")
 
         # Truncate to ~4KB for LLM (like Fairtrail)
         if len(text) > 4000:
             text = text[:4000]
 
+        # Check cache — skip LLM if same page content
+        text_hash = hashlib.md5(text.encode()).hexdigest()
+        if text_hash in _extraction_cache:
+            logger.info(f"Cache hit for {origin}→{destination}, skipping LLM call")
+            return _extraction_cache[text_hash]
+
         # Extract with Claude Haiku (fast + cheap)
         result = _extract_with_llm(text, origin, destination, dep_date, ret_date)
+
+        # Cache the result
+        if result and len(_extraction_cache) < _CACHE_MAX_SIZE:
+            _extraction_cache[text_hash] = result
         return result
 
     except Exception as e:
@@ -89,11 +105,10 @@ async def scrape_flights_page(origin: str, destination: str, dep_date: str, ret_
 
 def _extract_with_llm(text: str, origin: str, destination: str, dep_date: str, ret_date: str) -> dict | None:
     """Use Claude Haiku to extract flight data from visible text."""
-    if not settings.ANTHROPIC_API_KEY:
+    client = get_client()
+    if not client:
         logger.warning("No ANTHROPIC_API_KEY, skipping LLM extraction")
         return None
-
-    client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
 
     user_msg = f"Route: {origin} → {destination}\nDates: {dep_date} → {ret_date}\n\nTexte de la page:\n{text}"
 

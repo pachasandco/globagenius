@@ -1,11 +1,15 @@
 """Scrape Google Hotels using Playwright + LLM extraction."""
 
 import json
+import hashlib
 import logging
 from datetime import datetime, timezone
-from anthropic import Anthropic
 from app.config import settings
+from app.agents.llm_client import get_client
 from app.scraper.browser.stealth import create_browser, create_stealth_context, navigate_and_extract
+
+_extraction_cache: dict[str, dict] = {}
+_CACHE_MAX_SIZE = 100
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +65,15 @@ async def scrape_hotels_page(city: str, check_in: str, check_out: str) -> dict |
         if len(text) > 4000:
             text = text[:4000]
 
+        text_hash = hashlib.md5(text.encode()).hexdigest()
+        if text_hash in _extraction_cache:
+            logger.info(f"Cache hit for hotels in {city}, skipping LLM call")
+            return _extraction_cache[text_hash]
+
         result = _extract_with_llm(text, city, check_in, check_out)
+
+        if result and len(_extraction_cache) < _CACHE_MAX_SIZE:
+            _extraction_cache[text_hash] = result
         return result
 
     except Exception as e:
@@ -76,10 +88,9 @@ async def scrape_hotels_page(city: str, check_in: str, check_out: str) -> dict |
 
 def _extract_with_llm(text: str, city: str, check_in: str, check_out: str) -> dict | None:
     """Use Claude Haiku to extract hotel data from visible text."""
-    if not settings.ANTHROPIC_API_KEY:
+    client = get_client()
+    if not client:
         return None
-
-    client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
 
     # Calculate nights
     try:
