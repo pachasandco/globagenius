@@ -90,10 +90,50 @@ function FAQItem({ q, a, i }: { q: string; a: string; i: number }) {
   );
 }
 
+/* ─── STRUCTURED DATA (static constants, no user input — safe for JSON-LD) ─── */
+const organizationSchema = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "Globe Genius",
+  url: "https://www.globegenius.app",
+  logo: "https://www.globegenius.app/globe.png",
+  description:
+    "Globe Genius détecte les anomalies de prix pour trouver des packages voyage (vol + hôtel) à -40% minimum sur le prix du marché.",
+  sameAs: [] as string[],
+  contactPoint: {
+    "@type": "ContactPoint",
+    contactType: "customer support",
+    availableLanguage: "French",
+  },
+};
+
+const websiteSchema = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "Globe Genius",
+  url: "https://www.globegenius.app",
+  description:
+    "Packages voyage à prix cassés détectés par IA. Vols + hôtels à -40% minimum.",
+  inLanguage: "fr-FR",
+  potentialAction: {
+    "@type": "SearchAction",
+    target: {
+      "@type": "EntryPoint",
+      urlTemplate: "https://www.globegenius.app/articles?q={search_term_string}",
+    },
+    "query-input": "required name=search_term_string",
+  },
+};
+
 /* ─── PAGE ─── */
 export default function Landing() {
   return (
     <div className="min-h-screen bg-white">
+
+      {/* ── JSON-LD STRUCTURED DATA ── */}
+      {/* Content is 100% static hardcoded data — no user input, XSS-safe */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteSchema) }} />
 
       {/* ── NAV ── */}
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
