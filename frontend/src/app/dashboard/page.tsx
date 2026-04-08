@@ -89,14 +89,22 @@ export default function Dashboard() {
   useEffect(() => {
     async function load() {
       try {
-        const [freeRes, premiumRes, statusRes] = await Promise.all([
+        const [freeRes, premiumRes, statusRes] = await Promise.allSettled([
           getPackages(0, 50, "free"),
           getPackages(0, 50, "premium"),
           getPipelineStatus(),
         ]);
-        setFreePackages(freeRes.packages || freeRes.items || []);
-        setPremiumPackages(premiumRes.packages || premiumRes.items || []);
-        setStatus(statusRes);
+        if (freeRes.status === "fulfilled") {
+          const data = freeRes.value as { packages?: Package[]; items?: Package[] };
+          setFreePackages(data?.packages || data?.items || []);
+        }
+        if (premiumRes.status === "fulfilled") {
+          const data = premiumRes.value as { packages?: Package[]; items?: Package[] };
+          setPremiumPackages(data?.packages || data?.items || []);
+        }
+        if (statusRes.status === "fulfilled") {
+          setStatus(statusRes.value as PipelineStatus);
+        }
       } catch {
         setError("Impossible de se connecter au pipeline.");
       } finally {
@@ -138,7 +146,7 @@ export default function Dashboard() {
               <div className="text-xs text-gray-400">Baselines</div>
             </div>
             <div>
-              <div className="text-2xl font-bold">{status.recent_scrapes.length}</div>
+              <div className="text-2xl font-bold">{(status.recent_scrapes || []).length}</div>
               <div className="text-xs text-gray-400">Scrapes récents</div>
             </div>
             <div className="ml-auto flex items-center gap-1.5">
