@@ -74,11 +74,12 @@ def build_packages(
         flight_discount = (flight_baseline["avg_price"] - flight["price"]) / flight_baseline["avg_price"] * 100 if flight_baseline["avg_price"] > 0 else 0
         acc_discount = (acc_baseline["avg_price"] - acc["total_price"]) / acc_baseline["avg_price"] * 100 if acc_baseline["avg_price"] > 0 else 0
 
-        if flight_discount < 40:
-            continue  # Flight must be at least -40% for a package
+        # TEMPORARY: lowered to 5% for testing. Revert to 40/20 after test.
+        if flight_discount < 5:
+            continue
 
-        if acc_discount < 20:
-            continue  # Hotel must be at least -20% for a package
+        if acc_discount < 5:
+            continue
 
         score = compute_score(
             discount_pct=discount_pct,

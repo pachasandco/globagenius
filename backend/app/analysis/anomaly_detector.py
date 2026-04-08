@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 from app.config import settings
 
-Z_SCORE_THRESHOLD = 1.0  # Lowered to capture 20%+ deals (free plan)
-MIN_FREE_DISCOUNT = 20  # Minimum discount for free plan
+# TEMPORARY: lowered to 5% for testing package creation. Revert to 1.0 / 20 after test.
+Z_SCORE_THRESHOLD = 0.3
+MIN_FREE_DISCOUNT = 5
 
 
 @dataclass
