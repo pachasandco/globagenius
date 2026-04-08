@@ -1,9 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getPackages, getPipelineStatus, type Package, type PipelineStatus } from "@/lib/api";
+
+interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  data?: Record<string, unknown>;
+}
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -77,6 +83,10 @@ export default function HomePage() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"premium" | "free">("premium");
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -121,6 +131,37 @@ export default function HomePage() {
     const interval = setInterval(load, 60000);
     return () => clearInterval(interval);
   }, [router]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  async function sendChat(text: string) {
+    if (!text.trim()) return;
+    const userId = localStorage.getItem("gg_user_id") || "anonymous";
+    setChatMessages(prev => [...prev, { role: "user", content: text }]);
+    setChatInput("");
+    setChatLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/planner/${userId}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text }),
+      });
+      const data = await res.json();
+      setChatMessages(prev => [...prev, { role: "assistant", content: data.message || "", data }]);
+    } catch {
+      setChatMessages(prev => [...prev, { role: "assistant", content: "Erreur. Réessayez." }]);
+    } finally {
+      setChatLoading(false);
+    }
+  }
+
+  // Get unique destinations from deals for planner suggestions
+  const detectedDestinations = [...new Set([
+    ...premiumDeals.map(d => d.destination),
+    ...freeDeals.map(d => d.destination),
+  ])].slice(0, 6);
 
   function handleLogout() {
     localStorage.removeItem("gg_user_id");
@@ -251,22 +292,113 @@ export default function HomePage() {
           </div>
         )}
 
+        {/* Planificateur de voyage integre */}
+        <div className="mb-8">
+          <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl mb-4">🗺️ Planificateur de voyage</h2>
+          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+            {/* Chat messages */}
+            <div className="h-[350px] overflow-y-auto p-5 space-y-3">
+              {chatMessages.length === 0 && (
+                <div className="text-center py-8">
+                  <div className="text-3xl mb-3">✈️</div>
+                  <p className="text-sm text-gray-500 mb-4">
+                    Dites-moi votre destination et vos dates, je vous prépare un programme sur mesure.
+                  </p>
+                  {/* Destination suggestions from detected deals */}
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {detectedDestinations.length > 0 ? (
+                      detectedDestinations.map(dest => (
+                        <button key={dest} onClick={() => sendChat(`Je pars à ${dest} 7 jours`)}
+                          className="text-xs bg-cyan-50 text-cyan-700 border border-cyan-100 px-3 py-1.5 rounded-full hover:bg-cyan-100 transition-colors">
+                          {dest}
+                        </button>
+                      ))
+                    ) : (
+                      ["Lisbonne", "Barcelone", "Rome", "Marrakech", "Prague", "Athènes"].map(dest => (
+                        <button key={dest} onClick={() => sendChat(`Je pars à ${dest} 7 jours en mai`)}
+                          className="text-xs bg-cyan-50 text-cyan-700 border border-cyan-100 px-3 py-1.5 rounded-full hover:bg-cyan-100 transition-colors">
+                          {dest}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+              {chatMessages.map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
+                    msg.role === "user" ? "bg-gray-900 text-white" : "bg-gray-50 border border-gray-100"
+                  }`}>
+                    <p className="whitespace-pre-wrap">{msg.content}</p>
+                    {msg.data?.options && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {(msg.data.options as string[]).map(opt => (
+                          <button key={opt} onClick={() => sendChat(opt)} disabled={chatLoading}
+                            className="text-[11px] bg-cyan-50 text-cyan-700 border border-cyan-100 px-2 py-1 rounded-full hover:bg-cyan-100 disabled:opacity-50">
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {msg.data?.type === "planning" && msg.data?.days && (
+                      <div className="mt-3 space-y-2">
+                        <div className="bg-cyan-50 rounded-lg p-2 text-center text-xs font-semibold text-cyan-900">
+                          {msg.data.destination as string} · {msg.data.duration as string} · Budget: {msg.data.estimated_budget as string}
+                        </div>
+                        {(msg.data.days as Array<{day: number; title: string; morning: {activity: string}; afternoon: {activity: string}; evening: {activity: string}}>).map(day => (
+                          <div key={day.day} className="border border-gray-100 rounded-lg p-2 text-xs">
+                            <div className="font-semibold mb-1">Jour {day.day} — {day.title}</div>
+                            <div className="text-gray-500">🌅 {day.morning?.activity} · ☀️ {day.afternoon?.activity} · 🌙 {day.evening?.activity}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {chatLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-gray-50 border border-gray-100 rounded-2xl px-4 py-2.5">
+                    <div className="flex gap-1">
+                      <div className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" />
+                      <div className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: "150ms" }} />
+                      <div className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: "300ms" }} />
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div ref={chatEndRef} />
+            </div>
+            {/* Input */}
+            <div className="border-t border-gray-100 p-3 flex gap-2">
+              <input
+                type="text"
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && !chatLoading && sendChat(chatInput)}
+                placeholder="Ex: Je pars à Lisbonne 5 jours en mai..."
+                className="flex-1 px-3 py-2 rounded-xl border border-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none text-sm"
+                disabled={chatLoading}
+              />
+              <button onClick={() => sendChat(chatInput)} disabled={chatLoading || !chatInput.trim()}
+                className="bg-gray-900 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-black disabled:opacity-50 shrink-0">
+                Envoyer
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Quick links */}
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Link href="/planner" className="bg-white rounded-2xl border border-gray-100 p-6 hover:shadow-md transition-shadow group">
-            <div className="text-2xl mb-2">🗺️</div>
-            <h3 className="font-semibold mb-1 group-hover:text-cyan-600 transition-colors">Planificateur de voyage</h3>
-            <p className="text-sm text-gray-400">Notre IA vous prépare un programme jour par jour personnalisé.</p>
+        <div className="grid sm:grid-cols-2 gap-4">
+          <Link href="/articles" className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md transition-shadow group">
+            <div className="text-xl mb-1">✍️</div>
+            <h3 className="font-semibold text-sm group-hover:text-cyan-600 transition-colors">Guides de destinations</h3>
+            <p className="text-xs text-gray-400">Articles complets rédigés par IA.</p>
           </Link>
-          <Link href="/articles" className="bg-white rounded-2xl border border-gray-100 p-6 hover:shadow-md transition-shadow group">
-            <div className="text-2xl mb-2">✍️</div>
-            <h3 className="font-semibold mb-1 group-hover:text-cyan-600 transition-colors">Guides de destinations</h3>
-            <p className="text-sm text-gray-400">Des articles complets rédigés par IA pour préparer votre voyage.</p>
-          </Link>
-          <Link href="/onboarding" className="bg-white rounded-2xl border border-gray-100 p-6 hover:shadow-md transition-shadow group">
-            <div className="text-2xl mb-2">⚙️</div>
-            <h3 className="font-semibold mb-1 group-hover:text-cyan-600 transition-colors">Mes préférences</h3>
-            <p className="text-sm text-gray-400">Modifiez vos aéroports, destinations et alertes Telegram.</p>
+          <Link href="/onboarding" className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md transition-shadow group">
+            <div className="text-xl mb-1">⚙️</div>
+            <h3 className="font-semibold text-sm group-hover:text-cyan-600 transition-colors">Mes préférences</h3>
+            <p className="text-xs text-gray-400">Aéroports, destinations, alertes Telegram.</p>
           </Link>
         </div>
       </div>
