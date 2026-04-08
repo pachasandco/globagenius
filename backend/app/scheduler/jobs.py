@@ -20,44 +20,54 @@ logger = logging.getLogger(__name__)
 
 def get_scheduler_jobs() -> list[dict]:
     return [
-        # ── VOLS : 3 scrapes/jour aux creneaux strategiques ──
-        # Mardi-mercredi 2h : promos compagnies publiees lundi soir
-        # Tous les jours 4h : error fares (minuit-6h = window d'erreurs de pricing)
-        # Tous les jours 14h : rattraper les promos du matin
+        # ── VOLS : 6 scrapes/jour — ne rater aucune opportunite ──
+        # 2h : error fares nocturnes (erreurs de pricing non corrigees)
+        # 6h : promos early morning des compagnies
+        # 10h : mises a jour mid-morning
+        # 14h : promos apres-midi
+        # 18h : derniers ajustements de la journee
+        # 22h : changements de prix nocturnes
         {
-            "id": "scrape_flights_early",
+            "id": "scrape_flights_02",
             "func": job_scrape_flights,
             "trigger": "cron",
-            "hour": 4,
+            "hour": 2,
         },
         {
-            "id": "scrape_flights_afternoon",
+            "id": "scrape_flights_06",
+            "func": job_scrape_flights,
+            "trigger": "cron",
+            "hour": 6,
+        },
+        {
+            "id": "scrape_flights_10",
+            "func": job_scrape_flights,
+            "trigger": "cron",
+            "hour": 10,
+        },
+        {
+            "id": "scrape_flights_14",
             "func": job_scrape_flights,
             "trigger": "cron",
             "hour": 14,
         },
         {
-            "id": "scrape_flights_tuesday",
+            "id": "scrape_flights_18",
             "func": job_scrape_flights,
             "trigger": "cron",
-            "day_of_week": "tue",
-            "hour": 2,
-        },
-        # ── HOTELS : 2 scrapes/jour ──
-        # Lundi 3h : meilleurs prix en debut de semaine
-        # Jeudi 3h : capturer les baisses avant le weekend
-        {
-            "id": "scrape_accommodations_monday",
-            "func": job_scrape_accommodations,
-            "trigger": "cron",
-            "day_of_week": "mon",
-            "hour": 3,
+            "hour": 18,
         },
         {
-            "id": "scrape_accommodations_thursday",
+            "id": "scrape_flights_22",
+            "func": job_scrape_flights,
+            "trigger": "cron",
+            "hour": 22,
+        },
+        # ── HOTELS : 1 scrape/jour a 3h ──
+        {
+            "id": "scrape_accommodations_daily",
             "func": job_scrape_accommodations,
             "trigger": "cron",
-            "day_of_week": "thu",
             "hour": 3,
         },
         # ── BASELINES & MAINTENANCE ──
