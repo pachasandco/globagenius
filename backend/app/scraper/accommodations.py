@@ -122,21 +122,18 @@ def _scrape_city_apify(city: str, check_in: str, check_out: str) -> list[dict]:
 
 
 async def scrape_accommodations_for_city(city: str, check_in: str, check_out: str) -> list[dict]:
-    """Scrape hotels: Apify primary (reliable), Playwright as future option."""
-    # Primary: Apify (reliable)
-    hotels = _scrape_city_apify(city, check_in, check_out)
-    if hotels:
-        return hotels
-
-    # Fallback: Playwright (experimental)
+    """Scrape hotels: Playwright primary (free), Apify fallback (paid)."""
+    # Primary: Playwright (free)
     try:
         hotels = await _scrape_city_playwright(city, check_in, check_out)
         if hotels:
             return hotels
+        logger.info(f"Playwright returned 0 hotels for {city}, trying Apify")
     except Exception as e:
-        logger.warning(f"Playwright fallback failed for {city}: {e}")
+        logger.warning(f"Playwright failed for {city}: {e}")
 
-    return []
+    # Fallback: Apify (paid)
+    return _scrape_city_apify(city, check_in, check_out)
 
 
 async def scrape_accommodations_for_destinations(destinations: set[str]) -> tuple[list[dict], int]:
