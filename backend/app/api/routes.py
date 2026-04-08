@@ -71,6 +71,59 @@ def status():
     }
 
 
+@router.get("/api/debug/data")
+def debug_data():
+    """Debug endpoint: show sample data from each table."""
+    if not db:
+        return {"error": "no db"}
+
+    flights = db.table("raw_flights").select("origin, destination, departure_date, return_date, price, source").order("scraped_at", desc=True).limit(5).execute()
+    accommodations = db.table("raw_accommodations").select("city, name, total_price, rating, check_in, check_out, source").order("scraped_at", desc=True).limit(5).execute()
+    baselines = db.table("price_baselines").select("route_key, type, avg_price, std_dev, sample_count").limit(10).execute()
+
+    # Check if any flight prices are below baseline
+    diagnosis = []
+    for f in (flights.data or []):
+        route_key_1m = f"{f['origin']}-{f['destination']}-1m"
+        route_key_3m = f"{f['origin']}-{f['destination']}-3m"
+        bl = db.table("price_baselines").select("*").eq("route_key", route_key_1m).execute()
+        if not bl.data:
+            bl = db.table("price_baselines").select("*").eq("route_key", route_key_3m).execute()
+        if bl.data:
+            avg = bl.data[0]["avg_price"]
+            std = bl.data[0]["std_dev"]
+            price = f["price"]
+            discount = round((avg - price) / avg * 100, 1) if avg > 0 else 0
+            z = round((avg - price) / std, 2) if std > 0 else 0
+            diagnosis.append({
+                "route": f"{f['origin']}→{f['destination']}",
+                "price": price,
+                "baseline_avg": avg,
+                "baseline_std": std,
+                "discount_pct": discount,
+                "z_score": z,
+                "would_qualify": discount >= 20 and z >= 1.0,
+            })
+
+    # Check date matching between flights and accommodations
+    flight_dates = set()
+    for f in (flights.data or []):
+        flight_dates.add((f["destination"], f["departure_date"], f["return_date"]))
+
+    acc_dates = set()
+    for a in (accommodations.data or []):
+        acc_dates.add((a["city"], a["check_in"], a["check_out"]))
+
+    return {
+        "flights_sample": flights.data or [],
+        "accommodations_sample": accommodations.data or [],
+        "baselines_sample": baselines.data or [],
+        "price_diagnosis": diagnosis,
+        "flight_date_keys": [f"{d[0]} {d[1]}→{d[2]}" for d in list(flight_dates)[:10]],
+        "accommodation_date_keys": [f"{d[0]} {d[1]}→{d[2]}" for d in list(acc_dates)[:10]],
+    }
+
+
 @router.get("/api/packages")
 def list_packages(min_score: int = 0, limit: int = 20, plan: str = "free"):
     """List packages. plan=free returns 20-39% deals, plan=premium returns 40%+ deals."""
