@@ -22,7 +22,7 @@ export default function LoginPage() {
       localStorage.setItem("gg_user_id", res.user_id);
       localStorage.setItem("gg_email", res.email);
       localStorage.setItem("gg_token", res.token);
-      router.push("/");
+      router.push("/home");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Erreur de connexion");
     } finally {

@@ -1,10 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { getPackages, getPipelineStatus, type Package, type PipelineStatus } from "@/lib/api";
 
 /* ─── DATA ─── */
 const deals = [
@@ -128,82 +125,8 @@ const websiteSchema = {
   },
 };
 
-/* ─── LIVE DEAL CARD (for logged-in users) ─── */
-function LiveDealCard({ pkg }: { pkg: Package }) {
-  const nights = Math.round(
-    (new Date(pkg.return_date).getTime() - new Date(pkg.departure_date).getTime()) / 86400000
-  );
-  const dep = new Date(pkg.departure_date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
-  const ret = new Date(pkg.return_date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
-
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
-      <div className="bg-gray-900 px-4 py-2.5 flex items-center justify-between">
-        <div>
-          <div className="text-white text-sm font-semibold">{pkg.origin} → {pkg.destination}</div>
-          <div className="text-gray-400 text-[11px]">{dep} – {ret} · {nights} nuits</div>
-        </div>
-        <div className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-          -{Math.round(pkg.discount_pct)}%
-        </div>
-      </div>
-      <div className="p-4">
-        {pkg.ai_description && <p className="text-sm text-gray-500 italic mb-2">{pkg.ai_description}</p>}
-        <div className="flex items-baseline gap-2">
-          <span className="text-xl font-bold">{Math.round(pkg.total_price)} €</span>
-          <span className="text-sm text-gray-300 line-through">{Math.round(pkg.baseline_total)} €</span>
-          <span className="text-xs text-gray-400">vol + hôtel</span>
-        </div>
-        {pkg.ai_tip && <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-1.5 text-[11px] text-amber-800 mt-2">💡 {pkg.ai_tip}</div>}
-      </div>
-    </div>
-  );
-}
-
 /* ─── PAGE ─── */
 export default function Landing() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [email, setEmail] = useState("");
-  const [liveDeals, setLiveDeals] = useState<Package[]>([]);
-  const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus | null>(null);
-  const router = useRouter();
-
-  useEffect(() => {
-    const userId = localStorage.getItem("gg_user_id");
-    const userEmail = localStorage.getItem("gg_email");
-    if (userId) {
-      setIsLoggedIn(true);
-      setEmail(userEmail || "");
-      // Load live deals for logged-in users
-      Promise.allSettled([
-        getPackages(0, 20, "premium"),
-        getPackages(0, 20, "free"),
-        getPipelineStatus(),
-      ]).then(([premRes, freeRes, statusRes]) => {
-        const allDeals: Package[] = [];
-        if (premRes.status === "fulfilled") {
-          const d = premRes.value as { packages?: Package[]; items?: Package[] };
-          allDeals.push(...(d?.packages || d?.items || []));
-        }
-        if (freeRes.status === "fulfilled") {
-          const d = freeRes.value as { packages?: Package[]; items?: Package[] };
-          allDeals.push(...(d?.packages || d?.items || []));
-        }
-        setLiveDeals(allDeals);
-        if (statusRes.status === "fulfilled") setPipelineStatus(statusRes.value as PipelineStatus);
-      });
-    }
-  }, []);
-
-  function handleLogout() {
-    localStorage.removeItem("gg_user_id");
-    localStorage.removeItem("gg_email");
-    localStorage.removeItem("gg_token");
-    setIsLoggedIn(false);
-    setEmail("");
-    setLiveDeals([]);
-  }
-
   return (
     <div className="min-h-screen bg-white">
 
@@ -225,26 +148,12 @@ export default function Landing() {
             <a href="#faq" className="hover:text-gray-900 transition-colors">FAQ</a>
           </div>
           <div className="flex items-center gap-3">
-            {isLoggedIn ? (
-              <>
-                <Link href="/planner" className="text-sm text-gray-500 hover:text-gray-900 transition-colors font-medium px-3 py-2">
-                  Planificateur
-                </Link>
-                <span className="text-sm text-gray-400">{email}</span>
-                <button onClick={handleLogout} className="text-sm text-gray-400 hover:text-red-500 transition-colors px-2 py-1">
-                  Déconnexion
-                </button>
-              </>
-            ) : (
-              <>
-                <Link href="/login" className="text-sm text-gray-500 hover:text-gray-900 transition-colors font-medium px-3 py-2">
-                  Connexion
-                </Link>
-                <Link href="/signup" className="text-sm font-semibold bg-[#222] text-white px-5 py-2.5 rounded-full hover:bg-black transition-colors">
-                  S'inscrire
-                </Link>
-              </>
-            )}
+            <Link href="/login" className="text-sm text-gray-500 hover:text-gray-900 transition-colors font-medium px-3 py-2">
+              Connexion
+            </Link>
+            <Link href="/signup" className="text-sm font-semibold bg-[#222] text-white px-5 py-2.5 rounded-full hover:bg-black transition-colors">
+              S'inscrire
+            </Link>}
           </div>
         </div>
       </nav>
@@ -300,58 +209,6 @@ export default function Landing() {
           </motion.div>
         </div>
       </section>
-
-      {/* ── LIVE DEALS (logged-in users) ── */}
-      {isLoggedIn && (
-        <section className="py-10 bg-cyan-50/50 border-y border-cyan-100">
-          <div className="max-w-6xl mx-auto px-5">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="font-[family-name:var(--font-dm-serif)] text-[22px]">
-                  Vos deals en direct
-                </h2>
-                <div className="flex items-center gap-3 mt-1">
-                  {pipelineStatus && (
-                    <>
-                      <span className="flex items-center gap-1.5 text-xs text-gray-400">
-                        <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                        Pipeline actif
-                      </span>
-                      <span className="text-xs text-gray-300">·</span>
-                      <span className="text-xs text-gray-400">{pipelineStatus.active_baselines} baselines</span>
-                    </>
-                  )}
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <Link href="/planner" className="text-sm font-medium text-cyan-600 hover:underline">
-                  Planificateur →
-                </Link>
-                <Link href="/articles" className="text-sm font-medium text-cyan-600 hover:underline ml-4">
-                  Articles →
-                </Link>
-              </div>
-            </div>
-
-            {liveDeals.length > 0 ? (
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {liveDeals.slice(0, 6).map((pkg) => (
-                  <LiveDealCard key={pkg.id} pkg={pkg} />
-                ))}
-              </div>
-            ) : (
-              <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center">
-                <div className="text-3xl mb-3">🔍</div>
-                <h3 className="font-semibold mb-1">Analyse en cours</h3>
-                <p className="text-sm text-gray-400 max-w-md mx-auto">
-                  Notre pipeline scrape les prix 6 fois par jour. Les premiers deals apparaîtront
-                  dès qu'une anomalie de prix sera détectée. Vous serez alerté sur Telegram.
-                </p>
-              </div>
-            )}
-          </div>
-        </section>
-      )}
 
       {/* ── SOCIAL PROOF ── */}
       <section className="border-y border-gray-100 bg-gray-50/50">
