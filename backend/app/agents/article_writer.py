@@ -52,10 +52,14 @@ def generate_article(destination: str, country: str) -> dict | None:
                 text = text[4:]
             text = text.strip()
 
-        article = json.loads(text)
+        raw = json.loads(text)
+
+        # Normalize keys to lowercase (LLM sometimes returns TITLE, SUBTITLE, etc.)
+        article = {k.lower(): v for k, v in raw.items()}
 
         # Add Unsplash photo URLs
-        article["cover_photo"] = f"https://images.unsplash.com/photo-{_get_unsplash_query(article.get('photo_query', destination))}?w=1200&q=80"
+        photo_query = article.get("photo_query", destination)
+        article["cover_photo"] = f"https://images.unsplash.com/photo-{_get_unsplash_query(photo_query)}?w=1200&q=80"
         for section in article.get("sections", []):
             query = section.get("photo_query", destination)
             section["photo_url"] = f"https://source.unsplash.com/800x500/?{query.replace(' ', '+')}"
