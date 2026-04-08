@@ -1,9 +1,8 @@
 from dataclasses import dataclass
 from app.config import settings
 
-# TEMPORARY: lowered to 5% for testing package creation. Revert to 1.0 / 20 after test.
-Z_SCORE_THRESHOLD = 0.3
-MIN_FREE_DISCOUNT = 5
+Z_SCORE_THRESHOLD = 1.0
+MIN_FREE_DISCOUNT = 20
 
 
 @dataclass
