@@ -166,15 +166,21 @@ def _scrape_route_apify(origin: str, destination: str, dep_date: str, ret_date: 
 
 
 async def scrape_flights_for_route(origin: str, destination: str, dep_date: str, ret_date: str) -> tuple[list[dict], dict | None]:
-    """Scrape flights: try Playwright first, fallback to Apify."""
-    # Primary: Playwright (free)
-    flights, insights = await _scrape_route_playwright(origin, destination, dep_date, ret_date)
+    """Scrape flights: Apify primary (reliable), Playwright as future option."""
+    # Primary: Apify (reliable, tested, produces results)
+    flights, insights = _scrape_route_apify(origin, destination, dep_date, ret_date)
     if flights:
         return flights, insights
 
-    # Fallback: Apify (paid)
-    logger.info(f"Playwright returned no results, falling back to Apify for {origin}→{destination}")
-    return _scrape_route_apify(origin, destination, dep_date, ret_date)
+    # Fallback: Playwright (experimental — needs Chromium on server)
+    try:
+        flights, insights = await _scrape_route_playwright(origin, destination, dep_date, ret_date)
+        if flights:
+            return flights, insights
+    except Exception as e:
+        logger.warning(f"Playwright fallback failed: {e}")
+
+    return [], None
 
 
 async def scrape_flights_for_airport(origin: str) -> tuple[list[dict], list[dict]]:
