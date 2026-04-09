@@ -5,10 +5,28 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getPackages, getPipelineStatus, type Package, type PipelineStatus } from "@/lib/api";
 
+interface PlanDay {
+  day: number;
+  title: string;
+  morning?: { activity: string };
+  afternoon?: { activity: string };
+  evening?: { activity: string };
+}
+
+interface ChatData {
+  type?: string;
+  message?: string;
+  options?: string[];
+  days?: PlanDay[];
+  destination?: string;
+  duration?: string;
+  estimated_budget?: string;
+}
+
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
-  data?: Record<string, unknown>;
+  data?: ChatData;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -330,9 +348,9 @@ export default function HomePage() {
                     msg.role === "user" ? "bg-gray-900 text-white" : "bg-gray-50 border border-gray-100"
                   }`}>
                     <p className="whitespace-pre-wrap">{msg.content}</p>
-                    {msg.data?.options && (
+                    {msg.data?.options && msg.data.options.length > 0 && (
                       <div className="flex flex-wrap gap-1.5 mt-2">
-                        {(msg.data.options as string[]).map(opt => (
+                        {msg.data.options.map(opt => (
                           <button key={opt} onClick={() => sendChat(opt)} disabled={chatLoading}
                             className="text-[11px] bg-cyan-50 text-cyan-700 border border-cyan-100 px-2 py-1 rounded-full hover:bg-cyan-100 disabled:opacity-50">
                             {opt}
@@ -343,9 +361,9 @@ export default function HomePage() {
                     {msg.data?.type === "planning" && msg.data?.days && (
                       <div className="mt-3 space-y-2">
                         <div className="bg-cyan-50 rounded-lg p-2 text-center text-xs font-semibold text-cyan-900">
-                          {msg.data.destination as string} · {msg.data.duration as string} · Budget: {msg.data.estimated_budget as string}
+                          {msg.data.destination} · {msg.data.duration} · Budget: {msg.data.estimated_budget}
                         </div>
-                        {(msg.data.days as Array<{day: number; title: string; morning: {activity: string}; afternoon: {activity: string}; evening: {activity: string}}>).map(day => (
+                        {msg.data.days.map(day => (
                           <div key={day.day} className="border border-gray-100 rounded-lg p-2 text-xs">
                             <div className="font-semibold mb-1">Jour {day.day} — {day.title}</div>
                             <div className="text-gray-500">🌅 {day.morning?.activity} · ☀️ {day.afternoon?.activity} · 🌙 {day.evening?.activity}</div>
