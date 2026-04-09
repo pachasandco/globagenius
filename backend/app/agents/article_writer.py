@@ -88,12 +88,18 @@ def generate_article(destination: str, country: str) -> dict | None:
         # Normalize keys to lowercase (LLM sometimes returns TITLE, SUBTITLE, etc.)
         article = {k.lower(): v for k, v in raw.items()}
 
-        # Add Unsplash photo URLs
+        # Add photo URLs
         photo_query = article.get("photo_query", destination)
         article["cover_photo"] = f"https://images.unsplash.com/photo-{_get_unsplash_query(photo_query)}?w=1200&q=80"
-        for section in article.get("sections", []):
-            query = section.get("photo_query", destination)
-            section["photo_url"] = f"https://source.unsplash.com/800x500/?{query.replace(' ', '+')}"
+
+        # Section photos: use curated photo IDs per topic
+        section_photos = _get_section_photos(destination)
+        for i, section in enumerate(article.get("sections", [])):
+            if i < len(section_photos):
+                section["photo_url"] = f"https://images.unsplash.com/photo-{section_photos[i]}?w=800&q=80"
+            else:
+                query = section.get("photo_query", destination).replace(" ", "+")
+                section["photo_url"] = f"https://images.unsplash.com/photo-{_get_unsplash_query(query)}?w=800&q=80"
 
         article["destination"] = destination
         article["country"] = country
@@ -107,6 +113,43 @@ def generate_article(destination: str, country: str) -> dict | None:
     except Exception as e:
         logger.error(f"Article generation failed: {e}")
         return None
+
+
+def _get_section_photos(destination: str) -> list[str]:
+    """Return 4 curated Unsplash photo IDs for article sections per destination."""
+    SECTION_PHOTOS = {
+        "marrakech": [
+            "1597212618440-806262de4f6b",  # medina streets
+            "1509305717900-84f40e786529",  # moroccan food
+            "1539020140153-e479b8c22e70",  # jardin majorelle
+            "1548018560-1f14c4c8a7d4",  # souk
+        ],
+        "lisbonne": [
+            "1585208798174-6cedd86e019a",  # alfama
+            "1544736779-08492ac2ab8d",  # pastel de nata
+            "1555881400-74d7acaacd8b",  # tram 28
+            "1513735718075-a0dbb0a44a37",  # belem
+        ],
+        "barcelone": [
+            "1583422409516-2895a77efded",  # sagrada familia
+            "1515443961218-a51367888e4b",  # tapas
+            "1562883676-8c7feb83f09b",  # park guell
+            "1523531294919-4bcd7c65ef7c",  # la rambla
+        ],
+        "rome": [
+            "1552832230-c0197dd311b5",  # colosseum
+            "1565299624946-b28f40a0ae38",  # pasta
+            "1531572753322-ad063cecc140",  # trastevere
+            "1529260830199-42c24126f198",  # vatican
+        ],
+    }
+    key = destination.lower()
+    return SECTION_PHOTOS.get(key, [
+        "1507525428034-b723cf961d3e",
+        "1504674900247-0877df9cc836",
+        "1476514525535-07fb3b4ae5f1",
+        "1488646953014-85cb44e25828",
+    ])
 
 
 def _get_unsplash_query(query: str) -> str:
