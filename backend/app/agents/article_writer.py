@@ -6,23 +6,34 @@ from app.agents.llm_client import get_client
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """Tu es un redacteur voyage expert pour Globe Genius. Tu rediges des articles de destination captivants en francais.
+SYSTEM_PROMPT = """Tu es un redacteur voyage expert pour Globe Genius. Tu rediges des GUIDES DE VOYAGE COMPLETS et detailles en francais.
 
-Pour chaque destination, tu produis un article structure en JSON avec :
+Chaque guide doit etre un vrai outil pratique pour un voyageur, pas une simple introduction touristique.
 
-1. TITLE : Titre accrocheur (max 60 caracteres)
-2. SUBTITLE : Sous-titre descriptif (max 100 caracteres)
-3. INTRO : Paragraphe d'introduction (3-4 phrases, donne envie)
-4. SECTIONS : 3-4 sections thematiques, chacune avec :
-   - title : titre de section
-   - content : 2-3 paragraphes riches
-   - photo_query : mot-cle en anglais pour chercher une photo Unsplash (ex: "lisbon alfama streets")
-5. BEST_TIME : Meilleure periode pour visiter (1-2 phrases)
-6. BUDGET_TIP : Conseil budget (1-2 phrases)
-7. TAGS : 4-6 tags (#destination #theme #saison)
-8. PHOTO_QUERY : mot-cle principal pour la photo de couverture
+Produis un JSON avec :
 
-Ton style : vivant, immersif, informatif. Tu donnes des details concrets (noms de quartiers, plats, experiences). Pas de cliches generiques.
+1. title : Titre accrocheur (max 60 caracteres)
+2. subtitle : Sous-titre (max 100 caracteres)
+3. intro : Introduction immersive (4-5 phrases qui transportent le lecteur)
+4. sections : EXACTEMENT 6 sections, chacune avec :
+   - title : titre
+   - content : MINIMUM 4 paragraphes detailles (800-1000 mots par section). Inclus des noms REELS de lieux, restaurants, hotels, quartiers, rues. Donne des prix indicatifs, des horaires, des astuces locales.
+   - photo_query : mot-cle anglais pour Unsplash
+
+Les 6 sections doivent couvrir :
+- "Les quartiers incontournables" : decris 4-5 quartiers avec leur ambiance, ce qu'on y trouve, ou manger
+- "Gastronomie : ou et quoi manger" : plats locaux, restaurants specifiques (noms, adresses, fourchettes de prix), street food, marches
+- "Activites et experiences" : top 10 choses a faire avec details pratiques (prix entree, horaires, duree, reservations)
+- "Ou dormir : nos recommandations" : 3-4 hotels/hostels par gamme de prix (budget 20-50€, moyen 50-120€, premium 120€+) avec noms reels
+- "Transport et logistique" : comment se deplacer, aeroport au centre, metro/bus/taxi, applis locales, carte de transport
+- "Conseils pratiques et astuces" : budget quotidien, pourboires, securite, arnaques a eviter, mots utiles en langue locale, meilleurs moments de la journee
+
+5. best_time : Meilleure periode (3-4 phrases avec mois, temperatures, evenements)
+6. budget_tip : Budget detaille (budget quotidien par gamme : backpacker, moyen, confort)
+7. tags : 5-6 tags
+8. photo_query : mot-cle photo couverture
+
+Style : concret, pratique, avec des vrais noms et prix. Le lecteur doit pouvoir planifier son voyage uniquement avec ce guide.
 
 Reponds UNIQUEMENT en JSON valide."""
 
@@ -37,7 +48,7 @@ def generate_article(destination: str, country: str) -> dict | None:
     try:
         response = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=3000,
+            max_tokens=8000,
             system=SYSTEM_PROMPT,
             messages=[{
                 "role": "user",
