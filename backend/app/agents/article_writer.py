@@ -54,6 +54,10 @@ def generate_article(destination: str, country: str) -> dict | None:
             }],
         )
 
+        # Check if response was truncated
+        if response.stop_reason == "max_tokens":
+            logger.warning(f"Article generation hit max_tokens limit for {destination}")
+
         text = response.content[0].text.strip()
         if text.startswith("```"):
             text = text.split("```")[1]
@@ -61,7 +65,25 @@ def generate_article(destination: str, country: str) -> dict | None:
                 text = text[4:]
             text = text.strip()
 
-        raw = json.loads(text)
+        # If truncated JSON, try to fix by closing it
+        if not text.endswith("}"):
+            logger.warning(f"Article JSON appears truncated, attempting repair")
+            # Find last complete section and close the JSON
+            last_brace = text.rfind("}")
+            if last_brace > 0:
+                text = text[:last_brace + 1]
+                # Count open/close braces and brackets
+                open_b = text.count("{") - text.count("}")
+                open_s = text.count("[") - text.count("]")
+                text += "]" * open_s + "}" * open_b
+
+        logger.info(f"Article LLM response length: {len(text)} chars, preview: {text[:100]}")
+
+        try:
+            raw = json.loads(text)
+        except json.JSONDecodeError as e:
+            logger.error(f"Article JSON parse failed at position {e.pos}: {e.msg}. Last 200 chars: {text[-200:]}")
+            return None
 
         # Normalize keys to lowercase (LLM sometimes returns TITLE, SUBTITLE, etc.)
         article = {k.lower(): v for k, v in raw.items()}
