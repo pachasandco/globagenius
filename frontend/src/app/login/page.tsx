@@ -31,7 +31,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center px-5">
+    <div className="min-h-screen bg-white flex items-start sm:items-center justify-center px-4 md:px-5 py-8 sm:py-0">
       <div className="w-full max-w-sm">
         <Link href="/" className="flex items-center gap-2 justify-center mb-10">
           <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-500 to-amber-400 flex items-center justify-center text-white font-bold">G</div>

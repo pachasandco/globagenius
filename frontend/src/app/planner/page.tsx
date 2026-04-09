@@ -96,20 +96,20 @@ export default function PlannerPage() {
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Nav */}
       <nav className="sticky top-0 z-50 bg-white border-b border-gray-100">
-        <div className="max-w-4xl mx-auto px-5 h-[64px] flex items-center justify-between">
+        <div className="max-w-4xl mx-auto px-4 md:px-5 h-[64px] flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-amber-400 flex items-center justify-center text-white font-bold text-sm">G</div>
             <span className="font-[family-name:var(--font-dm-serif)] text-[19px]">Globe Genius</span>
           </Link>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-400">Planificateur de voyage</span>
+          <div className="flex items-center gap-2 md:gap-3">
+            <span className="text-sm text-gray-400 hidden sm:block">Planificateur de voyage</span>
             <span className="bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full">PREMIUM</span>
           </div>
         </div>
       </nav>
 
       {/* Chat area */}
-      <div className="flex-1 max-w-4xl w-full mx-auto px-5 py-6 overflow-y-auto">
+      <div className="flex-1 max-w-4xl w-full mx-auto px-4 md:px-5 py-4 md:py-6 overflow-y-auto">
         <div className="space-y-4">
           {messages.map((msg, i) => (
             <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -204,11 +204,11 @@ export default function PlannerPage() {
       </div>
 
       {/* Input */}
-      <div className="sticky bottom-0 bg-white border-t border-gray-100 px-5 py-4">
-        <div className="max-w-4xl mx-auto flex gap-3">
+      <div className="sticky bottom-0 bg-white border-t border-gray-100 px-4 md:px-5 py-3 md:py-4">
+        <div className="max-w-4xl mx-auto flex gap-2 md:gap-3">
           <button
             onClick={resetConversation}
-            className="px-3 py-2.5 rounded-xl border border-gray-200 text-gray-400 text-sm hover:bg-gray-50 transition-colors shrink-0"
+            className="px-2.5 py-2.5 rounded-xl border border-gray-200 text-gray-400 text-sm hover:bg-gray-50 transition-colors shrink-0"
             title="Nouvelle conversation"
           >
             ↻
@@ -218,16 +218,17 @@ export default function PlannerPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !loading && sendMessage(input)}
-            placeholder="Ex: Je pars à Lisbonne 5 jours en mai..."
-            className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none text-sm"
+            placeholder="Ex: Je pars à Lisbonne 5 jours..."
+            className="flex-1 px-3 py-2.5 md:px-4 rounded-xl border border-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none text-sm min-w-0"
             disabled={loading}
           />
           <button
             onClick={() => sendMessage(input)}
             disabled={loading || !input.trim()}
-            className="bg-gray-900 text-white px-5 py-2.5 rounded-xl font-semibold text-sm hover:bg-black transition-colors disabled:opacity-50 shrink-0"
+            className="bg-gray-900 text-white px-3 md:px-5 py-2.5 rounded-xl font-semibold text-sm hover:bg-black transition-colors disabled:opacity-50 shrink-0"
           >
-            Envoyer
+            <span className="hidden sm:inline">Envoyer</span>
+            <span className="sm:hidden">→</span>
           </button>
         </div>
       </div>

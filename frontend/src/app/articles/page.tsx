@@ -34,22 +34,22 @@ export default function ArticlesPage() {
   return (
     <div className="min-h-screen bg-white">
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
-        <div className="max-w-6xl mx-auto px-5 h-[64px] flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-4 md:px-5 h-[64px] flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-amber-400 flex items-center justify-center text-white font-bold text-sm">G</div>
             <span className="font-[family-name:var(--font-dm-serif)] text-[19px]">Globe Genius</span>
           </Link>
-          <div className="flex items-center gap-3">
-            <Link href="/dashboard" className="text-sm text-gray-500 hover:text-gray-900">Dashboard</Link>
-            <Link href="/planner" className="text-sm text-gray-500 hover:text-gray-900">Planificateur</Link>
+          <div className="flex items-center gap-2 md:gap-3">
+            <Link href="/home" className="text-sm text-gray-500 hover:text-gray-900 hidden sm:block">Dashboard</Link>
+            <Link href="/planner" className="text-sm text-gray-500 hover:text-gray-900 hidden sm:block">Planificateur</Link>
           </div>
         </div>
       </nav>
 
-      <div className="max-w-6xl mx-auto px-5 py-16">
+      <div className="max-w-6xl mx-auto px-4 md:px-5 py-10 md:py-16">
         <div className="text-center mb-12">
           <div className="text-xs font-bold text-cyan-600 tracking-widest uppercase mb-2">Guides de voyage</div>
-          <h1 className="font-[family-name:var(--font-dm-serif)] text-[34px] md:text-[42px] mb-3">
+          <h1 className="font-[family-name:var(--font-dm-serif)] text-[26px] md:text-[42px] mb-3">
             Nos destinations
           </h1>
           <p className="text-gray-400 max-w-lg mx-auto">
@@ -69,7 +69,7 @@ export default function ArticlesPage() {
           </div>
         )}
 
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6">
           {articles.map((article) => (
             <Link
               key={article.slug}

@@ -113,7 +113,7 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center px-5">
+    <div className="min-h-screen bg-white flex items-start md:items-center justify-center px-4 md:px-5 py-8 md:py-0">
       <div className="w-full max-w-lg">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 justify-center mb-8">
@@ -245,7 +245,7 @@ export default function OnboardingPage() {
 
             <div className="mb-3">
               <div className="text-xs font-bold text-gray-400 tracking-wider uppercase mb-2">Europe & Maghreb</div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {DESTINATIONS_EUROPE.map((d) => (
                   <button
                     key={d.code}
@@ -265,7 +265,7 @@ export default function OnboardingPage() {
 
             <div className="mb-6">
               <div className="text-xs font-bold text-gray-400 tracking-wider uppercase mb-2">Long-courrier</div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {DESTINATIONS_LONG_COURRIER.map((d) => (
                   <button
                     key={d.code}

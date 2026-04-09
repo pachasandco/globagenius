@@ -136,7 +136,7 @@ export default function Landing() {
 
       {/* ── NAV ── */}
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
-        <div className="max-w-6xl mx-auto px-5 h-[64px] flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-4 md:px-5 h-[64px] flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-amber-400 flex items-center justify-center text-white font-bold text-sm">G</div>
             <span className="font-[family-name:var(--font-dm-serif)] text-[19px]">Globe Genius</span>
@@ -147,11 +147,11 @@ export default function Landing() {
             <a href="#destinations" className="hover:text-gray-900 transition-colors">Destinations</a>
             <a href="#faq" className="hover:text-gray-900 transition-colors">FAQ</a>
           </div>
-          <div className="flex items-center gap-3">
-            <Link href="/login" className="text-sm text-gray-500 hover:text-gray-900 transition-colors font-medium px-3 py-2">
+          <div className="flex items-center gap-2">
+            <Link href="/login" className="text-sm text-gray-500 hover:text-gray-900 transition-colors font-medium px-2.5 py-2 md:px-3">
               Connexion
             </Link>
-            <Link href="/signup" className="text-sm font-semibold bg-[#222] text-white px-5 py-2.5 rounded-full hover:bg-black transition-colors">
+            <Link href="/signup" className="text-sm font-semibold bg-[#222] text-white px-4 py-2 md:px-5 md:py-2.5 rounded-full hover:bg-black transition-colors">
               S'inscrire
             </Link>
           </div>
@@ -170,7 +170,7 @@ export default function Landing() {
           <div className="absolute inset-0 bg-gradient-to-r from-white via-white/95 to-white/40" />
         </div>
 
-        <div className="relative max-w-6xl mx-auto px-5 py-20 md:py-32 lg:py-40">
+        <div className="relative max-w-6xl mx-auto px-4 md:px-5 py-12 md:py-32 lg:py-40">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -182,26 +182,26 @@ export default function Landing() {
               <span className="text-xs font-semibold text-cyan-700">Pipeline actif · 2 340+ vols analysés aujourd'hui</span>
             </div>
 
-            <h1 className="font-[family-name:var(--font-dm-serif)] text-[42px] md:text-[56px] lg:text-[64px] leading-[1.08] tracking-tight mb-5">
+            <h1 className="font-[family-name:var(--font-dm-serif)] text-[28px] md:text-[48px] lg:text-[64px] leading-[1.08] tracking-tight mb-4 md:mb-5">
               Des packages voyage
               <br />
               <span className="text-gradient">à prix cassés.</span>
             </h1>
-            <p className="text-gray-600 text-lg leading-relaxed mb-8">
+            <p className="text-gray-600 text-base md:text-lg leading-relaxed mb-6 md:mb-8">
               Notre IA analyse des milliers de vols et d'hôtels pour vous trouver des packages
               <strong className="text-gray-900"> à -40% minimum</strong> sur le prix du marché.
               Recevez les alertes sur Telegram.
             </p>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <Link
                 href="/signup"
-                className="bg-[#222] text-white font-semibold px-8 py-4 rounded-full hover:bg-black transition-colors text-[15px] shadow-lg shadow-black/10"
+                className="bg-[#222] text-white font-semibold px-6 py-3.5 md:px-8 md:py-4 rounded-full hover:bg-black transition-colors text-[15px] shadow-lg shadow-black/10 text-center"
               >
                 Découvrir les deals →
               </Link>
               <a
                 href="#how"
-                className="text-gray-600 font-medium px-6 py-4 rounded-full border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all text-[15px]"
+                className="text-gray-600 font-medium px-5 py-3.5 md:px-6 md:py-4 rounded-full border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all text-[15px] text-center"
               >
                 Comment ça marche
               </a>
@@ -212,7 +212,7 @@ export default function Landing() {
 
       {/* ── SOCIAL PROOF ── */}
       <section className="border-y border-gray-100 bg-gray-50/50">
-        <div className="max-w-6xl mx-auto px-5 py-8">
+        <div className="max-w-6xl mx-auto px-4 md:px-5 py-6 md:py-8">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             {[
               { val: "2 340+", label: "Vols analysés / jour", icon: "✈️" },
@@ -231,8 +231,8 @@ export default function Landing() {
       </section>
 
       {/* ── DEALS ── */}
-      <section id="deals" className="py-16 md:py-24">
-        <div className="max-w-6xl mx-auto px-5">
+      <section id="deals" className="py-12 md:py-24">
+        <div className="max-w-6xl mx-auto px-4 md:px-5">
           <div className="flex items-end justify-between mb-10">
             <div>
               <motion.div
@@ -252,7 +252,7 @@ export default function Landing() {
             </Link>
           </div>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-7">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-7">
             {deals.map((d, i) => (
               <DealCard key={d.id} deal={d} i={i} />
             ))}
@@ -261,8 +261,8 @@ export default function Landing() {
       </section>
 
       {/* ── HOW IT WORKS ── */}
-      <section id="how" className="py-16 md:py-24 bg-gray-50">
-        <div className="max-w-6xl mx-auto px-5">
+      <section id="how" className="py-12 md:py-24 bg-gray-50">
+        <div className="max-w-6xl mx-auto px-4 md:px-5">
           <div className="text-center mb-14">
             <div className="text-xs font-bold text-cyan-600 tracking-widest uppercase mb-2">Simple & automatique</div>
             <h2 className="font-[family-name:var(--font-dm-serif)] text-[28px] md:text-[36px] mb-3">
@@ -273,7 +273,7 @@ export default function Landing() {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-8">
             {[
               {
                 n: "1",
@@ -330,8 +330,8 @@ export default function Landing() {
       </section>
 
       {/* ── DESTINATIONS ── */}
-      <section id="destinations" className="py-16 md:py-24">
-        <div className="max-w-6xl mx-auto px-5">
+      <section id="destinations" className="py-12 md:py-24">
+        <div className="max-w-6xl mx-auto px-4 md:px-5">
           <div className="text-center mb-12">
             <div className="text-xs font-bold text-cyan-600 tracking-widest uppercase mb-2">Europe, Maghreb & plus</div>
             <h2 className="font-[family-name:var(--font-dm-serif)] text-[28px] md:text-[36px] mb-3">
@@ -366,7 +366,7 @@ export default function Landing() {
 
       {/* ── AIRPORTS ── */}
       <section className="py-12 bg-gray-50">
-        <div className="max-w-6xl mx-auto px-5 text-center">
+        <div className="max-w-6xl mx-auto px-4 md:px-5 text-center">
           <h3 className="font-[family-name:var(--font-dm-serif)] text-[22px] mb-4">Départs couverts</h3>
           <div className="flex flex-wrap justify-center gap-2">
             {airports.map((a) => (
@@ -380,8 +380,8 @@ export default function Landing() {
 
       {/* ── TELEGRAM PREVIEW ── */}
       <section className="py-16 md:py-24">
-        <div className="max-w-6xl mx-auto px-5">
-          <div className="grid md:grid-cols-2 gap-12 items-center">
+        <div className="max-w-6xl mx-auto px-4 md:px-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 items-center">
             <div>
               <div className="text-xs font-bold text-cyan-600 tracking-widest uppercase mb-2">Alertes intelligentes</div>
               <h2 className="font-[family-name:var(--font-dm-serif)] text-[28px] md:text-[34px] mb-4">
@@ -444,8 +444,8 @@ export default function Landing() {
       </section>
 
       {/* ── FAQ ── */}
-      <section id="faq" className="py-16 md:py-24 bg-gray-50">
-        <div className="max-w-2xl mx-auto px-5">
+      <section id="faq" className="py-12 md:py-24 bg-gray-50">
+        <div className="max-w-2xl mx-auto px-4 md:px-5">
           <div className="text-center mb-10">
             <h2 className="font-[family-name:var(--font-dm-serif)] text-[28px] md:text-[34px] mb-3">
               Questions fréquentes
@@ -460,8 +460,8 @@ export default function Landing() {
       </section>
 
       {/* ── CTA ── */}
-      <section className="py-16 md:py-24">
-        <div className="max-w-6xl mx-auto px-5">
+      <section className="py-12 md:py-24">
+        <div className="max-w-6xl mx-auto px-4 md:px-5">
           <div className="relative rounded-3xl overflow-hidden">
             <img
               src="https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=1920&q=80"
@@ -469,16 +469,16 @@ export default function Landing() {
               className="absolute inset-0 w-full h-full object-cover"
             />
             <div className="absolute inset-0 bg-black/60" />
-            <div className="relative px-8 py-16 md:px-16 md:py-24 text-center">
-              <h2 className="font-[family-name:var(--font-dm-serif)] text-white text-[28px] md:text-[42px] mb-4">
+            <div className="relative px-5 py-12 md:px-16 md:py-24 text-center">
+              <h2 className="font-[family-name:var(--font-dm-serif)] text-white text-[24px] md:text-[42px] mb-3 md:mb-4">
                 Prêt à voyager malin ?
               </h2>
-              <p className="text-white/60 mb-8 max-w-md mx-auto">
+              <p className="text-white/60 mb-6 md:mb-8 max-w-md mx-auto text-sm md:text-base">
                 Inscrivez-vous gratuitement et recevez les meilleurs deals enrichis par IA directement sur Telegram.
               </p>
               <Link
                 href="/signup"
-                className="inline-flex items-center gap-2 bg-white text-gray-900 font-semibold px-8 py-4 rounded-full hover:bg-gray-100 transition-colors text-[15px] shadow-lg"
+                className="inline-flex items-center gap-2 bg-white text-gray-900 font-semibold px-6 py-3.5 md:px-8 md:py-4 rounded-full hover:bg-gray-100 transition-colors text-[14px] md:text-[15px] shadow-lg"
               >
                 Créer mon compte gratuitement →
               </Link>
@@ -489,7 +489,7 @@ export default function Landing() {
 
       {/* ── FOOTER ── */}
       <footer className="border-t border-gray-100 py-10">
-        <div className="max-w-6xl mx-auto px-5">
+        <div className="max-w-6xl mx-auto px-4 md:px-5">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div>
               <div className="flex items-center gap-2 mb-2">

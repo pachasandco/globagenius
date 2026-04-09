@@ -194,7 +194,7 @@ export default function HomePage() {
     <div className="min-h-screen bg-gray-50">
       {/* Nav */}
       <nav className="sticky top-0 z-50 bg-white border-b border-gray-100">
-        <div className="max-w-6xl mx-auto px-5 h-[64px] flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-4 md:px-5 h-[64px] flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-amber-400 flex items-center justify-center text-white font-bold text-sm">G</div>
             <span className="font-[family-name:var(--font-dm-serif)] text-[19px]">Globe Genius</span>
@@ -204,8 +204,8 @@ export default function HomePage() {
             <Link href="/articles" className="hover:text-gray-900 transition-colors">Articles</Link>
             <Link href="/planner" className="hover:text-gray-900 transition-colors">Planificateur</Link>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-400 hidden sm:block">{email}</span>
+          <div className="flex items-center gap-2 md:gap-3">
+            <span className="text-sm text-gray-400 hidden md:block">{email}</span>
             <button onClick={handleLogout} className="text-sm text-gray-400 hover:text-red-500 transition-colors">
               Déconnexion
             </button>
@@ -213,10 +213,10 @@ export default function HomePage() {
         </div>
       </nav>
 
-      <div className="max-w-6xl mx-auto px-5 py-8">
+      <div className="max-w-6xl mx-auto px-4 md:px-5 py-6 md:py-8">
         {/* Status bar */}
         {status && (
-          <div className="flex flex-wrap gap-6 mb-6 p-5 bg-white rounded-2xl border border-gray-100">
+          <div className="grid grid-cols-2 md:flex md:flex-wrap gap-4 md:gap-6 mb-6 p-4 md:p-5 bg-white rounded-2xl border border-gray-100">
             <div>
               <div className="text-2xl font-bold">{premiumDeals.length + freeDeals.length}</div>
               <div className="text-xs text-gray-400">Deals actifs</div>
@@ -229,7 +229,7 @@ export default function HomePage() {
               <div className="text-2xl font-bold">{(status.recent_scrapes || []).length}</div>
               <div className="text-xs text-gray-400">Scrapes récents</div>
             </div>
-            <div className="ml-auto flex items-center gap-1.5">
+            <div className="md:ml-auto flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
               <span className="text-xs text-gray-400">Pipeline actif · 6x/jour</span>
             </div>
@@ -238,22 +238,22 @@ export default function HomePage() {
 
         {/* Deals section */}
         <div className="mb-8">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
             <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl">Vos deals</h2>
-            <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
+            <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1 self-start sm:self-auto">
               <button
                 onClick={() => setActiveTab("premium")}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${activeTab === "premium" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"}`}
+                className={`px-3 py-2 rounded-lg text-xs md:text-sm font-semibold transition-all ${activeTab === "premium" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"}`}
               >
                 ⭐ Premium -{">"}40%
-                {premiumDeals.length > 0 && <span className="ml-1.5 bg-amber-100 text-amber-700 text-xs px-1.5 py-0.5 rounded-full">{premiumDeals.length}</span>}
+                {premiumDeals.length > 0 && <span className="ml-1 bg-amber-100 text-amber-700 text-[10px] md:text-xs px-1.5 py-0.5 rounded-full">{premiumDeals.length}</span>}
               </button>
               <button
                 onClick={() => setActiveTab("free")}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${activeTab === "free" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"}`}
+                className={`px-3 py-2 rounded-lg text-xs md:text-sm font-semibold transition-all ${activeTab === "free" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"}`}
               >
                 🆓 Gratuit -20 à -39%
-                {freeDeals.length > 0 && <span className="ml-1.5 bg-gray-200 text-gray-600 text-xs px-1.5 py-0.5 rounded-full">{freeDeals.length}</span>}
+                {freeDeals.length > 0 && <span className="ml-1 bg-gray-200 text-gray-600 text-[10px] md:text-xs px-1.5 py-0.5 rounded-full">{freeDeals.length}</span>}
               </button>
             </div>
           </div>
@@ -275,7 +275,7 @@ export default function HomePage() {
           )}
 
           {!loading && deals.length > 0 && (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
               {deals.map((pkg) => (
                 <DealCard key={pkg.id} pkg={pkg} />
               ))}
@@ -292,7 +292,7 @@ export default function HomePage() {
                 Tout voir →
               </Link>
             </div>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {articles.slice(0, 4).map((article) => (
                 <Link key={article.slug} href={`/articles/${article.slug}`} className="group">
                   <div className="relative aspect-[4/3] rounded-xl overflow-hidden mb-2">
@@ -315,7 +315,7 @@ export default function HomePage() {
           <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl mb-4">🗺️ Planificateur de voyage</h2>
           <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
             {/* Chat messages */}
-            <div className="h-[350px] overflow-y-auto p-5 space-y-3">
+            <div className="h-[300px] md:h-[350px] overflow-y-auto p-4 md:p-5 space-y-3">
               {chatMessages.length === 0 && (
                 <div className="text-center py-8">
                   <div className="text-3xl mb-3">✈️</div>

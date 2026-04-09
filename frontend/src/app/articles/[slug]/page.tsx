@@ -65,35 +65,35 @@ export default function ArticlePage() {
     <div className="min-h-screen bg-white">
       {/* Nav */}
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
-        <div className="max-w-4xl mx-auto px-5 h-[64px] flex items-center justify-between">
+        <div className="max-w-4xl mx-auto px-4 md:px-5 h-[64px] flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-amber-400 flex items-center justify-center text-white font-bold text-sm">G</div>
             <span className="font-[family-name:var(--font-dm-serif)] text-[19px]">Globe Genius</span>
           </Link>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-3">
             <Link href="/articles" className="text-sm text-gray-500 hover:text-gray-900">← Articles</Link>
-            <Link href="/home" className="text-sm text-gray-500 hover:text-gray-900">Dashboard</Link>
+            <Link href="/home" className="text-sm text-gray-500 hover:text-gray-900 hidden sm:block">Dashboard</Link>
           </div>
         </div>
       </nav>
 
       {/* Hero */}
-      <div className="relative h-[40vh] md:h-[50vh]">
+      <div className="relative h-[30vh] md:h-[50vh]">
         <img src={article.cover_photo} alt={article.destination} className="w-full h-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
         <div className="absolute bottom-8 left-0 right-0">
           <div className="max-w-4xl mx-auto px-5">
             <div className="text-white/70 text-sm mb-2">{article.country}</div>
-            <h1 className="font-[family-name:var(--font-dm-serif)] text-3xl md:text-5xl text-white mb-2">{article.title}</h1>
-            <p className="text-white/80 text-lg">{article.subtitle}</p>
+            <h1 className="font-[family-name:var(--font-dm-serif)] text-2xl md:text-5xl text-white mb-1.5 md:mb-2">{article.title}</h1>
+            <p className="text-white/80 text-sm md:text-lg line-clamp-2 md:line-clamp-none">{article.subtitle}</p>
           </div>
         </div>
       </div>
 
       {/* Content */}
-      <div className="max-w-4xl mx-auto px-5 py-10">
+      <div className="max-w-4xl mx-auto px-4 md:px-5 py-8 md:py-10">
         {/* Intro */}
-        <p className="text-lg text-gray-600 leading-relaxed mb-10">{article.intro}</p>
+        <p className="text-base md:text-lg text-gray-600 leading-relaxed mb-8 md:mb-10">{article.intro}</p>
 
         {/* Tags */}
         {article.tags && article.tags.length > 0 && (
@@ -149,7 +149,7 @@ export default function ArticlePage() {
 
       {/* Footer */}
       <footer className="border-t border-gray-100 py-6">
-        <div className="max-w-4xl mx-auto px-5 text-center text-xs text-gray-300">
+        <div className="max-w-4xl mx-auto px-4 md:px-5 text-center text-xs text-gray-300">
           Globe Genius © 2026
         </div>
       </footer>
