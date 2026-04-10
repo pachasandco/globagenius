@@ -17,6 +17,15 @@ def format_deal_alert(package: dict, flight: dict, accommodation: dict) -> str:
     origin_city = IATA_TO_CITY.get(package["origin"], package["origin"])
     dest_city = IATA_TO_CITY.get(package["destination"], package["destination"])
 
+    # Alert level badge
+    alert_level = package.get("ai_alert_level", "good_deal")
+    if alert_level == "fare_mistake":
+        alert_badge = "🔴 ERREUR DE PRIX"
+    elif alert_level == "flash_promo":
+        alert_badge = "🟠 PROMO FLASH"
+    else:
+        alert_badge = "🟡 BON DEAL"
+
     # Check if AI-enriched
     ai_desc = package.get("ai_description")
     ai_reason = package.get("ai_reason")
@@ -27,7 +36,7 @@ def format_deal_alert(package: dict, flight: dict, accommodation: dict) -> str:
         # Enriched format
         tags_str = " ".join(ai_tags) if ai_tags else ""
         return (
-            f"✈️ GLOBE GENIUS DEAL ALERT\n\n"
+            f"✈️ GLOBE GENIUS — {alert_badge}\n\n"
             f"🌍 {origin_city} → {dest_city}\n"
             f"📅 {package['departure_date']} – {package['return_date']}\n\n"
             f"{ai_desc}\n\n"
@@ -42,7 +51,7 @@ def format_deal_alert(package: dict, flight: dict, accommodation: dict) -> str:
     else:
         # Basic format (fallback)
         return (
-            f"✈️ GLOBE GENIUS DEAL ALERT\n\n"
+            f"✈️ GLOBE GENIUS — {alert_badge}\n\n"
             f"🌍 {origin_city} → {dest_city}\n"
             f"📅 {package['departure_date']} – {package['return_date']}\n"
             f"🏨 {accommodation['name']} ⭐ {accommodation.get('rating', 'N/A')}/5\n"

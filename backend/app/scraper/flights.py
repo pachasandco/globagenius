@@ -11,9 +11,13 @@ SOURCE = "google_flights"
 SAMPLE_WINDOWS = [30, 90, 180]
 TRIP_DURATIONS = [7]
 
-TOP_DESTINATIONS = [
-    "LIS", "BCN", "FCO", "ATH", "PRG", "RAK", "IST", "AMS",
-]
+# Dynamic destinations — selected by season via route_selector
+def _get_top_destinations() -> list[str]:
+    try:
+        from app.analysis.route_selector import get_priority_destinations
+        return get_priority_destinations(max_count=10)
+    except Exception:
+        return ["LIS", "BCN", "FCO", "ATH", "PRG", "RAK", "IST", "AMS"]
 
 AIRPORTS_PER_CYCLE = 2
 
@@ -186,7 +190,7 @@ async def scrape_flights_for_airport(origin: str) -> tuple[list[dict], list[dict
     baselines = []
     sample_dates = _generate_sample_dates()
 
-    for dest in TOP_DESTINATIONS:
+    for dest in _get_top_destinations():
         if dest == origin:
             continue
         seen_windows = set()

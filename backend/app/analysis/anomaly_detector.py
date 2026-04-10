@@ -1,8 +1,13 @@
+"""Price anomaly detection with tiered alert classification.
+
+Alert levels:
+- FARE_MISTAKE: z_score < -3.5, discount > 60% — airline pricing error
+- FLASH_PROMO: z_score < -2.5, discount > 40% — flash sale or promo
+- GOOD_DEAL: z_score < -1.5, discount > 20% — below market price
+"""
+
 from dataclasses import dataclass
 from app.config import settings
-
-Z_SCORE_THRESHOLD = 1.0
-MIN_FREE_DISCOUNT = 20
 
 
 @dataclass
@@ -11,6 +16,7 @@ class QualifiedItem:
     baseline_price: float
     discount_pct: float
     z_score: float
+    alert_level: str  # "fare_mistake", "flash_promo", "good_deal"
 
 
 def detect_anomaly(price: float, baseline: dict) -> QualifiedItem | None:
@@ -26,10 +32,14 @@ def detect_anomaly(price: float, baseline: dict) -> QualifiedItem | None:
     z_score = (avg_price - price) / std_dev
     discount_pct = (avg_price - price) / avg_price * 100
 
-    if z_score < Z_SCORE_THRESHOLD:
-        return None
-
-    if discount_pct < MIN_FREE_DISCOUNT:
+    # Tiered classification
+    if z_score >= 3.5 and discount_pct >= 60:
+        alert_level = "fare_mistake"
+    elif z_score >= 2.5 and discount_pct >= 40:
+        alert_level = "flash_promo"
+    elif z_score >= 1.0 and discount_pct >= 20:
+        alert_level = "good_deal"
+    else:
         return None
 
     return QualifiedItem(
@@ -37,4 +47,5 @@ def detect_anomaly(price: float, baseline: dict) -> QualifiedItem | None:
         baseline_price=round(avg_price, 2),
         discount_pct=round(discount_pct, 2),
         z_score=round(z_score, 2),
+        alert_level=alert_level,
     )
