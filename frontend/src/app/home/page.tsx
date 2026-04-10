@@ -97,7 +97,7 @@ export default function HomePage() {
   const [email, setEmail] = useState("");
   const [premiumDeals, setPremiumDeals] = useState<Package[]>([]);
   const [freeDeals, setFreeDeals] = useState<Package[]>([]);
-  const [status, setStatus] = useState<PipelineStatus | null>(null);
+  const [, setStatus] = useState<PipelineStatus | null>(null);
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"premium" | "free">("premium");
@@ -214,28 +214,6 @@ export default function HomePage() {
       </nav>
 
       <div className="max-w-6xl mx-auto px-4 md:px-5 py-6 md:py-8">
-        {/* Status bar */}
-        {status && (
-          <div className="grid grid-cols-2 md:flex md:flex-wrap gap-4 md:gap-6 mb-6 p-4 md:p-5 bg-white rounded-2xl border border-gray-100">
-            <div>
-              <div className="text-2xl font-bold">{premiumDeals.length + freeDeals.length}</div>
-              <div className="text-xs text-gray-400">Deals actifs</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold">{status.active_baselines}</div>
-              <div className="text-xs text-gray-400">Routes surveillées</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold">{(status.recent_scrapes || []).length}</div>
-              <div className="text-xs text-gray-400">Scrapes récents</div>
-            </div>
-            <div className="md:ml-auto flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              <span className="text-xs text-gray-400">Pipeline actif · 6x/jour</span>
-            </div>
-          </div>
-        )}
-
         {/* Deals section */}
         <div className="mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
