@@ -40,6 +40,13 @@ def get_scheduler_jobs() -> list[dict]:
             "trigger": "cron",
             "hour": 15,
         },
+        # ── TRAVELPAYOUTS ENRICHMENT : 1x/jour a 4h ──
+        {
+            "id": "travelpayouts_enrichment",
+            "func": job_travelpayouts_enrichment,
+            "trigger": "cron",
+            "hour": 4,
+        },
         # ── BASELINES & MAINTENANCE ──
         {
             "id": "recalculate_baselines",
@@ -440,3 +447,51 @@ async def job_daily_admin_report():
 
     if qual_rate < 5 and total_scraped > 0:
         await send_admin_alert(f"Taux qualification bas : {qual_rate}%")
+
+
+async def job_travelpayouts_enrichment():
+    """Enrich baselines with Travelpayouts data + check special offers."""
+    logger.info("Starting Travelpayouts enrichment")
+    if not db or not settings.TRAVELPAYOUTS_TOKEN:
+        return
+
+    from app.scraper.travelpayouts import build_baseline_from_travelpayouts, get_special_offers, get_cheap_destinations
+    from app.scraper.flights import _window_label
+
+    # 1. Enrich baselines for all MVP airports
+    enriched = 0
+    for airport in settings.MVP_AIRPORTS:
+        # Discover cheap destinations
+        try:
+            cheap = get_cheap_destinations(airport, limit=15)
+            for dest in cheap:
+                dest_code = dest.get("destination", "")
+                if not dest_code:
+                    continue
+
+                baseline_data = build_baseline_from_travelpayouts(airport, dest_code)
+                if baseline_data:
+                    route_key = f"{airport}-{dest_code}-tp"
+                    db.table("price_baselines").upsert({
+                        "route_key": route_key,
+                        "type": "flight",
+                        "avg_price": baseline_data["avg_price"],
+                        "std_dev": max(baseline_data["std_dev"], 1.0),
+                        "sample_count": baseline_data["sample_count"],
+                        "calculated_at": datetime.now(timezone.utc).isoformat(),
+                    }, on_conflict="route_key").execute()
+                    enriched += 1
+        except Exception as e:
+            logger.warning(f"Travelpayouts enrichment failed for {airport}: {e}")
+
+    logger.info(f"Travelpayouts: enriched {enriched} baselines")
+
+    # 2. Check special offers (fare mistakes)
+    try:
+        offers = get_special_offers()
+        if offers:
+            logger.info(f"Travelpayouts: {len(offers)} special offers detected")
+            for offer in offers[:10]:
+                logger.info(f"  Special: {offer.get('origin','')}→{offer.get('destination','')} {offer.get('value','')}€")
+    except Exception as e:
+        logger.warning(f"Special offers check failed: {e}")

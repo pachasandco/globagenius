@@ -13,6 +13,7 @@ class Settings:
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_ADMIN_CHAT_ID: str = os.getenv("TELEGRAM_ADMIN_CHAT_ID", "")
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
+    TRAVELPAYOUTS_TOKEN: str = os.getenv("TRAVELPAYOUT_API_KEY", "")
     APP_ENV: str = os.getenv("APP_ENV", "development")
     JWT_SECRET: str = os.getenv("JWT_SECRET", "globegenius-dev-secret-change-in-prod")
     ADMIN_API_KEY: str = os.getenv("ADMIN_API_KEY", "")
