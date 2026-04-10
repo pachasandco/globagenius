@@ -1,7 +1,4 @@
-"""Dynamic route selection based on seasonality and deal potential.
-
-Expanded destination coverage across all seasons.
-"""
+"""Dynamic route selection based on seasonality and deal potential."""
 
 from datetime import datetime, timezone
 
@@ -12,10 +9,10 @@ SEASONAL_DESTINATIONS = {
             "RAK", "BKK", "CUN", "PUJ", "DXB", "MLE", "MRU", "RUN",
             # Canaries + Mediterranee
             "TFS", "PMI", "AGP", "HER",
-            # Ski Europe
-            "GVA", "MXP", "VIE",
+            # US + Australie (ete la-bas)
+            "JFK", "MIA", "SYD",
         ],
-        "secondary": ["LIS", "FCO", "ATH", "IST", "CAI", "TUN"],
+        "secondary": ["LIS", "FCO", "ATH", "IST", "CAI", "TUN", "GVA"],
     },
     "spring": {  # Mar-May
         "primary": [
@@ -23,31 +20,31 @@ SEASONAL_DESTINATIONS = {
             "LIS", "ATH", "PRG", "BCN", "BUD", "OPO", "NAP", "DBV",
             # Maghreb
             "RAK", "CMN", "TUN",
-            # Moyen-Orient
-            "IST", "TLV",
+            # Long-courrier
+            "IST", "NRT", "JFK",
         ],
-        "secondary": ["NRT", "AMS", "FCO", "BER", "MAD", "VCE", "SPU", "EDI"],
+        "secondary": ["AMS", "FCO", "BER", "MAD", "VCE", "SPU", "EDI", "BKK", "YUL", "DXB", "MIA", "SYD"],
     },
     "summer": {  # Jun-Aug
         "primary": [
-            # Europe off-peak (pas les destinations saturees)
+            # Europe off-peak
             "PRG", "BUD", "DUB", "BER", "WAW", "ZAG", "SPU", "DBV",
             "EDI", "CPH", "HEL", "OSL", "ARN",
-            # Hors Europe
-            "YUL", "NRT",
+            # Long-courrier
+            "YUL", "NRT", "SYD",
         ],
-        "secondary": ["IST", "RAK", "ATH", "LIS", "OPO", "VCE"],
+        "secondary": ["IST", "RAK", "ATH", "LIS", "OPO", "VCE", "JFK"],
     },
     "autumn": {  # Sep-Nov
         "primary": [
-            # Americas
-            "JFK", "YUL", "GIG",
+            # Americas + Oceanie
+            "JFK", "YUL", "GIG", "MIA", "LAX", "SYD",
             # Europe arriere-saison
             "BCN", "LIS", "FCO", "IST", "BUD", "PRG", "ATH",
             # Maghreb
-            "RAK", "CMN",
+            "RAK",
         ],
-        "secondary": ["AMS", "BER", "DUB", "NAP", "MAD", "BKK", "DXB"],
+        "secondary": ["AMS", "BER", "DUB", "NAP", "MAD", "BKK", "DXB", "CMN"],
     },
 }
 
@@ -58,10 +55,10 @@ HIGH_FARE_MISTAKE_ROUTES = {
     "CDG-BKK", "CDG-NRT", "CDG-HKG", "CDG-DXB",
     # Caribbean
     "CDG-CUN", "CDG-PUJ", "ORY-PUJ",
-    # Internes USA depuis Europe
+    # US
     "CDG-MIA", "CDG-LAX", "CDG-SFO",
-    # Iles
-    "CDG-MLE", "CDG-MRU", "ORY-RUN",
+    # Iles + Oceanie
+    "CDG-MLE", "CDG-MRU", "ORY-RUN", "CDG-SYD",
 }
 
 LOW_COST_COMPETITION = {
@@ -84,8 +81,7 @@ def get_current_season() -> str:
         return "autumn"
 
 
-def get_priority_destinations(max_count: int = 20) -> list[str]:
-    """Get prioritized destination list based on current season."""
+def get_priority_destinations(max_count: int = 25) -> list[str]:
     season = get_current_season()
     seasonal = SEASONAL_DESTINATIONS[season]
 
@@ -102,7 +98,6 @@ def get_priority_destinations(max_count: int = 20) -> list[str]:
 
 
 def score_route(origin: str, destination: str, volatility_30d: float = 0, num_carriers: int = 1) -> float:
-    """Score a route for deal potential (0-100)."""
     score = 0.0
     route_key = f"{origin}-{destination}"
     season = get_current_season()

@@ -8,17 +8,18 @@ logger = logging.getLogger(__name__)
 
 SOURCE = "google_flights"
 
-SAMPLE_WINDOWS = [30, 90, 180]
+SAMPLE_WINDOWS = [30, 90]  # 1m + 3m only (6m removed — prices too stable, no deals)
 TRIP_DURATIONS = [7]
 
 # Dynamic destinations — selected by season via route_selector
 def _get_top_destinations() -> list[str]:
     try:
         from app.analysis.route_selector import get_priority_destinations
-        return get_priority_destinations(max_count=20)
+        return get_priority_destinations(max_count=25)
     except Exception:
         return ["LIS", "BCN", "FCO", "ATH", "PRG", "RAK", "IST", "AMS",
-                "MAD", "BER", "DUB", "NAP", "BUD", "OPO", "TFS", "PMI"]
+                "MAD", "BER", "DUB", "NAP", "BUD", "OPO", "TFS", "PMI",
+                "JFK", "NRT", "BKK", "DXB", "MIA", "SYD", "YUL", "CMN", "TUN"]
 
 AIRPORTS_PER_CYCLE = 2
 

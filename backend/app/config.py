@@ -92,6 +92,7 @@ IATA_TO_CITY = {
     "LAX": "Los Angeles",
     "SFO": "San Francisco",
     "EWR": "Newark",
+    "SYD": "Sydney",
 }
 
 DESTINATION_POPULARITY = {
@@ -105,7 +106,7 @@ DESTINATION_POPULARITY = {
     # Long-courrier
     "JFK": 92, "YUL": 70, "CUN": 78, "PUJ": 76, "BKK": 88,
     "NRT": 85, "DXB": 90, "MLE": 82, "MRU": 80, "RUN": 72,
-    "PPT": 65, "GIG": 74,
+    "PPT": 65, "GIG": 74, "SYD": 78, "MIA": 86, "LAX": 84,
 }
 
 settings = Settings()
