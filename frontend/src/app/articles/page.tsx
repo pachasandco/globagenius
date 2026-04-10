@@ -53,7 +53,7 @@ export default function ArticlesPage() {
             Nos destinations
           </h1>
           <p className="text-gray-400 max-w-lg mx-auto">
-            Des guides complets rédigés par notre IA pour vous inspirer et préparer votre prochain voyage.
+            Des guides complets pour vous inspirer et préparer votre prochain voyage.
           </p>
         </div>
 
@@ -64,7 +64,7 @@ export default function ArticlesPage() {
             <div className="text-4xl mb-4">✍️</div>
             <h3 className="text-lg font-semibold mb-2">Articles en cours de rédaction</h3>
             <p className="text-gray-400 text-sm max-w-sm mx-auto">
-              Notre IA rédige des guides complets pour chaque destination. Revenez bientôt !
+              Nos guides de destinations sont en cours de rédaction. Revenez bientôt !
             </p>
           </div>
         )}

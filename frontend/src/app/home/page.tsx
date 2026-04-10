@@ -389,7 +389,7 @@ export default function HomePage() {
           <Link href="/articles" className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md transition-shadow group">
             <div className="text-xl mb-1">✍️</div>
             <h3 className="font-semibold text-sm group-hover:text-cyan-600 transition-colors">Guides de destinations</h3>
-            <p className="text-xs text-gray-400">Articles complets rédigés par IA.</p>
+            <p className="text-xs text-gray-400">Guides complets pour préparer votre voyage.</p>
           </Link>
           <Link href="/onboarding" className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md transition-shadow group">
             <div className="text-xl mb-1">⚙️</div>
@@ -402,7 +402,7 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="border-t border-gray-100 py-6 mt-8">
         <div className="max-w-6xl mx-auto px-5 text-center text-xs text-gray-300">
-          Globe Genius © 2026 — Packages voyage à prix cassés détectés par IA
+          Globe Genius © 2026 — Packages voyage à prix cassés
         </div>
       </footer>
     </div>

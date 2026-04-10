@@ -98,7 +98,7 @@ const organizationSchema = {
   url: "https://www.globegenius.app",
   logo: "https://www.globegenius.app/globe.png",
   description:
-    "Globe Genius détecte les anomalies de prix pour trouver des packages voyage (vol + hôtel) à -40% minimum sur le prix du marché.",
+    "Globe Genius trouve les packages voyage (vol + hôtel) à -40% minimum sur le prix du marché.",
   sameAs: [] as string[],
   contactPoint: {
     "@type": "ContactPoint",
@@ -113,7 +113,7 @@ const websiteSchema = {
   name: "Globe Genius",
   url: "https://www.globegenius.app",
   description:
-    "Packages voyage à prix cassés détectés par IA. Vols + hôtels à -40% minimum.",
+    "Packages voyage à prix cassés. Vols + hôtels à -40% minimum.",
   inLanguage: "fr-FR",
   potentialAction: {
     "@type": "SearchAction",
@@ -188,7 +188,7 @@ export default function Landing() {
               <span className="text-gradient">à prix cassés.</span>
             </h1>
             <p className="text-gray-600 text-base md:text-lg leading-relaxed mb-6 md:mb-8">
-              Notre IA analyse des milliers de vols et d'hôtels pour vous trouver des packages
+              Nous analysons des milliers de vols et d'hôtels pour vous trouver des packages
               <strong className="text-gray-900"> à -40% minimum</strong> sur le prix du marché.
               Recevez les alertes sur Telegram.
             </p>
@@ -269,7 +269,7 @@ export default function Landing() {
               Comment ça marche
             </h2>
             <p className="text-gray-400 max-w-lg mx-auto text-[15px]">
-              Un pipeline IA qui tourne 24h/24 pour vous trouver les meilleures opportunités.
+              Un système qui tourne 24h/24 pour vous trouver les meilleures opportunités.
             </p>
           </div>
 
@@ -289,7 +289,7 @@ export default function Landing() {
               {
                 n: "2",
                 t: "Détection d'anomalies",
-                d: "L'IA compare chaque prix à la moyenne 30 jours. Seules les baisses de +40% sont retenues et scorées.",
+                d: "Chaque prix est comparé à la moyenne 30 jours. Seules les baisses de +40% sont retenues et scorées.",
                 icon: (
                   <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" />
@@ -300,7 +300,7 @@ export default function Landing() {
               {
                 n: "3",
                 t: "Alerte Telegram",
-                d: "Dès qu'un deal est qualifié, vous recevez une alerte enrichie par IA avec description et lien de réservation.",
+                d: "Dès qu'un deal est qualifié, vous recevez une alerte détaillée avec description et lien de réservation.",
                 icon: (
                   <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
@@ -385,10 +385,10 @@ export default function Landing() {
             <div>
               <div className="text-xs font-bold text-cyan-600 tracking-widest uppercase mb-2">Alertes intelligentes</div>
               <h2 className="font-[family-name:var(--font-dm-serif)] text-[28px] md:text-[34px] mb-4">
-                Des deals enrichis par IA, directement sur Telegram
+                Des deals détaillés, directement sur Telegram
               </h2>
               <p className="text-gray-500 leading-relaxed mb-6">
-                Chaque deal est analysé par notre agent IA Claude qui génère une description attractive,
+                Chaque deal est analysé et accompagné d'une description attractive,
                 explique pourquoi c'est une bonne affaire et vous donne un conseil de réservation.
               </p>
               <ul className="space-y-3 text-sm text-gray-600">
@@ -402,7 +402,7 @@ export default function Landing() {
                 </li>
                 <li className="flex items-start gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-cyan-100 text-cyan-600 flex items-center justify-center shrink-0 mt-0.5 text-xs">✓</span>
-                  Descriptions générées par IA avec contexte et conseils
+                  Descriptions détaillées avec contexte et conseils
                 </li>
                 <li className="flex items-start gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-cyan-100 text-cyan-600 flex items-center justify-center shrink-0 mt-0.5 text-xs">✓</span>
@@ -474,7 +474,7 @@ export default function Landing() {
                 Prêt à voyager malin ?
               </h2>
               <p className="text-white/60 mb-6 md:mb-8 max-w-md mx-auto text-sm md:text-base">
-                Inscrivez-vous gratuitement et recevez les meilleurs deals enrichis par IA directement sur Telegram.
+                Inscrivez-vous gratuitement et recevez les meilleurs deals directement sur Telegram.
               </p>
               <Link
                 href="/signup"
@@ -497,7 +497,7 @@ export default function Landing() {
                 <span className="font-[family-name:var(--font-dm-serif)] text-[15px]">Globe Genius</span>
               </div>
               <p className="text-xs text-gray-400 max-w-xs">
-                Packages voyage à prix cassés, détectés par IA. Vols + hôtels à -40% minimum.
+                Packages voyage à prix cassés. Vols + hôtels à -40% minimum.
               </p>
             </div>
             <div className="flex gap-8 text-sm text-gray-400">

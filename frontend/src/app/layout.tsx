@@ -18,11 +18,11 @@ const plusJakarta = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: "Globe Genius — Packages Voyage à Prix Cassés | -40% minimum",
   description:
-    "Globe Genius détecte les anomalies de prix pour vous trouver des packages voyage (vol + hôtel) à -40% minimum sur le prix du marché. Alertes Telegram, 8 aéroports français couverts.",
+    "Globe Genius vous trouve des packages voyage (vol + hôtel) à -40% minimum sur le prix du marché. Alertes Telegram, 8 aéroports français couverts.",
   keywords: [
     "packages voyage pas cher",
     "vol hôtel prix cassé",
-    "deal voyage IA",
+    "deal voyage pas cher",
     "alerte voyage telegram",
     "bons plans voyage",
     "package vol hotel",
@@ -36,7 +36,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Globe Genius — Packages Voyage à Prix Cassés | -40% minimum",
     description:
-      "Notre IA détecte les anomalies de prix pour vous trouver des packages voyage (vol + hôtel) à -40% minimum sur le prix du marché. Recevez les alertes sur Telegram.",
+      "Globe Genius vous trouve des packages voyage (vol + hôtel) à -40% minimum sur le prix du marché. Recevez les alertes sur Telegram.",
     url: "https://www.globegenius.app",
     siteName: "Globe Genius",
     images: [
@@ -54,7 +54,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Globe Genius — Packages Voyage à Prix Cassés | -40% minimum",
     description:
-      "Notre IA détecte les anomalies de prix pour des packages voyage (vol + hôtel) à -40% minimum. Alertes sur Telegram.",
+      "Globe Genius vous propose des packages voyage (vol + hôtel) à -40% minimum. Alertes sur Telegram.",
     images: ["https://www.globegenius.app/og-image.png"],
     creator: "@globegenius",
   },

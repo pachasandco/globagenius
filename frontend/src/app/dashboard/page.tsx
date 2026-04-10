@@ -193,7 +193,7 @@ export default function Dashboard() {
           <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-100 rounded-xl p-4 mb-6 flex items-center justify-between">
             <div>
               <div className="font-semibold text-sm text-amber-900">Deals Premium — remise de 40% et plus</div>
-              <div className="text-xs text-amber-700 mt-0.5">Les meilleures anomalies de prix détectées par notre IA. Abonnement à 9,90€/mois (bientôt).</div>
+              <div className="text-xs text-amber-700 mt-0.5">Les meilleures anomalies de prix détectées. Abonnement à 2,99€/mois.</div>
             </div>
             <span className="bg-amber-400 text-amber-900 text-xs font-bold px-3 py-1.5 rounded-full shrink-0">PREMIUM</span>
           </div>
