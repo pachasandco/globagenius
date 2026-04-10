@@ -100,6 +100,7 @@ export default function HomePage() {
   const [, setStatus] = useState<PipelineStatus | null>(null);
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isPremium, setIsPremium] = useState(false);
   const [activeTab, setActiveTab] = useState<"premium" | "free">("premium");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
@@ -133,6 +134,18 @@ export default function HomePage() {
         }
         if (statusRes.status === "fulfilled") {
           setStatus(statusRes.value as PipelineStatus);
+        }
+      } catch { /* ignore */ }
+
+      // Check premium status
+      try {
+        const token = localStorage.getItem("gg_token");
+        if (token) {
+          const premStatus = await fetch(`${API_URL}/api/stripe/status`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const premData = await premStatus.json();
+          setIsPremium(premData.is_premium || false);
         }
       } catch { /* ignore */ }
 
@@ -214,6 +227,65 @@ export default function HomePage() {
       </nav>
 
       <div className="max-w-6xl mx-auto px-4 md:px-5 py-6 md:py-8">
+        {/* Premium banner */}
+        {!isPremium && (
+          <div className="mb-6 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-lg">⭐</span>
+                <h3 className="font-semibold">Passez en Premium</h3>
+              </div>
+              <p className="text-sm text-amber-800">
+                Accedez aux deals a -40% et plus, packages vol + hotel, alertes Telegram prioritaires.
+                <strong> 7 jours d'essai gratuit.</strong>
+              </p>
+            </div>
+            <button
+              onClick={async () => {
+                try {
+                  const token = localStorage.getItem("gg_token");
+                  const res = await fetch(`${API_URL}/api/stripe/create-checkout`, {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                  });
+                  const data = await res.json();
+                  if (data.checkout_url) {
+                    window.location.href = data.checkout_url;
+                  }
+                } catch { /* ignore */ }
+              }}
+              className="bg-amber-500 hover:bg-amber-600 text-white font-semibold px-6 py-3 rounded-xl text-sm shrink-0 transition-colors"
+            >
+              Essai gratuit 7 jours — 2,99€/mois
+            </button>
+          </div>
+        )}
+
+        {isPremium && (
+          <div className="mb-6 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-2xl px-5 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">✅</span>
+              <span className="text-sm font-medium text-green-800">Abonnement Premium actif</span>
+            </div>
+            <button
+              onClick={async () => {
+                try {
+                  const token = localStorage.getItem("gg_token");
+                  const res = await fetch(`${API_URL}/api/stripe/portal`, {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                  });
+                  const data = await res.json();
+                  if (data.portal_url) window.location.href = data.portal_url;
+                } catch { /* ignore */ }
+              }}
+              className="text-sm text-green-700 hover:underline"
+            >
+              Gerer mon abonnement
+            </button>
+          </div>
+        )}
+
         {/* Deals section */}
         <div className="mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">

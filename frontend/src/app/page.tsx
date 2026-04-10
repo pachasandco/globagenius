@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 /* ─── DATA ─── */
 const deals = [
@@ -137,6 +139,16 @@ const faqSchema = {
 
 /* ─── PAGE ─── */
 export default function Landing() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const userId = localStorage.getItem("gg_user_id");
+    const token = localStorage.getItem("gg_token");
+    if (userId && token) {
+      router.replace("/home");
+    }
+  }, [router]);
+
   return (
     <div className="min-h-screen bg-white">
 
