@@ -19,7 +19,7 @@ def _get_top_destinations() -> list[str]:
     except Exception:
         return ["LIS", "BCN", "FCO", "ATH", "PRG", "RAK", "IST", "AMS"]
 
-AIRPORTS_PER_CYCLE = 3
+AIRPORTS_PER_CYCLE = 2
 
 
 def _window_label(days_ahead: int) -> str:

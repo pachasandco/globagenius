@@ -67,14 +67,15 @@ class TravelPlannerSession:
         if not settings.ANTHROPIC_API_KEY:
             return {"type": "error", "message": "API non configuree"}
 
-        client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        from app.agents.llm_client import get_client
+        client = get_client()
 
         self.messages.append({"role": "user", "content": user_message})
 
         try:
             response = client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=3000,
+                model="claude-haiku-4-5",
+                max_tokens=2000,
                 system=SYSTEM_PROMPT,
                 messages=self.messages,
             )

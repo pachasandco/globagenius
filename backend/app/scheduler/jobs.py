@@ -20,25 +20,19 @@ logger = logging.getLogger(__name__)
 
 def get_scheduler_jobs() -> list[dict]:
     return [
-        # ── VOLS : toutes les 2h (12x/jour) ──
+        # ── VOLS : toutes les 4h (6x/jour) — optimise pour couts ──
         *[{
             "id": f"scrape_flights_{h:02d}",
             "func": job_scrape_flights,
             "trigger": "cron",
             "hour": h,
-        } for h in range(0, 24, 2)],
-        # ── HOTELS : 2x/jour (3h + 15h) ──
+        } for h in [2, 6, 10, 14, 18, 22]],
+        # ── HOTELS : 1x/jour a 3h ──
         {
             "id": "scrape_accommodations_03",
             "func": job_scrape_accommodations,
             "trigger": "cron",
             "hour": 3,
-        },
-        {
-            "id": "scrape_accommodations_15",
-            "func": job_scrape_accommodations,
-            "trigger": "cron",
-            "hour": 15,
         },
         # ── TRAVELPAYOUTS ENRICHMENT : 1x/jour a 4h ──
         {
