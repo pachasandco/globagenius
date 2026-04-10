@@ -3,6 +3,7 @@ import json
 import re
 import secrets
 import logging
+import stripe
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -565,3 +566,130 @@ async def planner_reset(user_id: str):
     from app.agents.travel_planner import reset_session
     reset_session(user_id)
     return {"status": "reset"}
+
+
+# ─── STRIPE ───
+
+@router.post("/api/stripe/create-checkout")
+async def create_checkout(user: dict = Depends(get_current_user)):
+    """Create a Stripe Checkout session for premium subscription."""
+    if not settings.STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="Stripe not configured")
+
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+
+    user_id = user["sub"]
+    user_email = user.get("email", "")
+
+    # Check if user already has a Stripe customer
+    if db:
+        prefs = db.table("user_preferences").select("stripe_customer_id").eq("user_id", user_id).execute()
+        customer_id = prefs.data[0].get("stripe_customer_id") if prefs.data else None
+    else:
+        customer_id = None
+
+    try:
+        # Create or reuse customer
+        if not customer_id:
+            customer = stripe.Customer.create(email=user_email, metadata={"user_id": user_id})
+            customer_id = customer.id
+            if db:
+                db.table("user_preferences").update({"stripe_customer_id": customer_id}).eq("user_id", user_id).execute()
+
+        session = stripe.checkout.Session.create(
+            customer=customer_id,
+            mode="subscription",
+            line_items=[{"price": settings.STRIPE_PRICE_ID, "quantity": 1}],
+            subscription_data={"trial_period_days": 7},
+            success_url="https://www.globegenius.app/home?payment=success",
+            cancel_url="https://www.globegenius.app/home?payment=cancel",
+        )
+
+        return {"checkout_url": session.url, "session_id": session.id}
+
+    except stripe.StripeError as e:
+        logger.error(f"Stripe error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/api/stripe/webhook")
+async def stripe_webhook(request: Request):
+    """Handle Stripe webhooks (subscription events)."""
+    if not settings.STRIPE_SECRET_KEY:
+        return {"ok": True}
+
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+
+    try:
+        if settings.STRIPE_WEBHOOK_SECRET:
+            event = stripe.Webhook.construct_event(payload, sig, settings.STRIPE_WEBHOOK_SECRET)
+        else:
+            event = json.loads(payload)
+    except Exception as e:
+        logger.error(f"Stripe webhook verification failed: {e}")
+        raise HTTPException(status_code=400, detail="Invalid webhook")
+
+    event_type = event.get("type", "")
+    data = event.get("data", {}).get("object", {})
+
+    if event_type == "checkout.session.completed":
+        customer_id = data.get("customer")
+        subscription_id = data.get("subscription")
+        if db and customer_id:
+            db.table("user_preferences").update({
+                "stripe_subscription_id": subscription_id,
+                "is_premium": True,
+            }).eq("stripe_customer_id", customer_id).execute()
+            logger.info(f"Premium activated for customer {customer_id}")
+
+    elif event_type in ("customer.subscription.deleted", "customer.subscription.paused"):
+        customer_id = data.get("customer")
+        if db and customer_id:
+            db.table("user_preferences").update({
+                "is_premium": False,
+            }).eq("stripe_customer_id", customer_id).execute()
+            logger.info(f"Premium deactivated for customer {customer_id}")
+
+    return {"ok": True}
+
+
+@router.post("/api/stripe/portal")
+async def create_portal(user: dict = Depends(get_current_user)):
+    """Create Stripe Customer Portal session for managing subscription."""
+    if not settings.STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="Stripe not configured")
+
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+    user_id = user["sub"]
+
+    if db:
+        prefs = db.table("user_preferences").select("stripe_customer_id").eq("user_id", user_id).execute()
+        customer_id = prefs.data[0].get("stripe_customer_id") if prefs.data else None
+    else:
+        customer_id = None
+
+    if not customer_id:
+        raise HTTPException(status_code=400, detail="No subscription found")
+
+    try:
+        session = stripe.billing_portal.Session.create(
+            customer=customer_id,
+            return_url="https://www.globegenius.app/home",
+        )
+        return {"portal_url": session.url}
+    except stripe.StripeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/api/stripe/status")
+async def subscription_status(user: dict = Depends(get_current_user)):
+    """Check if current user has premium subscription."""
+    if not db:
+        return {"is_premium": False}
+
+    user_id = user["sub"]
+    prefs = db.table("user_preferences").select("is_premium").eq("user_id", user_id).execute()
+
+    return {"is_premium": prefs.data[0].get("is_premium", False) if prefs.data else False}
