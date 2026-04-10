@@ -15,9 +15,10 @@ TRIP_DURATIONS = [7]
 def _get_top_destinations() -> list[str]:
     try:
         from app.analysis.route_selector import get_priority_destinations
-        return get_priority_destinations(max_count=10)
+        return get_priority_destinations(max_count=20)
     except Exception:
-        return ["LIS", "BCN", "FCO", "ATH", "PRG", "RAK", "IST", "AMS"]
+        return ["LIS", "BCN", "FCO", "ATH", "PRG", "RAK", "IST", "AMS",
+                "MAD", "BER", "DUB", "NAP", "BUD", "OPO", "TFS", "PMI"]
 
 AIRPORTS_PER_CYCLE = 2
 

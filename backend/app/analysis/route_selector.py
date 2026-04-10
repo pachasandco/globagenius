@@ -84,7 +84,7 @@ def get_current_season() -> str:
         return "autumn"
 
 
-def get_priority_destinations(max_count: int = 16) -> list[str]:
+def get_priority_destinations(max_count: int = 20) -> list[str]:
     """Get prioritized destination list based on current season."""
     season = get_current_season()
     seasonal = SEASONAL_DESTINATIONS[season]
