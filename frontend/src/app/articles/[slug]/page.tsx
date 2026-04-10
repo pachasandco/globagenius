@@ -61,8 +61,40 @@ export default function ArticlePage() {
     </div>
   );
 
+  // JSON-LD schemas — data comes from our own API, not user input, so XSS-safe
+  const articleSchema = article ? {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: article.title,
+    description: article.subtitle,
+    image: article.cover_photo,
+    url: `https://www.globegenius.app/articles/${slug}`,
+    datePublished: "2026-04-10",
+    author: { "@type": "Organization", name: "Globe Genius", url: "https://www.globegenius.app" },
+    publisher: {
+      "@type": "Organization",
+      name: "Globe Genius",
+      logo: { "@type": "ImageObject", url: "https://www.globegenius.app/globe1.png" },
+    },
+    inLanguage: "fr-FR",
+    about: { "@type": "Place", name: article.destination },
+  } : null;
+
+  const breadcrumbSchema = article ? {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Accueil", item: "https://www.globegenius.app" },
+      { "@type": "ListItem", position: 2, name: "Articles", item: "https://www.globegenius.app/articles" },
+      { "@type": "ListItem", position: 3, name: article.title, item: `https://www.globegenius.app/articles/${slug}` },
+    ],
+  } : null;
+
   return (
     <div className="min-h-screen bg-white">
+      {/* JSON-LD — static API data, no user input, XSS-safe */}
+      {articleSchema && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(articleSchema) }} />}
+      {breadcrumbSchema && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }} />}
       {/* Nav */}
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
         <div className="max-w-4xl mx-auto px-4 md:px-5 h-[64px] flex items-center justify-between">

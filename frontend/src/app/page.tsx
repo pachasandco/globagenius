@@ -28,7 +28,7 @@ const faqs = [
   { q: "Comment sont détectés les deals ?", a: "Notre pipeline analyse les prix de milliers de vols et d'hôtels toutes les 2 heures. On compare chaque prix à la moyenne des 30 derniers jours. Seuls les packages avec une remise réelle de 40% ou plus sont retenus." },
   { q: "Est-ce que les prix affichés sont fiables ?", a: "Oui. Chaque prix est vérifié au moment du scraping et les données expirent après 2 heures. Les liens pointent directement vers les sites de réservation (Google Flights, Booking.com)." },
   { q: "Comment recevoir les alertes ?", a: "Après inscription, connectez votre compte Telegram via l'onboarding. Vous recevrez les alertes instantanément pour les deals avec un score supérieur à 70, et un digest quotidien à 8h." },
-  { q: "Combien ça coûte ?", a: "L'accès est gratuit pendant la période de lancement. Un abonnement à 9,90€/mois sera mis en place prochainement avec un essai gratuit de 7 jours." },
+  { q: "Combien ça coûte ?", a: "L'accès est gratuit pendant la période de lancement. Un abonnement à 2,99€/mois sera mis en place prochainement avec un essai gratuit de 7 jours." },
   { q: "Quels aéroports sont couverts ?", a: "8 aéroports français : Paris CDG, Paris Orly, Lyon, Marseille, Nice, Bordeaux, Nantes et Toulouse. D'autres aéroports seront ajoutés selon la demande." },
 ];
 
@@ -94,12 +94,18 @@ function FAQItem({ q, a, i }: { q: string; a: string; i: number }) {
 const organizationSchema = {
   "@context": "https://schema.org",
   "@type": "Organization",
+  "@id": "https://www.globegenius.app/#organization",
   name: "Globe Genius",
   url: "https://www.globegenius.app",
-  logo: "https://www.globegenius.app/globe.png",
+  logo: {
+    "@type": "ImageObject",
+    url: "https://www.globegenius.app/globe1.png",
+    width: 512,
+    height: 512,
+  },
   description:
     "Globe Genius trouve les packages voyage (vol + hôtel) à -40% minimum sur le prix du marché.",
-  sameAs: [] as string[],
+  sameAs: ["https://t.me/Globegenius_bot"],
   contactPoint: {
     "@type": "ContactPoint",
     contactType: "customer support",
@@ -110,19 +116,23 @@ const organizationSchema = {
 const websiteSchema = {
   "@context": "https://schema.org",
   "@type": "WebSite",
+  "@id": "https://www.globegenius.app/#website",
   name: "Globe Genius",
   url: "https://www.globegenius.app",
   description:
     "Packages voyage à prix cassés. Vols + hôtels à -40% minimum.",
   inLanguage: "fr-FR",
-  potentialAction: {
-    "@type": "SearchAction",
-    target: {
-      "@type": "EntryPoint",
-      urlTemplate: "https://www.globegenius.app/articles?q={search_term_string}",
-    },
-    "query-input": "required name=search_term_string",
-  },
+  publisher: { "@id": "https://www.globegenius.app/#organization" },
+};
+
+const faqSchema = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: faqs.map(f => ({
+    "@type": "Question",
+    name: f.q,
+    acceptedAnswer: { "@type": "Answer", text: f.a },
+  })),
 };
 
 /* ─── PAGE ─── */
@@ -133,6 +143,7 @@ export default function Landing() {
       {/* ── JSON-LD STRUCTURED DATA ── */}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteSchema) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />
 
       {/* ── NAV ── */}
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
