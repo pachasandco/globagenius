@@ -82,6 +82,12 @@ IATA_TO_CITY = {
     "RUN": "Saint-Denis",
     "PPT": "Papeete",
     "GIG": "Rio de Janeiro",
+    "GVA": "Geneva",
+    "HKG": "Hong Kong",
+    "MIA": "Miami",
+    "LAX": "Los Angeles",
+    "SFO": "San Francisco",
+    "EWR": "Newark",
 }
 
 DESTINATION_POPULARITY = {

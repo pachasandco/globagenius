@@ -20,55 +20,25 @@ logger = logging.getLogger(__name__)
 
 def get_scheduler_jobs() -> list[dict]:
     return [
-        # ── VOLS : 6 scrapes/jour — ne rater aucune opportunite ──
-        # 2h : error fares nocturnes (erreurs de pricing non corrigees)
-        # 6h : promos early morning des compagnies
-        # 10h : mises a jour mid-morning
-        # 14h : promos apres-midi
-        # 18h : derniers ajustements de la journee
-        # 22h : changements de prix nocturnes
-        {
-            "id": "scrape_flights_02",
+        # ── VOLS : toutes les 2h (12x/jour) ──
+        *[{
+            "id": f"scrape_flights_{h:02d}",
             "func": job_scrape_flights,
             "trigger": "cron",
-            "hour": 2,
-        },
+            "hour": h,
+        } for h in range(0, 24, 2)],
+        # ── HOTELS : 2x/jour (3h + 15h) ──
         {
-            "id": "scrape_flights_06",
-            "func": job_scrape_flights,
-            "trigger": "cron",
-            "hour": 6,
-        },
-        {
-            "id": "scrape_flights_10",
-            "func": job_scrape_flights,
-            "trigger": "cron",
-            "hour": 10,
-        },
-        {
-            "id": "scrape_flights_14",
-            "func": job_scrape_flights,
-            "trigger": "cron",
-            "hour": 14,
-        },
-        {
-            "id": "scrape_flights_18",
-            "func": job_scrape_flights,
-            "trigger": "cron",
-            "hour": 18,
-        },
-        {
-            "id": "scrape_flights_22",
-            "func": job_scrape_flights,
-            "trigger": "cron",
-            "hour": 22,
-        },
-        # ── HOTELS : 1 scrape/jour a 3h ──
-        {
-            "id": "scrape_accommodations_daily",
+            "id": "scrape_accommodations_03",
             "func": job_scrape_accommodations,
             "trigger": "cron",
             "hour": 3,
+        },
+        {
+            "id": "scrape_accommodations_15",
+            "func": job_scrape_accommodations,
+            "trigger": "cron",
+            "hour": 15,
         },
         # ── BASELINES & MAINTENANCE ──
         {

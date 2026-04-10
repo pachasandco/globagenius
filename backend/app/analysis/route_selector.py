@@ -1,47 +1,74 @@
 """Dynamic route selection based on seasonality and deal potential.
 
-Prioritizes destinations where deals are most likely to appear,
-based on season, competition, and historical fare mistake patterns.
+Expanded destination coverage across all seasons.
 """
 
 from datetime import datetime, timezone
 
-# Seasonal destination priorities
 SEASONAL_DESTINATIONS = {
-    "winter": {  # Dec-Feb: sun + ski
-        "primary": ["RAK", "BKK", "CUN", "TFS", "PMI", "DXB", "MLE", "MRU"],
-        "secondary": ["LIS", "FCO", "ATH", "IST"],
+    "winter": {  # Dec-Feb
+        "primary": [
+            # Soleil long-courrier
+            "RAK", "BKK", "CUN", "PUJ", "DXB", "MLE", "MRU", "RUN",
+            # Canaries + Mediterranee
+            "TFS", "PMI", "AGP", "HER",
+            # Ski Europe
+            "GVA", "MXP", "VIE",
+        ],
+        "secondary": ["LIS", "FCO", "ATH", "IST", "CAI", "TUN"],
     },
-    "spring": {  # Mar-May: Europe low season + Japan
-        "primary": ["LIS", "ATH", "PRG", "BCN", "RAK", "BUD", "OPO", "NAP"],
-        "secondary": ["NRT", "IST", "AMS", "FCO"],
+    "spring": {  # Mar-May
+        "primary": [
+            # Europe basse saison
+            "LIS", "ATH", "PRG", "BCN", "BUD", "OPO", "NAP", "DBV",
+            # Maghreb
+            "RAK", "CMN", "TUN",
+            # Moyen-Orient
+            "IST", "TLV",
+        ],
+        "secondary": ["NRT", "AMS", "FCO", "BER", "MAD", "VCE", "SPU", "EDI"],
     },
-    "summer": {  # Jun-Aug: off-peak + low-cost routes
-        "primary": ["PRG", "BUD", "DUB", "BER", "WAW", "ZAG", "SPU", "DBV"],
-        "secondary": ["IST", "RAK", "ATH", "LIS"],
+    "summer": {  # Jun-Aug
+        "primary": [
+            # Europe off-peak (pas les destinations saturees)
+            "PRG", "BUD", "DUB", "BER", "WAW", "ZAG", "SPU", "DBV",
+            "EDI", "CPH", "HEL", "OSL", "ARN",
+            # Hors Europe
+            "YUL", "NRT",
+        ],
+        "secondary": ["IST", "RAK", "ATH", "LIS", "OPO", "VCE"],
     },
-    "autumn": {  # Sep-Nov: Americas + Eastern Europe
-        "primary": ["JFK", "YUL", "BCN", "LIS", "FCO", "IST", "BUD", "PRG"],
-        "secondary": ["RAK", "ATH", "AMS", "BER"],
+    "autumn": {  # Sep-Nov
+        "primary": [
+            # Americas
+            "JFK", "YUL", "GIG",
+            # Europe arriere-saison
+            "BCN", "LIS", "FCO", "IST", "BUD", "PRG", "ATH",
+            # Maghreb
+            "RAK", "CMN",
+        ],
+        "secondary": ["AMS", "BER", "DUB", "NAP", "MAD", "BKK", "DXB"],
     },
 }
 
-# Routes with historically high fare mistake occurrence
 HIGH_FARE_MISTAKE_ROUTES = {
-    # Transatlantic business class pricing errors
-    "CDG-JFK", "CDG-EWR", "ORY-JFK",
-    # Asia via hub (pricing errors frequent)
-    "CDG-BKK", "CDG-NRT", "CDG-HKG",
-    # Caribbean in off-season
-    "CDG-CUN", "CDG-PUJ",
-    # Internal routes booked from Europe
-    "CDG-MIA", "CDG-LAX",
+    # Transatlantic
+    "CDG-JFK", "CDG-EWR", "ORY-JFK", "LYS-JFK",
+    # Asia via hub
+    "CDG-BKK", "CDG-NRT", "CDG-HKG", "CDG-DXB",
+    # Caribbean
+    "CDG-CUN", "CDG-PUJ", "ORY-PUJ",
+    # Internes USA depuis Europe
+    "CDG-MIA", "CDG-LAX", "CDG-SFO",
+    # Iles
+    "CDG-MLE", "CDG-MRU", "ORY-RUN",
 }
 
-# Destinations known for low-cost competition (more flash sales)
 LOW_COST_COMPETITION = {
     "BCN", "LIS", "FCO", "ATH", "PRG", "BUD", "RAK",
     "AMS", "BER", "DUB", "NAP", "OPO", "PMI", "TFS",
+    "AGP", "HER", "SPU", "DBV", "MAD", "VCE", "EDI",
+    "CPH", "WAW", "ZAG", "CMN", "TUN",
 }
 
 
@@ -57,21 +84,14 @@ def get_current_season() -> str:
         return "autumn"
 
 
-def get_priority_destinations(max_count: int = 12) -> list[str]:
+def get_priority_destinations(max_count: int = 16) -> list[str]:
     """Get prioritized destination list based on current season."""
     season = get_current_season()
     seasonal = SEASONAL_DESTINATIONS[season]
 
-    destinations = []
-    # Primary seasonal destinations first
-    destinations.extend(seasonal["primary"])
-    # Then secondary
-    destinations.extend(seasonal["secondary"])
-
-    # Deduplicate and limit
     seen = set()
     result = []
-    for d in destinations:
+    for d in seasonal["primary"] + seasonal["secondary"]:
         if d not in seen:
             seen.add(d)
             result.append(d)
@@ -82,29 +102,20 @@ def get_priority_destinations(max_count: int = 12) -> list[str]:
 
 
 def score_route(origin: str, destination: str, volatility_30d: float = 0, num_carriers: int = 1) -> float:
-    """Score a route for deal potential (0-100).
-
-    Higher score = more likely to produce deals.
-    Used to prioritize scraping order.
-    """
+    """Score a route for deal potential (0-100)."""
     score = 0.0
     route_key = f"{origin}-{destination}"
     season = get_current_season()
     seasonal = SEASONAL_DESTINATIONS[season]
 
-    # Volatility (30% weight) — routes with price swings have more deals
     score += min(volatility_30d / 50 * 100, 100) * 0.30
-
-    # Competition (20% weight) — more carriers = more price wars
     score += min(num_carriers / 5 * 100, 100) * 0.20
 
-    # Low-cost presence (20% weight) — flash sales
     if destination in LOW_COST_COMPETITION:
         score += 100 * 0.20
     else:
         score += 30 * 0.20
 
-    # Seasonal relevance (15% weight)
     if destination in seasonal["primary"]:
         score += 100 * 0.15
     elif destination in seasonal["secondary"]:
@@ -112,7 +123,6 @@ def score_route(origin: str, destination: str, volatility_30d: float = 0, num_ca
     else:
         score += 20 * 0.15
 
-    # Fare mistake history (15% weight)
     if route_key in HIGH_FARE_MISTAKE_ROUTES:
         score += 100 * 0.15
     else:
