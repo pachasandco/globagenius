@@ -135,6 +135,59 @@ def status():
     }
 
 
+@router.get("/api/history/stats")
+def history_stats(request: Request):
+    """Price history statistics — admin only."""
+    _require_admin(request)
+    if not db:
+        return {"error": "no db"}
+
+    total_flights = db.table("raw_flights").select("id", count="exact").execute()
+    total_hotels = db.table("raw_accommodations").select("id", count="exact").execute()
+    total_baselines = db.table("price_baselines").select("id", count="exact").execute()
+    total_packages = db.table("packages").select("id", count="exact").execute()
+    total_qualified = db.table("qualified_items").select("id", count="exact").execute()
+
+    # Distinct routes
+    routes = db.table("raw_flights").select("origin, destination").execute()
+    unique_routes = set()
+    for r in (routes.data or []):
+        unique_routes.add(f"{r['origin']}-{r['destination']}")
+
+    # Distinct cities
+    cities = db.table("raw_accommodations").select("city").execute()
+    unique_cities = {c["city"] for c in (cities.data or [])}
+
+    return {
+        "total_flights": total_flights.count or 0,
+        "total_accommodations": total_hotels.count or 0,
+        "total_baselines": total_baselines.count or 0,
+        "total_packages": total_packages.count or 0,
+        "total_qualified_items": total_qualified.count or 0,
+        "unique_routes": len(unique_routes),
+        "unique_cities": len(unique_cities),
+        "routes": sorted(list(unique_routes))[:30],
+        "cities": sorted(list(unique_cities)),
+    }
+
+
+@router.get("/api/history/prices")
+def price_history(request: Request, origin: str = "", destination: str = "", limit: int = 50):
+    """Get price history for a specific route — admin only."""
+    _require_admin(request)
+    if not db:
+        return {"error": "no db"}
+
+    query = db.table("raw_flights").select("origin, destination, departure_date, return_date, price, airline, scraped_at").order("scraped_at", desc=True).limit(limit)
+    if origin:
+        query = query.eq("origin", origin)
+    if destination:
+        query = query.eq("destination", destination)
+
+    resp = query.execute()
+    return {"prices": resp.data or [], "count": len(resp.data or [])}
+
+
 @router.get("/api/debug/data")
 def debug_data(request: Request):
     """Debug endpoint: show sample data from each table. Admin only."""
