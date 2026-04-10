@@ -117,7 +117,7 @@ export default function OnboardingPage() {
       <div className="w-full max-w-lg">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 justify-center mb-8">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-500 to-amber-400 flex items-center justify-center text-white font-bold">G</div>
+          <img src="/globe1.png" alt="Globe Genius" className="w-9 h-9" />
           <span className="font-[family-name:var(--font-dm-serif)] text-xl">Globe Genius</span>
         </Link>
 
