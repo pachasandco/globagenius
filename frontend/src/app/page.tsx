@@ -161,7 +161,7 @@ export default function Landing() {
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
         <div className="max-w-6xl mx-auto px-4 md:px-5 h-[64px] flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            <img src="/globe1.png" alt="Globe Genius" className="w-8 h-8" />
+            <img src="/globe1.png" alt="Globe Genius" className="w-8 h-8 shrink-0 object-contain" />
             <span className="font-[family-name:var(--font-dm-serif)] text-[19px]">Globe Genius</span>
           </Link>
           <div className="hidden md:flex items-center gap-6 text-sm text-gray-500">
@@ -437,7 +437,7 @@ export default function Landing() {
             {/* Mock Telegram message */}
             <div className="bg-[#0E1621] rounded-2xl p-6 shadow-2xl">
               <div className="flex items-center gap-3 mb-4 pb-3 border-b border-white/10">
-                <img src="/globe1.png" alt="Globe Genius" className="w-10 h-10 rounded-full" />
+                <img src="/globe1.png" alt="Globe Genius" className="w-10 h-10 rounded-full shrink-0 object-contain" />
                 <div>
                   <div className="text-white text-sm font-semibold">Globe Genius</div>
                   <div className="text-gray-500 text-xs">bot</div>
@@ -516,7 +516,7 @@ export default function Landing() {
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <img src="/globe1.png" alt="Globe Genius" className="w-7 h-7" />
+                <img src="/globe1.png" alt="Globe Genius" className="w-7 h-7 shrink-0 object-contain" />
                 <span className="font-[family-name:var(--font-dm-serif)] text-[15px]">Globe Genius</span>
               </div>
               <p className="text-xs text-gray-400 max-w-xs">
