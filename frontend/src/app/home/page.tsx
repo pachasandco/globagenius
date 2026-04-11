@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getPackages, getPipelineStatus, type Package, type PipelineStatus } from "@/lib/api";
+import { initSession } from "@/lib/session";
 
 interface PlanDay {
   day: number;
@@ -116,6 +117,10 @@ export default function HomePage() {
       return;
     }
     setEmail(userEmail || "");
+
+    // Auto-logout after 15 min inactivity
+    const cleanup = initSession();
+    if (cleanup) return cleanup;
 
     async function load() {
       try {
