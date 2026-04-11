@@ -186,7 +186,7 @@ export default function Landing() {
         {/* Background image */}
         <div className="absolute inset-0">
           <img
-            src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1920&q=80"
+            src="https://images.unsplash.com/photo-1436491865332-7a61a109db05?w=1920&q=80"
             alt="Travel"
             className="w-full h-full object-cover"
           />
@@ -487,7 +487,7 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto px-4 md:px-5">
           <div className="relative rounded-3xl overflow-hidden">
             <img
-              src="https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=1920&q=80"
+              src="https://images.unsplash.com/photo-1488085061387-422e29b40080?w=1920&q=80"
               alt="Travel"
               className="absolute inset-0 w-full h-full object-cover"
             />
