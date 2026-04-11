@@ -253,25 +253,68 @@ async def job_scrape_accommodations():
     if not db:
         return
 
-    # Get unique (destination, departure_date, return_date) from active flights
-    flights_resp = (
-        db.table("raw_flights")
-        .select("destination, departure_date, return_date")
-        .gte("expires_at", datetime.now(timezone.utc).isoformat())
+    # Only scrape hotels for destinations where flights have 30%+ discount
+    # This saves API costs and targets the right destinations
+    qualified_flights = (
+        db.table("qualified_items")
+        .select("item_id, discount_pct")
+        .eq("type", "flight")
+        .eq("status", "active")
+        .gte("discount_pct", 30)
         .execute()
     )
 
-    if not flights_resp.data:
-        logger.info("No active flights, skipping accommodation scrape")
+    if not qualified_flights.data:
+        # Fallback: check raw flights vs baselines for 30%+ discounts
+        flights_resp = (
+            db.table("raw_flights")
+            .select("id, origin, destination, departure_date, return_date, price")
+            .gte("expires_at", datetime.now(timezone.utc).isoformat())
+            .execute()
+        )
+
+        if not flights_resp.data:
+            logger.info("No active flights, skipping accommodation scrape")
+            return
+
+        # Find flights with 30%+ discount vs baseline
+        route_dates = set()
+        from app.scraper.flights import _window_label
+        for f in flights_resp.data:
+            try:
+                dep = datetime.strptime(f["departure_date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                days_ahead = max((dep - datetime.now(timezone.utc)).days, 15)
+            except (ValueError, TypeError):
+                days_ahead = 30
+
+            window = _window_label(days_ahead)
+            route_key = f"{f['origin']}-{f['destination']}-{window}"
+
+            bl = db.table("price_baselines").select("avg_price").eq("route_key", route_key).execute()
+            if not bl.data:
+                continue
+
+            avg = bl.data[0]["avg_price"]
+            if avg > 0:
+                discount = (avg - f["price"]) / avg * 100
+                if discount >= 30:
+                    route_dates.add((f["destination"], f["departure_date"], f["return_date"]))
+                    logger.info(f"  Flight deal: {f['origin']}→{f['destination']} {f['price']}€ vs {avg}€ (-{discount:.0f}%)")
+    else:
+        # Get flight details for qualified items
+        route_dates = set()
+        for qi in qualified_flights.data:
+            flight = db.table("raw_flights").select("destination, departure_date, return_date").eq("id", qi["item_id"]).execute()
+            if flight.data:
+                f = flight.data[0]
+                route_dates.add((f["destination"], f["departure_date"], f["return_date"]))
+
+    if not route_dates:
+        logger.info("No flights with 30%+ discount, skipping hotel scrape")
         return
 
-    # Deduplicate by (destination, dates)
-    route_dates = set()
-    for f in flights_resp.data:
-        route_dates.add((f["destination"], f["departure_date"], f["return_date"]))
-
     destinations = {rd[0] for rd in route_dates}
-    logger.info(f"Scraping accommodations for {len(destinations)} destinations, {len(route_dates)} date combos")
+    logger.info(f"Scraping hotels for {len(destinations)} destinations with 30%+ flight discounts ({len(route_dates)} date combos)")
 
     started_at = datetime.now(timezone.utc)
 
