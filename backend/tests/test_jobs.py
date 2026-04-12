@@ -249,3 +249,104 @@ async def test_analyze_skips_when_z_score_below_2():
          patch.object(jobs, "reverify_flight_price", new=AsyncMock(return_value=True)):
         await jobs._analyze_new_flights([flight])
     table_mock.insert.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_travelpayouts_enrichment_builds_bucket_baselines():
+    """The job should fetch flights via get_prices_for_dates, normalize them,
+    and upsert one baseline per (route, bucket) that meets MIN_SAMPLE_COUNT."""
+    from app.scheduler import jobs
+
+    # Build a fake API response with 30 medium-bucket flights for one route
+    fake_entries = []
+    for i in range(30):
+        day_dep = (i % 14) + 1
+        day_ret = day_dep + 7
+        fake_entries.append({
+            "origin_airport": "CDG",
+            "destination_airport": "BCN",
+            "departure_at": f"2026-05-{day_dep:02d}T10:00:00+02:00",
+            "return_at": f"2026-05-{day_ret:02d}T18:00:00+02:00",
+            "price": 200 + i,
+            "airline": "AF",
+            "transfers": 0,
+            "return_transfers": 0,
+            "duration_to": 100,
+            "duration_back": 110,
+            "link": "/search/...",
+        })
+
+    db_mock = MagicMock()
+    table_mock = MagicMock()
+    upsert_mock = MagicMock()
+    upsert_mock.execute.return_value = MagicMock(data=[{}])
+    table_mock.upsert.return_value = upsert_mock
+    db_mock.table.return_value = table_mock
+
+    # Mock settings to limit to 1 airport
+    fake_settings = MagicMock()
+    fake_settings.MVP_AIRPORTS = ["CDG"]
+    fake_settings.TRAVELPAYOUTS_TOKEN = "fake-token"
+
+    with patch.object(jobs, "db", db_mock), \
+         patch.object(jobs, "settings", fake_settings), \
+         patch("app.scheduler.jobs.get_prices_for_dates", return_value=fake_entries), \
+         patch("app.scheduler.jobs.get_priority_destinations", return_value=["BCN"]):
+        await jobs.job_travelpayouts_enrichment()
+
+    upsert_calls = table_mock.upsert.call_args_list
+    upserted_baselines = [c.args[0] for c in upsert_calls]
+    bucket_baselines = [b for b in upserted_baselines if "bucket_" in b.get("route_key", "")]
+    assert len(bucket_baselines) >= 1
+    medium = next((b for b in bucket_baselines if b["route_key"] == "CDG-BCN-bucket_medium"), None)
+    assert medium is not None
+    assert medium["sample_count"] == 30
+    assert medium["type"] == "flight"
+
+
+@pytest.mark.asyncio
+async def test_travelpayouts_enrichment_skips_routes_without_enough_samples():
+    """If a route returns fewer than MIN_SAMPLE_COUNT usable observations,
+    no baseline is published for that route."""
+    from app.scheduler import jobs
+
+    # Only 5 flights — below MIN_SAMPLE_COUNT
+    fake_entries = []
+    for i in range(5):
+        day_dep = i + 1
+        day_ret = day_dep + 7
+        fake_entries.append({
+            "origin_airport": "CDG",
+            "destination_airport": "BCN",
+            "departure_at": f"2026-05-{day_dep:02d}T10:00:00+02:00",
+            "return_at": f"2026-05-{day_ret:02d}T18:00:00+02:00",
+            "price": 200 + i,
+            "airline": "AF",
+            "transfers": 0,
+            "return_transfers": 0,
+            "duration_to": 100,
+            "duration_back": 110,
+            "link": "/search/...",
+        })
+
+    db_mock = MagicMock()
+    table_mock = MagicMock()
+    upsert_mock = MagicMock()
+    upsert_mock.execute.return_value = MagicMock(data=[{}])
+    table_mock.upsert.return_value = upsert_mock
+    db_mock.table.return_value = table_mock
+
+    fake_settings = MagicMock()
+    fake_settings.MVP_AIRPORTS = ["CDG"]
+    fake_settings.TRAVELPAYOUTS_TOKEN = "fake-token"
+
+    with patch.object(jobs, "db", db_mock), \
+         patch.object(jobs, "settings", fake_settings), \
+         patch("app.scheduler.jobs.get_prices_for_dates", return_value=fake_entries), \
+         patch("app.scheduler.jobs.get_priority_destinations", return_value=["BCN"]):
+        await jobs.job_travelpayouts_enrichment()
+
+    upsert_calls = table_mock.upsert.call_args_list
+    upserted_baselines = [c.args[0] for c in upsert_calls]
+    bucket_baselines = [b for b in upserted_baselines if "bucket_" in b.get("route_key", "")]
+    assert bucket_baselines == []

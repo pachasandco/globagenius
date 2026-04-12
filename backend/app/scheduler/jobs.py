@@ -5,6 +5,10 @@ from app.db import db
 from app.scraper.travelpayouts_flights import scrape_all_flights
 from app.scraper.accommodations import scrape_accommodations_for_destinations
 from app.analysis.baselines import compute_baseline, MIN_SAMPLE_COUNT
+from app.scraper.travelpayouts import get_prices_for_dates
+from app.scraper.travelpayouts_flights import _normalize_priced_entry
+from app.analysis.route_selector import get_priority_destinations, is_long_haul
+from app.analysis.baselines import compute_baselines_by_bucket
 from app.analysis.anomaly_detector import detect_anomaly
 from app.analysis.scorer import compute_score
 from app.analysis.buckets import bucket_for_duration, stops_allowed
@@ -511,48 +515,42 @@ async def job_daily_admin_report():
 
 
 async def job_travelpayouts_enrichment():
-    """Enrich baselines with Travelpayouts data + check special offers."""
-    logger.info("Starting Travelpayouts enrichment")
+    """Build per-bucket baselines for all MVP routes via Travelpayouts."""
+    logger.info("Starting Travelpayouts bucket baseline enrichment")
     if not db or not settings.TRAVELPAYOUTS_TOKEN:
         return
 
-    from app.scraper.travelpayouts import build_baseline_from_travelpayouts, get_special_offers, get_cheap_destinations
-    from app.scraper.travelpayouts_flights import _window_label
+    destinations = get_priority_destinations(max_count=25)
+    total_published = 0
 
-    # 1. Enrich baselines for all MVP airports
-    enriched = 0
-    for airport in settings.MVP_AIRPORTS:
-        # Discover cheap destinations
-        try:
-            cheap = get_cheap_destinations(airport, limit=15)
-            for dest in cheap:
-                dest_code = dest.get("destination", "")
-                if not dest_code:
-                    continue
+    for origin in settings.MVP_AIRPORTS:
+        for dest in destinations:
+            if dest == origin:
+                continue
+            if is_long_haul(dest) and origin != "CDG":
+                continue
 
-                baseline_data = build_baseline_from_travelpayouts(airport, dest_code)
-                if baseline_data:
-                    route_key = f"{airport}-{dest_code}-tp"
-                    db.table("price_baselines").upsert({
-                        "route_key": route_key,
-                        "type": "flight",
-                        "avg_price": baseline_data["avg_price"],
-                        "std_dev": max(baseline_data["std_dev"], 1.0),
-                        "sample_count": baseline_data["sample_count"],
-                        "calculated_at": datetime.now(timezone.utc).isoformat(),
-                    }, on_conflict="route_key").execute()
-                    enriched += 1
-        except Exception as e:
-            logger.warning(f"Travelpayouts enrichment failed for {airport}: {e}")
+            try:
+                api_entries = get_prices_for_dates(origin, dest)
+            except Exception as e:
+                logger.warning(f"Travelpayouts enrichment failed for {origin}->{dest}: {e}")
+                continue
 
-    logger.info(f"Travelpayouts: enriched {enriched} baselines")
+            observations = []
+            for entry in api_entries:
+                normalized = _normalize_priced_entry(entry)
+                if normalized:
+                    observations.append(normalized)
 
-    # 2. Check special offers (fare mistakes)
-    try:
-        offers = get_special_offers()
-        if offers:
-            logger.info(f"Travelpayouts: {len(offers)} special offers detected")
-            for offer in offers[:10]:
-                logger.info(f"  Special: {offer.get('origin','')}→{offer.get('destination','')} {offer.get('value','')}€")
-    except Exception as e:
-        logger.warning(f"Special offers check failed: {e}")
+            if not observations:
+                continue
+
+            baselines = compute_baselines_by_bucket(f"{origin}-{dest}", observations)
+            for baseline in baselines:
+                try:
+                    db.table("price_baselines").upsert(baseline, on_conflict="route_key").execute()
+                    total_published += 1
+                except Exception as e:
+                    logger.warning(f"Failed to upsert baseline {baseline['route_key']}: {e}")
+
+    logger.info(f"Travelpayouts enrichment: {total_published} bucket baselines upserted")
