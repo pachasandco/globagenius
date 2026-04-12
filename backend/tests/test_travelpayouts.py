@@ -73,3 +73,31 @@ def test_get_calendar_prices_falls_back_to_day_key_when_departure_at_missing():
         result = get_calendar_prices("CDG", "JFK", "2026-05")
     assert len(result) == 1
     assert result[0]["departure_at"] == "2026-05-12"
+
+
+def test_get_calendar_prices_omits_depart_date_when_month_not_provided():
+    captured = {}
+
+    def fake_get(url, params=None):
+        captured["params"] = params
+        return {"success": True, "data": {}}
+
+    with patch("app.scraper.travelpayouts._get", side_effect=fake_get):
+        get_calendar_prices("CDG", "JFK")
+
+    assert "depart_date" not in captured["params"]
+    assert captured["params"]["origin"] == "CDG"
+    assert captured["params"]["destination"] == "JFK"
+
+
+def test_get_calendar_prices_includes_depart_date_when_month_provided():
+    captured = {}
+
+    def fake_get(url, params=None):
+        captured["params"] = params
+        return {"success": True, "data": {}}
+
+    with patch("app.scraper.travelpayouts._get", side_effect=fake_get):
+        get_calendar_prices("CDG", "JFK", "2026-05")
+
+    assert captured["params"]["depart_date"] == "2026-05"

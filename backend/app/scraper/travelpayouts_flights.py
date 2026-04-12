@@ -15,7 +15,6 @@ logger = logging.getLogger(__name__)
 
 SOURCE = "travelpayouts"
 
-SAMPLE_MONTH_OFFSETS = [1, 2, 3]  # M+1, M+2, M+3
 DEFAULT_TRIP_DURATION_DAYS = 7
 
 AIRPORTS_PER_CYCLE = 2
@@ -90,25 +89,16 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _target_months() -> list[str]:
-    now = _utcnow()
-    months = []
-    for offset in SAMPLE_MONTH_OFFSETS:
-        year = now.year + ((now.month - 1 + offset) // 12)
-        month = ((now.month - 1 + offset) % 12) + 1
-        months.append(f"{year:04d}-{month:02d}")
-    return months
-
-
 def scrape_flights_for_route(origin: str, destination: str) -> list[dict]:
-    """Fetch 3 months of daily quotes for one route and normalize them."""
+    """Fetch all currently-cached daily quotes for one route and normalize them.
+
+    The Travelpayouts /v1/prices/calendar endpoint returns its full
+    cached window in a single call, so one call per route is enough."""
     flights = []
-    for month in _target_months():
-        entries = get_calendar_prices(origin, destination, month)
-        for entry in entries:
-            normalized = _normalize_calendar_entry(entry, origin, destination)
-            if normalized:
-                flights.append(normalized)
+    for entry in get_calendar_prices(origin, destination):
+        normalized = _normalize_calendar_entry(entry, origin, destination)
+        if normalized:
+            flights.append(normalized)
     return flights
 
 

@@ -101,19 +101,20 @@ def get_month_matrix(origin: str, destination: str) -> list[dict]:
     return data.get("data", [])
 
 
-def get_calendar_prices(origin: str, destination: str, depart_month: str) -> list[dict]:
-    """Get one cheapest price per departure day over a month.
+def get_calendar_prices(origin: str, destination: str, depart_month: str = "") -> list[dict]:
+    """Get one cheapest price per departure day.
 
-    `depart_month` format: YYYY-MM (e.g. "2026-05").
-    Calls /v1/prices/calendar with calendar_type=departure_date.
-    Returns up to ~30 entries (one per day with availability)."""
+    `depart_month` format: YYYY-MM (e.g. "2026-05"). If empty, the API
+    returns the full window it has cached (typically several months).
+    Calls /v1/prices/calendar with calendar_type=departure_date."""
     params = {
         "origin": origin,
         "destination": destination,
-        "depart_date": depart_month,
         "calendar_type": "departure_date",
         "currency": "eur",
     }
+    if depart_month:
+        params["depart_date"] = depart_month
     data = _get(f"{REST_URL}/v1/prices/calendar", params)
     if not data or not data.get("success"):
         return []
