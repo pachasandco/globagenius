@@ -110,3 +110,24 @@ def scrape_flights_for_route(origin: str, destination: str) -> list[dict]:
             if normalized:
                 flights.append(normalized)
     return flights
+
+
+def scrape_flights_for_airport(origin: str) -> list[dict]:
+    """Scrape all priority destinations for one origin airport.
+
+    Long-haul destinations are only scraped from CDG."""
+    destinations = get_priority_destinations(max_count=25)
+    all_flights = []
+    for dest in destinations:
+        if dest == origin:
+            continue
+        if is_long_haul(dest) and origin != "CDG":
+            continue
+        try:
+            flights = scrape_flights_for_route(origin, dest)
+            all_flights.extend(flights)
+            if flights:
+                logger.info(f"  {origin}->{dest}: {len(flights)} flights")
+        except Exception as e:
+            logger.warning(f"Failed to scrape {origin}->{dest}: {e}")
+    return all_flights

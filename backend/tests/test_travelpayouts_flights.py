@@ -170,3 +170,62 @@ def test_scrape_flights_for_route_skips_unusable_entries():
 
     assert len(flights) == 1
     assert flights[0]["price"] == 412.0
+
+
+def test_scrape_flights_for_airport_filters_long_haul_from_non_cdg():
+    from app.scraper.travelpayouts_flights import scrape_flights_for_airport
+
+    seen_routes = []
+
+    def fake_route(origin, destination):
+        seen_routes.append((origin, destination))
+        return [{"price": 100.0, "destination": destination}]
+
+    with patch("app.scraper.travelpayouts_flights.get_priority_destinations",
+               return_value=["BCN", "JFK", "LIS", "BKK"]), \
+         patch("app.scraper.travelpayouts_flights.scrape_flights_for_route", side_effect=fake_route):
+        flights = scrape_flights_for_airport("LYS")
+
+    destinations_called = [d for _, d in seen_routes]
+    assert "BCN" in destinations_called
+    assert "LIS" in destinations_called
+    assert "JFK" not in destinations_called  # long-haul, blocked from LYS
+    assert "BKK" not in destinations_called  # long-haul, blocked from LYS
+    assert len(flights) == 2
+
+
+def test_scrape_flights_for_airport_keeps_long_haul_from_cdg():
+    from app.scraper.travelpayouts_flights import scrape_flights_for_airport
+
+    seen_routes = []
+
+    def fake_route(origin, destination):
+        seen_routes.append((origin, destination))
+        return [{"price": 100.0, "destination": destination}]
+
+    with patch("app.scraper.travelpayouts_flights.get_priority_destinations",
+               return_value=["BCN", "JFK", "BKK"]), \
+         patch("app.scraper.travelpayouts_flights.scrape_flights_for_route", side_effect=fake_route):
+        flights = scrape_flights_for_airport("CDG")
+
+    destinations_called = [d for _, d in seen_routes]
+    assert destinations_called == ["BCN", "JFK", "BKK"]
+    assert len(flights) == 3
+
+
+def test_scrape_flights_for_airport_skips_self_destination():
+    from app.scraper.travelpayouts_flights import scrape_flights_for_airport
+
+    seen_routes = []
+
+    def fake_route(origin, destination):
+        seen_routes.append((origin, destination))
+        return []
+
+    with patch("app.scraper.travelpayouts_flights.get_priority_destinations",
+               return_value=["CDG", "BCN"]), \
+         patch("app.scraper.travelpayouts_flights.scrape_flights_for_route", side_effect=fake_route):
+        scrape_flights_for_airport("CDG")
+
+    destinations_called = [d for _, d in seen_routes]
+    assert destinations_called == ["BCN"]
