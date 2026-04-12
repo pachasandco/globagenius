@@ -134,13 +134,14 @@ async def test_analyze_skips_when_no_baseline_for_bucket():
 
 @pytest.mark.asyncio
 async def test_analyze_skips_when_baseline_sample_count_too_low():
+    from app.analysis.baselines import MIN_SAMPLE_COUNT
     db_mock = MagicMock()
     baseline_row = {
         "route_key": "CDG-BCN-bucket_medium",
         "type": "flight",
         "avg_price": 200.0,
         "std_dev": 25.0,
-        "sample_count": 25,  # below MIN_SAMPLE_COUNT
+        "sample_count": MIN_SAMPLE_COUNT - 1,  # below MIN_SAMPLE_COUNT
     }
     table_mock = MagicMock()
     select_mock = MagicMock()

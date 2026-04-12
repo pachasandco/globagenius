@@ -66,7 +66,7 @@ def _obs(price, duration_days=7, stops=0, duration_minutes=120, scraped_days_ago
 
 
 def test_min_sample_count_constant():
-    assert MIN_SAMPLE_COUNT == 30
+    assert MIN_SAMPLE_COUNT == 10
 
 
 def test_compute_baselines_by_bucket_groups_by_bucket():
@@ -113,16 +113,16 @@ def test_compute_baselines_by_bucket_excludes_long_haul_with_2_plus_stops():
 
 
 def test_compute_baselines_by_bucket_minimum_sample_count_not_met():
-    obs = [_obs(100, duration_days=7) for _ in range(29)]
+    obs = [_obs(100, duration_days=7) for _ in range(MIN_SAMPLE_COUNT - 1)]
     result = compute_baselines_by_bucket("CDG-BCN", obs)
-    assert result == []  # no bucket gets 30 observations
+    assert result == []  # no bucket reaches MIN_SAMPLE_COUNT observations
 
 
 def test_compute_baselines_by_bucket_minimum_sample_count_met_exactly():
-    obs = [_obs(100, duration_days=7) for _ in range(30)]
+    obs = [_obs(100, duration_days=7) for _ in range(MIN_SAMPLE_COUNT)]
     result = compute_baselines_by_bucket("CDG-BCN", obs)
     assert len(result) == 1
-    assert result[0]["sample_count"] == 30
+    assert result[0]["sample_count"] == MIN_SAMPLE_COUNT
 
 
 def test_compute_baselines_by_bucket_ignores_observations_outside_buckets():

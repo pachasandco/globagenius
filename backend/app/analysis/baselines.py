@@ -50,7 +50,11 @@ def compute_baseline(
     }
 
 
-MIN_SAMPLE_COUNT = 30
+MIN_SAMPLE_COUNT = 10  # See spec note: relaxed from 30 because the API
+                        # returns ~10-50 round-trips total per route, often
+                        # under 30 once split into 3 duration buckets.
+                        # Future work: cumulative baselines from raw_flights
+                        # history to safely raise this back to 30+.
 
 
 def compute_baselines_by_bucket(
