@@ -48,3 +48,48 @@ def compute_baseline(
         "sample_count": len(observations),
         "calculated_at": now.isoformat(),
     }
+
+
+MIN_SAMPLE_COUNT = 30
+
+
+def compute_baselines_by_bucket(
+    route_key_prefix: str,
+    observations: list[dict],
+) -> list[dict]:
+    """Group observations by duration bucket and return one baseline per qualifying bucket.
+
+    Each observation must have: price, trip_duration_days, stops, duration_minutes,
+    scraped_at. Observations outside any duration bucket, or violating the stops rule,
+    are filtered out. Baselines with fewer than MIN_SAMPLE_COUNT observations are not
+    published. The median (not the mean) is used for `avg_price` to be robust to outliers."""
+    from app.analysis.buckets import bucket_for_duration, stops_allowed
+
+    by_bucket: dict[str, list[dict]] = {}
+    for obs in observations:
+        days = obs.get("trip_duration_days") or 0
+        bucket = bucket_for_duration(days)
+        if not bucket:
+            continue
+        max_stops = stops_allowed(obs.get("duration_minutes") or 0)
+        if (obs.get("stops") or 0) > max_stops:
+            continue
+        by_bucket.setdefault(bucket, []).append(obs)
+
+    now = datetime.now(timezone.utc)
+    result = []
+    for bucket, obs_list in by_bucket.items():
+        if len(obs_list) < MIN_SAMPLE_COUNT:
+            continue
+        prices = np.array([o["price"] for o in obs_list], dtype=float)
+        median = float(np.median(prices))
+        std = float(np.std(prices))
+        result.append({
+            "route_key": f"{route_key_prefix}-bucket_{bucket}",
+            "type": "flight",
+            "avg_price": round(median, 2),
+            "std_dev": round(std, 2),
+            "sample_count": len(obs_list),
+            "calculated_at": now.isoformat(),
+        })
+    return result
