@@ -4,11 +4,10 @@ from app.config import settings, IATA_TO_CITY
 from app.db import db
 from app.scraper.travelpayouts_flights import scrape_all_flights
 from app.scraper.accommodations import scrape_accommodations_for_destinations
-from app.analysis.baselines import compute_baseline, MIN_SAMPLE_COUNT
+from app.analysis.baselines import compute_baseline, compute_baselines_by_bucket, MIN_SAMPLE_COUNT
 from app.scraper.travelpayouts import get_prices_for_dates
 from app.scraper.travelpayouts_flights import _normalize_priced_entry
 from app.analysis.route_selector import get_priority_destinations, is_long_haul
-from app.analysis.baselines import compute_baselines_by_bucket
 from app.analysis.anomaly_detector import detect_anomaly
 from app.analysis.scorer import compute_score
 from app.analysis.buckets import bucket_for_duration, stops_allowed
@@ -430,7 +429,7 @@ async def job_recalculate_baselines():
 
     flights_resp = (
         db.table("raw_flights")
-        .select("origin, destination, price, scraped_at")
+        .select("origin, destination, price, scraped_at, trip_duration_days, stops, duration_minutes")
         .gte("scraped_at", thirty_days_ago)
         .execute()
     )
@@ -438,12 +437,19 @@ async def job_recalculate_baselines():
     routes: dict[str, list] = {}
     for f in (flights_resp.data or []):
         key = f"{f['origin']}-{f['destination']}"
-        routes.setdefault(key, []).append({"price": f["price"], "scraped_at": f["scraped_at"]})
+        routes.setdefault(key, []).append(f)
 
-    for route_key, observations in routes.items():
-        baseline = compute_baseline(route_key, "flight", observations)
-        if baseline:
-            db.table("price_baselines").upsert(baseline, on_conflict="route_key").execute()
+    flight_baselines_published = 0
+    for route_key_prefix, observations in routes.items():
+        baselines = compute_baselines_by_bucket(route_key_prefix, observations)
+        for baseline in baselines:
+            try:
+                db.table("price_baselines").upsert(baseline, on_conflict="route_key").execute()
+                flight_baselines_published += 1
+            except Exception as e:
+                logger.warning(f"Failed to upsert baseline {baseline['route_key']}: {e}")
+
+    logger.info(f"Recalculated {flight_baselines_published} flight bucket baselines from {len(routes)} routes")
 
     acc_resp = (
         db.table("raw_accommodations")
@@ -462,7 +468,7 @@ async def job_recalculate_baselines():
         if baseline:
             db.table("price_baselines").upsert(baseline, on_conflict="route_key").execute()
 
-    logger.info(f"Baselines recalculated: {len(routes)} flight routes, {len(acc_routes)} accommodation routes")
+    logger.info(f"Baselines recalculated: {flight_baselines_published} flight bucket baselines, {len(acc_routes)} accommodation routes")
 
 
 async def job_expire_stale_data():

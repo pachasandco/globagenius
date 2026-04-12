@@ -351,3 +351,101 @@ async def test_travelpayouts_enrichment_skips_routes_without_enough_samples():
     upserted_baselines = [c.args[0] for c in upsert_calls]
     bucket_baselines = [b for b in upserted_baselines if "bucket_" in b.get("route_key", "")]
     assert bucket_baselines == []
+
+
+@pytest.mark.asyncio
+async def test_recalculate_baselines_builds_bucket_baselines_from_history():
+    """job_recalculate_baselines should read raw_flights for the last 30 days,
+    group by route, and produce per-bucket baselines via compute_baselines_by_bucket."""
+    from app.scheduler import jobs
+    from datetime import datetime, timezone
+
+    # 30 medium-bucket flights for CDG-BCN, all valid
+    fake_flights = []
+    for i in range(30):
+        fake_flights.append({
+            "origin": "CDG",
+            "destination": "BCN",
+            "price": 200 + i,
+            "scraped_at": datetime.now(timezone.utc).isoformat(),
+            "trip_duration_days": 7,
+            "stops": 0,
+            "duration_minutes": 120,
+        })
+
+    pb_table = MagicMock()
+    pb_table.upsert.return_value.execute.return_value = MagicMock(data=[{}])
+
+    rf_table = MagicMock()
+    rf_table.select.return_value.gte.return_value.execute.return_value = MagicMock(data=fake_flights)
+
+    ra_table = MagicMock()
+    ra_table.select.return_value.gte.return_value.execute.return_value = MagicMock(data=[])
+
+    db_mock = MagicMock()
+
+    def fake_table(name):
+        return {
+            "raw_flights": rf_table,
+            "raw_accommodations": ra_table,
+            "price_baselines": pb_table,
+        }[name]
+
+    db_mock.table.side_effect = fake_table
+
+    with patch.object(jobs, "db", db_mock):
+        await jobs.job_recalculate_baselines()
+
+    upsert_payloads = [c.args[0] for c in pb_table.upsert.call_args_list]
+    bucket_baselines = [b for b in upsert_payloads if "bucket_" in b.get("route_key", "")]
+    assert len(bucket_baselines) >= 1
+    medium = next((b for b in bucket_baselines if b["route_key"] == "CDG-BCN-bucket_medium"), None)
+    assert medium is not None
+    assert medium["sample_count"] == 30
+    assert medium["type"] == "flight"
+
+
+@pytest.mark.asyncio
+async def test_recalculate_baselines_skips_routes_without_enough_history():
+    """If a route has fewer than MIN_SAMPLE_COUNT observations per bucket,
+    no baseline is upserted for that route."""
+    from app.scheduler import jobs
+    from datetime import datetime, timezone
+
+    # Only 5 flights for CDG-BCN — under MIN_SAMPLE_COUNT
+    fake_flights = []
+    for i in range(5):
+        fake_flights.append({
+            "origin": "CDG",
+            "destination": "BCN",
+            "price": 200 + i,
+            "scraped_at": datetime.now(timezone.utc).isoformat(),
+            "trip_duration_days": 7,
+            "stops": 0,
+            "duration_minutes": 120,
+        })
+
+    pb_table = MagicMock()
+    pb_table.upsert.return_value.execute.return_value = MagicMock(data=[{}])
+
+    rf_table = MagicMock()
+    rf_table.select.return_value.gte.return_value.execute.return_value = MagicMock(data=fake_flights)
+
+    ra_table = MagicMock()
+    ra_table.select.return_value.gte.return_value.execute.return_value = MagicMock(data=[])
+
+    db_mock = MagicMock()
+
+    def fake_table(name):
+        return {
+            "raw_flights": rf_table,
+            "raw_accommodations": ra_table,
+            "price_baselines": pb_table,
+        }[name]
+
+    db_mock.table.side_effect = fake_table
+
+    with patch.object(jobs, "db", db_mock):
+        await jobs.job_recalculate_baselines()
+
+    pb_table.upsert.assert_not_called()
