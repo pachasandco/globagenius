@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from app.config import settings, IATA_TO_CITY
 from app.db import db
-from app.scraper.flights import scrape_all_flights
+from app.scraper.travelpayouts_flights import scrape_all_flights
 from app.scraper.accommodations import scrape_accommodations_for_destinations
 from app.analysis.baselines import compute_baseline
 from app.analysis.anomaly_detector import detect_anomaly
@@ -129,7 +129,7 @@ async def _analyze_new_flights(flights: list[dict]):
         except (ValueError, TypeError):
             days_ahead = 30
 
-        from app.scraper.flights import _window_label
+        from app.scraper.travelpayouts_flights import _window_label
         window = _window_label(max(days_ahead, 15))
         route_key = f"{flight['origin']}-{flight['destination']}-{window}"
 
@@ -279,7 +279,7 @@ async def job_scrape_accommodations():
 
         # Find flights with 30%+ discount vs baseline
         route_dates = set()
-        from app.scraper.flights import _window_label
+        from app.scraper.travelpayouts_flights import _window_label
         for f in flights_resp.data:
             try:
                 dep = datetime.strptime(f["departure_date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
@@ -493,7 +493,7 @@ async def job_travelpayouts_enrichment():
         return
 
     from app.scraper.travelpayouts import build_baseline_from_travelpayouts, get_special_offers, get_cheap_destinations
-    from app.scraper.flights import _window_label
+    from app.scraper.travelpayouts_flights import _window_label
 
     # 1. Enrich baselines for all MVP airports
     enriched = 0
