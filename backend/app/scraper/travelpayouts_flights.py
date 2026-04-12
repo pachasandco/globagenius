@@ -83,3 +83,30 @@ def _normalize_calendar_entry(entry: dict, origin: str, destination: str) -> dic
     }
 
     return normalize_flight(raw, source=SOURCE)
+
+
+def _utcnow() -> datetime:
+    """Indirection so tests can freeze time."""
+    return datetime.now(timezone.utc)
+
+
+def _target_months() -> list[str]:
+    now = _utcnow()
+    months = []
+    for offset in SAMPLE_MONTH_OFFSETS:
+        year = now.year + ((now.month - 1 + offset) // 12)
+        month = ((now.month - 1 + offset) % 12) + 1
+        months.append(f"{year:04d}-{month:02d}")
+    return months
+
+
+def scrape_flights_for_route(origin: str, destination: str) -> list[dict]:
+    """Fetch 3 months of daily quotes for one route and normalize them."""
+    flights = []
+    for month in _target_months():
+        entries = get_calendar_prices(origin, destination, month)
+        for entry in entries:
+            normalized = _normalize_calendar_entry(entry, origin, destination)
+            if normalized:
+                flights.append(normalized)
+    return flights

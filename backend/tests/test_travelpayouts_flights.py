@@ -111,3 +111,62 @@ def test_build_aviasales_url_falls_back_on_invalid_date():
 def test_build_aviasales_url_falls_back_on_empty_dates():
     url = _build_aviasales_url("CDG", "JFK", "", "")
     assert url.startswith("https://www.aviasales.com/search?")
+
+
+from unittest.mock import patch
+from datetime import datetime, timezone
+
+
+def _calendar_entry(price: int, day: int, month: int = 5):
+    return {
+        "departure_at": f"2026-{month:02d}-{day:02d}T10:00:00+02:00",
+        "return_at": f"2026-{month:02d}-{(day + 7):02d}T18:00:00+02:00",
+        "expires_at": "2026-04-13T10:00:00Z",
+        "price": price,
+        "airline": "AF",
+        "flight_number": 22,
+        "transfers": 0,
+    }
+
+
+def test_scrape_flights_for_route_calls_three_months_and_aggregates():
+    from app.scraper.travelpayouts_flights import scrape_flights_for_route
+
+    fixed_now = datetime(2026, 4, 12, tzinfo=timezone.utc)
+
+    def fake_get_calendar(origin, destination, month):
+        return {
+            "2026-05": [_calendar_entry(412, 12), _calendar_entry(398, 13)],
+            "2026-06": [_calendar_entry(450, 14, month=6)],
+            "2026-07": [_calendar_entry(380, 15, month=7)],
+        }.get(month, [])
+
+    with patch("app.scraper.travelpayouts_flights.get_calendar_prices", side_effect=fake_get_calendar), \
+         patch("app.scraper.travelpayouts_flights._utcnow", return_value=fixed_now):
+        flights = scrape_flights_for_route("CDG", "JFK")
+
+    assert len(flights) == 4
+    prices = sorted(f["price"] for f in flights)
+    assert prices == [380.0, 398.0, 412.0, 450.0]
+    for f in flights:
+        assert f["origin"] == "CDG"
+        assert f["destination"] == "JFK"
+        assert f["source"] == "travelpayouts"
+
+
+def test_scrape_flights_for_route_skips_unusable_entries():
+    from app.scraper.travelpayouts_flights import scrape_flights_for_route
+
+    fixed_now = datetime(2026, 4, 12, tzinfo=timezone.utc)
+
+    def fake_get_calendar(origin, destination, month):
+        if month == "2026-05":
+            return [_calendar_entry(412, 12), {"departure_at": "", "price": 0}]
+        return []
+
+    with patch("app.scraper.travelpayouts_flights.get_calendar_prices", side_effect=fake_get_calendar), \
+         patch("app.scraper.travelpayouts_flights._utcnow", return_value=fixed_now):
+        flights = scrape_flights_for_route("CDG", "JFK")
+
+    assert len(flights) == 1
+    assert flights[0]["price"] == 412.0
