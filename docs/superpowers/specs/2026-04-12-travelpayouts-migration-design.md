@@ -38,11 +38,11 @@ Responsabilité unique : récupérer les prix vol depuis Travelpayouts et les no
 
 Fonctions :
 
-- `scrape_route_calendar(origin, destination, depart_month) -> list[dict]`
-  Appelle `/v1/prices/calendar` pour récupérer un prix par jour de départ sur le mois. 1 appel = ~30 vols.
+- `get_calendar_prices(origin, destination, depart_month="")` (dans `app/scraper/travelpayouts.py`)
+  Appelle `/v1/prices/calendar`. Le paramètre `depart_month` est optionnel : sans lui, l'API renvoie sa fenêtre cachée complète (typiquement 6 à 9 mois) en un seul appel, avec ~30 à 50 dates uniques.
 
 - `scrape_flights_for_route(origin, destination) -> list[dict]`
-  Itère sur les mois cibles (M+1, M+2, M+3) et concatène les résultats. ~3 appels = ~90 vols par route.
+  **Un seul appel** à `get_calendar_prices` (sans `depart_month`) suffit pour récupérer toutes les dates cachées par l'API. Les premiers tests prévoyaient 3 appels mensuels (M+1, M+2, M+3) mais le smoke test en local a révélé que l'endpoint ignore le filtre `depart_date` : les 3 appels renvoyaient le même catalogue. Un appel unique → ~30-50 vols par route, 3x moins de quota et 3x plus rapide.
 
 - `scrape_flights_for_airport(origin) -> list[dict]`
   Itère sur les destinations retournées par `route_selector` (en filtrant les long-courriers si origin ≠ CDG).
@@ -125,11 +125,17 @@ Fichiers modifiés :
 
 ## Volume et rate limit
 
-- 8 airports × ~17 destinations × 3 mois = ~408 appels par cycle complet (1 cycle = 1 airport)
-- En réalité avec `AIRPORTS_PER_CYCLE = 2` → ~816 appels par cron
-- 6 crons/jour → **~4900 appels/jour**
+Mesuré localement après le fix single-call :
+
+- 1 airport × 17 destinations × 1 appel = ~17 appels par airport
+- `AIRPORTS_PER_CYCLE = 2` → ~34 appels par cron
+- 6 crons/jour → **~200 appels/jour pour les vols**
+- À cela s'ajoute `job_travelpayouts_enrichment` (1×/jour) qui appelle `month-matrix` pour ~140 routes
+- **Total : ~340 appels/jour**
 - Rate limit Travelpayouts : ~1 req/sec, donc ~86k appels/jour théoriques
-- **Marge : ×17, aucun risque de throttling**
+- **Marge : ×250, aucun risque de throttling**
+
+Smoke test mesuré le 12/04 : `scrape_all_flights()` complet (2 airports, ~17 destinations chacun) → 278 vols uniques, 0 erreur, 6 secondes.
 
 Coût : **0 €/mois**.
 
@@ -142,18 +148,24 @@ Coût : **0 €/mois**.
 
 ## Tests
 
-Tests à créer/adapter dans `backend/tests/test_travelpayouts_flights.py` :
+Tests créés (état final après implémentation) :
 
-1. `test_scrape_route_calendar_parses_response` — mock httpx, vérifie le mapping
-2. `test_scrape_route_calendar_handles_empty_data` — réponse `{data: {}}` → liste vide
-3. `test_scrape_route_calendar_handles_api_error` — httpx raise → liste vide, erreur loggée
-4. `test_scrape_flights_for_route_iterates_months` — vérifie 3 appels (M+1, M+2, M+3)
-5. `test_scrape_flights_for_airport_filters_long_haul` — depuis LYS, NRT/BKK/etc absents
-6. `test_scrape_flights_for_airport_includes_long_haul_from_cdg` — depuis CDG, long-courriers présents
-7. `test_normalize_calendar_entry_to_raw_flight` — mapping des champs
-8. `test_scrape_all_flights_signature_compatible` — retourne `(list, int, list)` comme l'ancienne version
+`backend/tests/test_travelpayouts.py` (7 tests pour `get_calendar_prices`) :
+- parsing happy path, fallback sur la clé `day` quand `departure_at` absent
+- réponses null/unsuccessful/empty → liste vide
+- omission/inclusion de `depart_date` dans les params selon que `depart_month` est fourni
 
-Tests existants à supprimer : tous ceux qui mockent Apify ou Playwright dans le pipeline vol.
+`backend/tests/test_travelpayouts_flights.py` (19 tests pour le scraper) :
+- `_window_label` : 5 tests aux bornes (1m/2m/3m/4m/6m)
+- `_normalize_calendar_entry` : mapping complet, fallback `return_at`, rejet de prix=0 et `departure_at` vide
+- `_build_aviasales_url` : happy path + fallbacks
+- `scrape_flights_for_route` : agrégation et skip des entries inutilisables
+- `scrape_flights_for_airport` : filtrage long-courrier non-CDG, conservation depuis CDG, skip self
+- `scrape_all_flights` : signature `(list, int, list)`, comptage des erreurs par airport
+
+`backend/tests/test_route_selector.py` (4 tests pour `is_long_haul` / `LONG_HAUL_DESTINATIONS`).
+
+**Total : 71 tests passent** (45 baseline conservés + 26 nouveaux).
 
 ## Migration en production
 
