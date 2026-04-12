@@ -10,7 +10,7 @@ Remplacer Google Flights (Playwright + Apify) par l'API Travelpayouts comme **so
 
 ## Décisions clés
 
-- **Suppression complète** de Playwright et Apify (code, dépendances, image Docker)
+- **Suppression de Playwright et Apify pour le scrape vol uniquement** (le scrape hôtel `accommodations.py` continue à utiliser ces deux dépendances tant qu'on n'aura pas migré les hôtels — autre projet)
 - **Travelpayouts = source unique** des prix vol (pas de fallback navigateur)
 - **Long-courrier uniquement depuis CDG**, court/moyen courrier depuis les 8 airports MVP
 - **Pas de marker affilié** dans cette première itération (ajout possible plus tard)
@@ -82,20 +82,22 @@ Mapping :
 
 ### Suppression du code obsolète
 
-Fichiers supprimés :
-- `backend/app/scraper/apify_client.py`
+Fichiers supprimés (vol-only, hôtels hors scope) :
 - `backend/app/scraper/browser/google_flights.py`
-- `backend/app/scraper/browser/google_hotels.py` (uniquement si non utilisé ailleurs — à vérifier)
-- `backend/app/scraper/browser/stealth.py` (idem)
-- `backend/app/scraper/browser/__init__.py` (si dossier vide après ménage)
-- `backend/app/scraper/flights.py` (remplacé par le nouveau module `travelpayouts_flights.py`)
+- `backend/app/scraper/flights.py` (remplacé par `travelpayouts_flights.py`)
+
+Fichiers **conservés** car utilisés par le scrape hôtels (hors scope) :
+- `backend/app/scraper/apify_client.py` — encore utilisé par `accommodations.py:_scrape_city_apify`
+- `backend/app/scraper/browser/google_hotels.py` — utilisé par `accommodations.py:_scrape_city_playwright`
+- `backend/app/scraper/browser/stealth.py` — dépendance de `google_hotels.py`
+- `playwright` dans requirements.txt et Dockerfile — encore utilisé par `google_hotels.py`
+- `apify-client` dans requirements.txt — encore utilisé par `accommodations.py`
 
 Fichiers modifiés :
-- `backend/requirements.txt` : retirer `apify-client`, `playwright`
-- `backend/Dockerfile` : retirer `RUN playwright install --with-deps chromium`
-- `backend/app/scheduler/jobs.py` : `from app.scraper.travelpayouts_flights import scrape_all_flights` au lieu de `from app.scraper.flights import scrape_all_flights`
-- `backend/app/api/routes.py` : si une route admin référence `flights.py` directement, mettre à jour
-- `backend/tests/` : adapter les tests de scraping
+- `backend/app/scheduler/jobs.py` :
+  - L1.5 : `from app.scraper.travelpayouts_flights import scrape_all_flights` (était `from app.scraper.flights import scrape_all_flights`)
+  - L132, L282, L496 : `from app.scraper.travelpayouts_flights import _window_label` (était `from app.scraper.flights import _window_label`) — la fonction `_window_label` est dupliquée à l'identique dans le nouveau module
+- `backend/tests/` : adapter les tests de scraping vol
 
 ### Conservation
 
