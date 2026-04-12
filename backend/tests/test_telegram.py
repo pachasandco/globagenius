@@ -1,4 +1,6 @@
-from app.notifications.telegram import format_deal_alert, format_admin_report, format_digest
+import pytest
+from unittest.mock import patch, AsyncMock, MagicMock
+from app.notifications.telegram import format_deal_alert, format_admin_report, format_digest, send_deal_alert
 
 
 def test_format_deal_alert():
@@ -71,3 +73,75 @@ def test_format_digest():
     assert "CDG" in msg
     assert "LYS" in msg
     assert "Top" in msg or "top" in msg or "DIGEST" in msg
+
+
+@pytest.mark.asyncio
+async def test_send_deal_alert_premium_tier_includes_booking_link():
+    pkg = {
+        "origin": "CDG", "destination": "BCN",
+        "total_price": 100, "discount_pct": 50, "score": 85,
+        "departure_date": "2026-05-12", "return_date": "2026-05-19",
+    }
+    flight_data = {"source_url": "https://example.com/book", "airline": "AF"}
+    acc_data = {"name": "Hotel X", "rating": 4.5, "source_url": "https://example.com/hotel"}
+
+    sent_messages = []
+
+    mock_bot = MagicMock()
+    mock_bot.send_message = AsyncMock(side_effect=lambda chat_id, text: sent_messages.append(text))
+
+    with patch("app.notifications.telegram._get_bot", return_value=mock_bot):
+        await send_deal_alert("123", pkg, flight_data, acc_data, tier="premium")
+
+    assert len(sent_messages) == 1
+    msg = sent_messages[0]
+    assert "https://example.com/book" in msg
+    # Premium messages should NOT show the upgrade CTA
+    assert "compte premium" not in msg.lower()
+
+
+@pytest.mark.asyncio
+async def test_send_deal_alert_free_tier_includes_upgrade_cta():
+    pkg = {
+        "origin": "CDG", "destination": "BCN",
+        "total_price": 150, "discount_pct": 25, "score": 60,
+        "departure_date": "2026-05-12", "return_date": "2026-05-19",
+    }
+    flight_data = {"source_url": "https://example.com/book", "airline": "AF"}
+    acc_data = {"name": "Hotel X", "rating": 4.5, "source_url": "https://example.com/hotel"}
+
+    sent_messages = []
+
+    mock_bot = MagicMock()
+    mock_bot.send_message = AsyncMock(side_effect=lambda chat_id, text: sent_messages.append(text))
+
+    with patch("app.notifications.telegram._get_bot", return_value=mock_bot):
+        await send_deal_alert("123", pkg, flight_data, acc_data, tier="free")
+
+    assert len(sent_messages) == 1
+    msg = sent_messages[0]
+    assert "compte premium" in msg.lower()
+
+
+@pytest.mark.asyncio
+async def test_send_deal_alert_default_tier_is_premium_for_backward_compat():
+    """Calls without explicit tier default to premium (legacy behavior)."""
+    pkg = {
+        "origin": "CDG", "destination": "BCN", "total_price": 100,
+        "discount_pct": 45, "score": 80,
+        "departure_date": "2026-05-12", "return_date": "2026-05-19",
+    }
+    flight_data = {"source_url": "https://example.com/book", "airline": "AF"}
+    acc_data = {"name": "Hotel X", "rating": 4.5, "source_url": "https://example.com/hotel"}
+
+    sent_messages = []
+
+    mock_bot = MagicMock()
+    mock_bot.send_message = AsyncMock(side_effect=lambda chat_id, text: sent_messages.append(text))
+
+    with patch("app.notifications.telegram._get_bot", return_value=mock_bot):
+        await send_deal_alert("123", pkg, flight_data, acc_data)
+
+    assert len(sent_messages) == 1
+    # Default tier is premium → no upgrade CTA
+    assert "compte premium" not in sent_messages[0].lower()

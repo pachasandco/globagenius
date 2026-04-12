@@ -272,8 +272,12 @@ async def _compose_packages_for_flight(flight: dict, flight_baseline: dict):
             acc_data = db.table("raw_accommodations").select("name,rating,source_url").eq("id", pkg["accommodation_id"]).execute()
 
             if flight_data.data and acc_data.data and subscribers.data:
+                pkg_tier = "premium" if pkg.get("discount_pct", 0) >= 40 else "free"
                 for sub in subscribers.data:
-                    await send_deal_alert(sub["chat_id"], pkg, flight_data.data[0], acc_data.data[0])
+                    await send_deal_alert(
+                        sub["chat_id"], pkg, flight_data.data[0], acc_data.data[0],
+                        tier=pkg_tier,
+                    )
 
 
 async def job_scrape_accommodations():
