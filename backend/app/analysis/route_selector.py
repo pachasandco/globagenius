@@ -124,3 +124,13 @@ def score_route(origin: str, destination: str, volatility_30d: float = 0, num_ca
         score += 10 * 0.15
 
     return round(score, 1)
+
+
+LONG_HAUL_DESTINATIONS = {
+    "NRT", "JFK", "BKK", "YUL", "DXB", "MIA", "SYD",
+    "CUN", "PUJ", "MLE", "MRU", "RUN", "GIG", "LAX",
+}
+
+
+def is_long_haul(destination: str) -> bool:
+    return destination in LONG_HAUL_DESTINATIONS
