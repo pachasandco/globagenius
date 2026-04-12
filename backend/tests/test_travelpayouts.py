@@ -55,3 +55,21 @@ def test_get_calendar_prices_returns_empty_on_unsuccessful_response():
 def test_get_calendar_prices_returns_empty_on_empty_data_dict():
     with patch("app.scraper.travelpayouts._get", return_value={"success": True, "data": {}}):
         assert get_calendar_prices("CDG", "JFK", "2026-05") == []
+
+
+def test_get_calendar_prices_falls_back_to_day_key_when_departure_at_missing():
+    fake_response = {
+        "data": {
+            "2026-05-12": {
+                "airline": "AF",
+                "price": 412,
+                "transfers": 0,
+                # departure_at intentionally absent
+            },
+        },
+        "success": True,
+    }
+    with patch("app.scraper.travelpayouts._get", return_value=fake_response):
+        result = get_calendar_prices("CDG", "JFK", "2026-05")
+    assert len(result) == 1
+    assert result[0]["departure_at"] == "2026-05-12"

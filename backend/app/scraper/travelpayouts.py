@@ -124,7 +124,7 @@ def get_calendar_prices(origin: str, destination: str, depart_month: str) -> lis
         if not isinstance(flight, dict):
             continue
         result.append({
-            "departure_at": flight.get("departure_at", ""),
+            "departure_at": flight.get("departure_at") or day,
             "return_at": flight.get("return_at", ""),
             "expires_at": flight.get("expires_at", ""),
             "price": flight.get("price", 0),
