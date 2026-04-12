@@ -4,9 +4,15 @@ from app.config import settings, IATA_TO_CITY
 from app.db import db
 from app.scraper.travelpayouts_flights import scrape_all_flights
 from app.scraper.accommodations import scrape_accommodations_for_destinations
-from app.analysis.baselines import compute_baseline
+from app.analysis.baselines import compute_baseline, MIN_SAMPLE_COUNT
+from app.scraper.travelpayouts import get_prices_for_dates
+from app.scraper.travelpayouts_flights import _normalize_priced_entry
+from app.analysis.route_selector import get_priority_destinations, is_long_haul
+from app.analysis.baselines import compute_baselines_by_bucket
 from app.analysis.anomaly_detector import detect_anomaly
 from app.analysis.scorer import compute_score
+from app.analysis.buckets import bucket_for_duration, stops_allowed
+from app.scraper.reverify import reverify_flight_price
 from app.composer.package_builder import build_packages
 from app.notifications.telegram import (
     send_deal_alert,
@@ -122,48 +128,70 @@ async def _analyze_new_flights(flights: list[dict]):
         return
 
     for flight in flights:
-        # Calculate days ahead for this flight to pick the right baseline window
-        try:
-            dep = datetime.strptime(flight["departure_date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
-            days_ahead = (dep - datetime.now(timezone.utc)).days
-        except (ValueError, TypeError):
-            days_ahead = 30
+        # Bucket lookup based on trip duration
+        days = flight.get("trip_duration_days") or 0
+        bucket = bucket_for_duration(days)
+        if not bucket:
+            continue
 
-        from app.scraper.travelpayouts_flights import _window_label
-        window = _window_label(max(days_ahead, 15))
-        route_key = f"{flight['origin']}-{flight['destination']}-{window}"
+        # Stops rule based on haul type. Missing duration_minutes is treated
+        # as short-haul (strictest rule, 0 stops max) to avoid false positives.
+        duration_minutes = flight.get("duration_minutes") or 0
+        max_stops = stops_allowed(duration_minutes)
+        if (flight.get("stops") or 0) > max_stops:
+            continue
 
-        # Try window-specific baseline first, then generic
-        baseline_resp = db.table("price_baselines").select("*").eq("route_key", route_key).eq("type", "flight").execute()
-        if not baseline_resp.data:
-            # Fallback: try without window
-            generic_key = f"{flight['origin']}-{flight['destination']}"
-            baseline_resp = db.table("price_baselines").select("*").eq("route_key", generic_key).eq("type", "flight").execute()
+        # Lookup baseline for this (route, bucket)
+        route_key = f"{flight['origin']}-{flight['destination']}-bucket_{bucket}"
+        baseline_resp = (
+            db.table("price_baselines")
+            .select("*")
+            .eq("route_key", route_key)
+            .eq("type", "flight")
+            .execute()
+        )
         if not baseline_resp.data:
             continue
 
         baseline = baseline_resp.data[0]
+        if (baseline.get("sample_count") or 0) < MIN_SAMPLE_COUNT:
+            continue
+
+        # Anomaly detection (existing helper)
         anomaly = detect_anomaly(price=flight["price"], baseline=baseline)
+        if not anomaly:
+            continue
 
-        if anomaly:
-            score = compute_score(
-                discount_pct=anomaly.discount_pct,
-                destination_code=flight["destination"],
-                date_flexibility=0,
-                accommodation_rating=None,
-            )
+        # Extra filters on top of detect_anomaly's tiering
+        if anomaly.discount_pct < 20 or anomaly.z_score < 2.0:
+            continue
 
-            db.table("qualified_items").insert({
-                "type": "flight",
-                "item_id": flight.get("id", ""),
-                "price": anomaly.price,
-                "baseline_price": anomaly.baseline_price,
-                "discount_pct": anomaly.discount_pct,
-                "score": score,
-                "status": "active",
-            }).execute()
+        # Real-time re-verification — reject silently if the deal is gone
+        if not await reverify_flight_price(flight):
+            continue
 
-            await _compose_packages_for_flight(flight, baseline)
+        # Tier classification
+        tier = "premium" if anomaly.discount_pct >= 40 else "free"
+
+        score = compute_score(
+            discount_pct=anomaly.discount_pct,
+            destination_code=flight["destination"],
+            date_flexibility=0,
+            accommodation_rating=None,
+        )
+
+        db.table("qualified_items").insert({
+            "type": "flight",
+            "item_id": flight.get("id", ""),
+            "price": anomaly.price,
+            "baseline_price": anomaly.baseline_price,
+            "discount_pct": anomaly.discount_pct,
+            "score": score,
+            "tier": tier,
+            "status": "active",
+        }).execute()
+
+        await _compose_packages_for_flight(flight, baseline)
 
 
 async def _compose_packages_for_flight(flight: dict, flight_baseline: dict):
@@ -244,8 +272,12 @@ async def _compose_packages_for_flight(flight: dict, flight_baseline: dict):
             acc_data = db.table("raw_accommodations").select("name,rating,source_url").eq("id", pkg["accommodation_id"]).execute()
 
             if flight_data.data and acc_data.data and subscribers.data:
+                pkg_tier = "premium" if pkg.get("discount_pct", 0) >= 40 else "free"
                 for sub in subscribers.data:
-                    await send_deal_alert(sub["chat_id"], pkg, flight_data.data[0], acc_data.data[0])
+                    await send_deal_alert(
+                        sub["chat_id"], pkg, flight_data.data[0], acc_data.data[0],
+                        tier=pkg_tier,
+                    )
 
 
 async def job_scrape_accommodations():
@@ -487,48 +519,42 @@ async def job_daily_admin_report():
 
 
 async def job_travelpayouts_enrichment():
-    """Enrich baselines with Travelpayouts data + check special offers."""
-    logger.info("Starting Travelpayouts enrichment")
+    """Build per-bucket baselines for all MVP routes via Travelpayouts."""
+    logger.info("Starting Travelpayouts bucket baseline enrichment")
     if not db or not settings.TRAVELPAYOUTS_TOKEN:
         return
 
-    from app.scraper.travelpayouts import build_baseline_from_travelpayouts, get_special_offers, get_cheap_destinations
-    from app.scraper.travelpayouts_flights import _window_label
+    destinations = get_priority_destinations(max_count=25)
+    total_published = 0
 
-    # 1. Enrich baselines for all MVP airports
-    enriched = 0
-    for airport in settings.MVP_AIRPORTS:
-        # Discover cheap destinations
-        try:
-            cheap = get_cheap_destinations(airport, limit=15)
-            for dest in cheap:
-                dest_code = dest.get("destination", "")
-                if not dest_code:
-                    continue
+    for origin in settings.MVP_AIRPORTS:
+        for dest in destinations:
+            if dest == origin:
+                continue
+            if is_long_haul(dest) and origin != "CDG":
+                continue
 
-                baseline_data = build_baseline_from_travelpayouts(airport, dest_code)
-                if baseline_data:
-                    route_key = f"{airport}-{dest_code}-tp"
-                    db.table("price_baselines").upsert({
-                        "route_key": route_key,
-                        "type": "flight",
-                        "avg_price": baseline_data["avg_price"],
-                        "std_dev": max(baseline_data["std_dev"], 1.0),
-                        "sample_count": baseline_data["sample_count"],
-                        "calculated_at": datetime.now(timezone.utc).isoformat(),
-                    }, on_conflict="route_key").execute()
-                    enriched += 1
-        except Exception as e:
-            logger.warning(f"Travelpayouts enrichment failed for {airport}: {e}")
+            try:
+                api_entries = get_prices_for_dates(origin, dest)
+            except Exception as e:
+                logger.warning(f"Travelpayouts enrichment failed for {origin}->{dest}: {e}")
+                continue
 
-    logger.info(f"Travelpayouts: enriched {enriched} baselines")
+            observations = []
+            for entry in api_entries:
+                normalized = _normalize_priced_entry(entry)
+                if normalized:
+                    observations.append(normalized)
 
-    # 2. Check special offers (fare mistakes)
-    try:
-        offers = get_special_offers()
-        if offers:
-            logger.info(f"Travelpayouts: {len(offers)} special offers detected")
-            for offer in offers[:10]:
-                logger.info(f"  Special: {offer.get('origin','')}→{offer.get('destination','')} {offer.get('value','')}€")
-    except Exception as e:
-        logger.warning(f"Special offers check failed: {e}")
+            if not observations:
+                continue
+
+            baselines = compute_baselines_by_bucket(f"{origin}-{dest}", observations)
+            for baseline in baselines:
+                try:
+                    db.table("price_baselines").upsert(baseline, on_conflict="route_key").execute()
+                    total_published += 1
+                except Exception as e:
+                    logger.warning(f"Failed to upsert baseline {baseline['route_key']}: {e}")
+
+    logger.info(f"Travelpayouts enrichment: {total_published} bucket baselines upserted")

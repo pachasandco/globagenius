@@ -101,12 +101,17 @@ def format_admin_report(stats: dict) -> str:
     return "\n".join(lines)
 
 
-async def send_deal_alert(chat_id: int, package: dict, flight: dict, accommodation: dict) -> bool:
+async def send_deal_alert(chat_id: int, package: dict, flight: dict, accommodation: dict, tier: str = "premium") -> bool:
     bot = _get_bot()
     if not bot:
         logger.warning("Telegram bot not configured, skipping alert")
         return False
     msg = format_deal_alert(package, flight, accommodation)
+    if tier == "free":
+        msg += (
+            "\n\n💎 Réservation réservée aux abonnés premium. "
+            "Créez un compte premium pour débloquer ce deal."
+        )
     try:
         await bot.send_message(chat_id=chat_id, text=msg)
         return True

@@ -136,6 +136,61 @@ def get_calendar_prices(origin: str, destination: str, depart_month: str = "") -
     return result
 
 
+def get_prices_for_dates(
+    origin: str,
+    destination: str,
+    departure_month: str = "",
+    return_month: str = "",
+    limit: int = 1000,
+) -> list[dict]:
+    """Get real round-trip prices via /aviasales/v3/prices_for_dates.
+
+    Returns up to `limit` round-trips with origin_airport, destination_airport,
+    departure_at, return_at, price, transfers, return_transfers, duration_to,
+    duration_back, link.
+
+    `departure_month` / `return_month` format: YYYY-MM (optional).
+    `one_way=false` is forced — this endpoint is round-trips only by design."""
+    params = {
+        "origin": origin,
+        "destination": destination,
+        "currency": "eur",
+        "one_way": "false",
+        "sorting": "price",
+        "direct": "false",
+        "limit": limit,
+    }
+    if departure_month:
+        params["departure_at"] = departure_month
+    if return_month:
+        params["return_at"] = return_month
+
+    data = _get(f"{REST_URL}/aviasales/v3/prices_for_dates", params)
+    if not data or not data.get("success"):
+        return []
+
+    entries = data.get("data") or []
+    result = []
+    for flight in entries:
+        if not isinstance(flight, dict):
+            continue
+        result.append({
+            "origin_airport": flight.get("origin_airport", ""),
+            "destination_airport": flight.get("destination_airport", ""),
+            "departure_at": flight.get("departure_at", ""),
+            "return_at": flight.get("return_at", ""),
+            "price": flight.get("price", 0),
+            "airline": flight.get("airline", ""),
+            "flight_number": flight.get("flight_number", ""),
+            "transfers": flight.get("transfers", 0),
+            "return_transfers": flight.get("return_transfers", 0),
+            "duration_to": flight.get("duration_to", 0),
+            "duration_back": flight.get("duration_back", 0),
+            "link": flight.get("link", ""),
+        })
+    return result
+
+
 def get_prices_graphql(origin: str, destination: str, depart_month: str, limit: int = 20) -> list[dict]:
     """Get prices via GraphQL — more flexible than REST."""
     query = f"""{{
