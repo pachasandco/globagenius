@@ -1,6 +1,7 @@
 from app.scraper.travelpayouts_flights import (
     _window_label,
     _normalize_calendar_entry,
+    _build_aviasales_url,
     SOURCE,
 )
 
@@ -93,3 +94,20 @@ def test_normalize_calendar_entry_returns_none_for_missing_departure_at():
         "transfers": 0,
     }
     assert _normalize_calendar_entry(entry, origin="CDG", destination="JFK") is None
+
+
+def test_build_aviasales_url_happy_path():
+    url = _build_aviasales_url("CDG", "JFK", "2026-05-12", "2026-05-19")
+    assert url == "https://www.aviasales.com/search/CDG1205JFK19051"
+
+
+def test_build_aviasales_url_falls_back_on_invalid_date():
+    url = _build_aviasales_url("CDG", "JFK", "not-a-date", "2026-05-19")
+    assert url.startswith("https://www.aviasales.com/search?")
+    assert "origin=CDG" in url
+    assert "destination=JFK" in url
+
+
+def test_build_aviasales_url_falls_back_on_empty_dates():
+    url = _build_aviasales_url("CDG", "JFK", "", "")
+    assert url.startswith("https://www.aviasales.com/search?")

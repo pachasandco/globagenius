@@ -82,10 +82,4 @@ def _normalize_calendar_entry(entry: dict, origin: str, destination: str) -> dic
         "url": _build_aviasales_url(origin, destination, departure_date, return_date),
     }
 
-    normalized = normalize_flight(raw, source=SOURCE)
-
-    expires_at = entry.get("expires_at") or ""
-    if expires_at:
-        normalized["expires_at"] = expires_at
-
-    return normalized
+    return normalize_flight(raw, source=SOURCE)
