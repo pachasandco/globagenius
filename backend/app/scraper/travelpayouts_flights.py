@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 from app.config import settings
 from app.scraper.normalizer import normalize_flight
-from app.scraper.travelpayouts import get_calendar_prices
+from app.scraper.travelpayouts import get_prices_for_dates
 from app.analysis.route_selector import is_long_haul, get_priority_destinations
 
 logger = logging.getLogger(__name__)
@@ -84,19 +84,72 @@ def _normalize_calendar_entry(entry: dict, origin: str, destination: str) -> dic
     return normalize_flight(raw, source=SOURCE)
 
 
+def _normalize_priced_entry(entry: dict) -> dict | None:
+    """Map a Travelpayouts prices_for_dates entry to the raw_flights row format.
+
+    Returns None if the entry is unusable: missing dates, zero price, or
+    trip duration outside [1, 21] days."""
+    departure_at = entry.get("departure_at") or ""
+    return_at = entry.get("return_at") or ""
+    price = entry.get("price") or 0
+    if not departure_at or not return_at or not price:
+        return None
+
+    departure_date = departure_at[:10]
+    return_date = return_at[:10]
+    try:
+        dep = datetime.strptime(departure_date, "%Y-%m-%d")
+        ret = datetime.strptime(return_date, "%Y-%m-%d")
+    except ValueError:
+        return None
+
+    trip_duration_days = (ret - dep).days
+    if trip_duration_days < 1 or trip_duration_days > 21:
+        return None
+
+    origin = entry.get("origin_airport") or ""
+    destination = entry.get("destination_airport") or ""
+    if not origin or not destination:
+        return None
+
+    link = entry.get("link") or ""
+    if link:
+        source_url = f"https://www.aviasales.com{link}"
+    else:
+        source_url = _build_aviasales_url(origin, destination, departure_date, return_date)
+
+    duration_to = int(entry.get("duration_to") or 0)
+    duration_back = int(entry.get("duration_back") or 0)
+    duration_minutes = (duration_to + duration_back) // 2 if (duration_to or duration_back) else 0
+
+    raw = {
+        "price": float(price),
+        "currency": "EUR",
+        "origin": origin,
+        "destination": destination,
+        "departureDate": departure_date,
+        "returnDate": return_date,
+        "airline": entry.get("airline", ""),
+        "stops": int(entry.get("transfers") or 0),
+        "url": source_url,
+    }
+
+    normalized = normalize_flight(raw, source=SOURCE)
+    normalized["trip_duration_days"] = trip_duration_days
+    normalized["duration_minutes"] = duration_minutes
+    return normalized
+
+
 def _utcnow() -> datetime:
     """Indirection so tests can freeze time."""
     return datetime.now(timezone.utc)
 
 
 def scrape_flights_for_route(origin: str, destination: str) -> list[dict]:
-    """Fetch all currently-cached daily quotes for one route and normalize them.
-
-    The Travelpayouts /v1/prices/calendar endpoint returns its full
-    cached window in a single call, so one call per route is enough."""
+    """Fetch real round-trip prices for one route via Travelpayouts."""
     flights = []
-    for entry in get_calendar_prices(origin, destination):
-        normalized = _normalize_calendar_entry(entry, origin, destination)
+    for entry in get_prices_for_dates(origin, destination):
+        normalized = _normalize_priced_entry(entry)
         if normalized:
             flights.append(normalized)
     return flights

@@ -129,16 +129,35 @@ def _calendar_entry(price: int, day: int, month: int = 5):
     }
 
 
-def test_scrape_flights_for_route_aggregates_calendar_entries():
+def _priced_entry(price=412, dep="2026-05-12", ret="2026-05-19", airline="AF",
+                  transfers=0, dur_to=480, dur_back=520,
+                  origin_airport="CDG", destination_airport="JFK",
+                  link="/search/CDG1205JFK19051"):
+    return {
+        "origin_airport": origin_airport,
+        "destination_airport": destination_airport,
+        "departure_at": f"{dep}T10:00:00+02:00",
+        "return_at": f"{ret}T18:00:00+02:00",
+        "price": price,
+        "airline": airline,
+        "transfers": transfers,
+        "return_transfers": transfers,
+        "duration_to": dur_to,
+        "duration_back": dur_back,
+        "link": link,
+    }
+
+
+def test_scrape_flights_for_route_aggregates_priced_entries():
     from app.scraper.travelpayouts_flights import scrape_flights_for_route
 
     fake_entries = [
-        _calendar_entry(412, 12),
-        _calendar_entry(398, 13),
-        _calendar_entry(450, 14),
+        _priced_entry(price=412),
+        _priced_entry(price=398, dep="2026-05-15", ret="2026-05-22"),
+        _priced_entry(price=450, dep="2026-06-01", ret="2026-06-08"),
     ]
 
-    with patch("app.scraper.travelpayouts_flights.get_calendar_prices",
+    with patch("app.scraper.travelpayouts_flights.get_prices_for_dates",
                return_value=fake_entries):
         flights = scrape_flights_for_route("CDG", "JFK")
 
@@ -149,22 +168,119 @@ def test_scrape_flights_for_route_aggregates_calendar_entries():
         assert f["origin"] == "CDG"
         assert f["destination"] == "JFK"
         assert f["source"] == "travelpayouts"
+        assert f["trip_duration_days"] == 7
 
 
 def test_scrape_flights_for_route_skips_unusable_entries():
     from app.scraper.travelpayouts_flights import scrape_flights_for_route
 
     fake_entries = [
-        _calendar_entry(412, 12),
-        {"departure_at": "", "price": 0},
+        _priced_entry(price=412),
+        _priced_entry(price=0),  # zero price → rejected
+        _priced_entry(price=200, dep="2026-05-12", ret="2026-06-15"),  # 34 days → rejected
     ]
 
-    with patch("app.scraper.travelpayouts_flights.get_calendar_prices",
+    with patch("app.scraper.travelpayouts_flights.get_prices_for_dates",
                return_value=fake_entries):
         flights = scrape_flights_for_route("CDG", "JFK")
 
     assert len(flights) == 1
     assert flights[0]["price"] == 412.0
+
+
+def test_normalize_priced_entry_maps_all_fields():
+    from app.scraper.travelpayouts_flights import _normalize_priced_entry, SOURCE
+    entry = _priced_entry()
+    result = _normalize_priced_entry(entry)
+    assert result is not None
+    assert result["origin"] == "CDG"
+    assert result["destination"] == "JFK"
+    assert result["departure_date"] == "2026-05-12"
+    assert result["return_date"] == "2026-05-19"
+    assert result["price"] == 412.0
+    assert result["airline"] == "AF"
+    assert result["stops"] == 0
+    assert result["trip_duration_days"] == 7
+    assert result["duration_minutes"] == 500  # (480 + 520) / 2
+    assert result["source"] == SOURCE
+    assert result["source_url"].startswith("https://www.aviasales.com")
+    assert "/search/CDG1205JFK19051" in result["source_url"]
+
+
+def test_normalize_priced_entry_rejects_duration_zero():
+    from app.scraper.travelpayouts_flights import _normalize_priced_entry
+    entry = _priced_entry(dep="2026-05-12", ret="2026-05-12")
+    assert _normalize_priced_entry(entry) is None
+
+
+def test_normalize_priced_entry_rejects_duration_above_21():
+    from app.scraper.travelpayouts_flights import _normalize_priced_entry
+    entry = _priced_entry(dep="2026-05-12", ret="2026-06-15")  # 34 days
+    assert _normalize_priced_entry(entry) is None
+
+
+def test_normalize_priced_entry_accepts_duration_one_day():
+    from app.scraper.travelpayouts_flights import _normalize_priced_entry
+    entry = _priced_entry(dep="2026-05-12", ret="2026-05-13")
+    result = _normalize_priced_entry(entry)
+    assert result is not None
+    assert result["trip_duration_days"] == 1
+
+
+def test_normalize_priced_entry_accepts_duration_21_days():
+    from app.scraper.travelpayouts_flights import _normalize_priced_entry
+    entry = _priced_entry(dep="2026-05-01", ret="2026-05-22")  # exactly 21 days
+    result = _normalize_priced_entry(entry)
+    assert result is not None
+    assert result["trip_duration_days"] == 21
+
+
+def test_normalize_priced_entry_rejects_zero_price():
+    from app.scraper.travelpayouts_flights import _normalize_priced_entry
+    entry = _priced_entry(price=0)
+    assert _normalize_priced_entry(entry) is None
+
+
+def test_normalize_priced_entry_rejects_missing_departure_at():
+    from app.scraper.travelpayouts_flights import _normalize_priced_entry
+    entry = _priced_entry()
+    entry["departure_at"] = ""
+    assert _normalize_priced_entry(entry) is None
+
+
+def test_normalize_priced_entry_rejects_missing_return_at():
+    from app.scraper.travelpayouts_flights import _normalize_priced_entry
+    entry = _priced_entry()
+    entry["return_at"] = ""
+    assert _normalize_priced_entry(entry) is None
+
+
+def test_normalize_priced_entry_uses_origin_airport_not_city():
+    from app.scraper.travelpayouts_flights import _normalize_priced_entry
+    entry = _priced_entry(origin_airport="CDG")
+    result = _normalize_priced_entry(entry)
+    assert result["origin"] == "CDG"  # not "PAR"
+
+
+def test_normalize_priced_entry_extracts_stops_from_transfers():
+    from app.scraper.travelpayouts_flights import _normalize_priced_entry
+    entry = _priced_entry(transfers=2)
+    result = _normalize_priced_entry(entry)
+    assert result["stops"] == 2
+
+
+def test_normalize_priced_entry_uses_api_link_in_url():
+    from app.scraper.travelpayouts_flights import _normalize_priced_entry
+    entry = _priced_entry(link="/search/CDG1205JFK19051?t=abc")
+    result = _normalize_priced_entry(entry)
+    assert result["source_url"] == "https://www.aviasales.com/search/CDG1205JFK19051?t=abc"
+
+
+def test_normalize_priced_entry_falls_back_to_built_url_when_link_missing():
+    from app.scraper.travelpayouts_flights import _normalize_priced_entry
+    entry = _priced_entry(link="")
+    result = _normalize_priced_entry(entry)
+    assert result["source_url"].startswith("https://www.aviasales.com")
 
 
 def test_scrape_flights_for_airport_filters_long_haul_from_non_cdg():
