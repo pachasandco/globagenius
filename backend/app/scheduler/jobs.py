@@ -127,11 +127,25 @@ async def _analyze_new_flights(flights: list[dict]):
     if not db:
         return
 
+    # Temporary instrumentation: count rejections at each filter step
+    counters = {
+        "total": len(flights),
+        "rejected_no_bucket": 0,
+        "rejected_stops": 0,
+        "rejected_no_baseline": 0,
+        "rejected_low_sample": 0,
+        "rejected_no_anomaly": 0,
+        "rejected_low_discount_or_z": 0,
+        "rejected_reverify": 0,
+        "qualified": 0,
+    }
+
     for flight in flights:
         # Bucket lookup based on trip duration
         days = flight.get("trip_duration_days") or 0
         bucket = bucket_for_duration(days)
         if not bucket:
+            counters["rejected_no_bucket"] += 1
             continue
 
         # Stops rule based on haul type. Missing duration_minutes is treated
@@ -139,6 +153,7 @@ async def _analyze_new_flights(flights: list[dict]):
         duration_minutes = flight.get("duration_minutes") or 0
         max_stops = stops_allowed(duration_minutes)
         if (flight.get("stops") or 0) > max_stops:
+            counters["rejected_stops"] += 1
             continue
 
         # Lookup baseline for this (route, bucket)
@@ -151,24 +166,31 @@ async def _analyze_new_flights(flights: list[dict]):
             .execute()
         )
         if not baseline_resp.data:
+            counters["rejected_no_baseline"] += 1
             continue
 
         baseline = baseline_resp.data[0]
         if (baseline.get("sample_count") or 0) < MIN_SAMPLE_COUNT:
+            counters["rejected_low_sample"] += 1
             continue
 
         # Anomaly detection (existing helper)
         anomaly = detect_anomaly(price=flight["price"], baseline=baseline)
         if not anomaly:
+            counters["rejected_no_anomaly"] += 1
             continue
 
         # Extra filters on top of detect_anomaly's tiering
         if anomaly.discount_pct < 20 or anomaly.z_score < 2.0:
+            counters["rejected_low_discount_or_z"] += 1
             continue
 
         # Real-time re-verification — reject silently if the deal is gone
         if not await reverify_flight_price(flight):
+            counters["rejected_reverify"] += 1
             continue
+
+        counters["qualified"] += 1
 
         # Tier classification
         tier = "premium" if anomaly.discount_pct >= 40 else "free"
@@ -192,6 +214,8 @@ async def _analyze_new_flights(flights: list[dict]):
         }).execute()
 
         await _compose_packages_for_flight(flight, baseline)
+
+    logger.info(f"Analyze pipeline counters: {counters}")
 
 
 async def _compose_packages_for_flight(flight: dict, flight_baseline: dict):
