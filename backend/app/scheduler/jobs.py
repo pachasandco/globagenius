@@ -4,9 +4,11 @@ from app.config import settings, IATA_TO_CITY
 from app.db import db
 from app.scraper.travelpayouts_flights import scrape_all_flights
 from app.scraper.accommodations import scrape_accommodations_for_destinations
-from app.analysis.baselines import compute_baseline
+from app.analysis.baselines import compute_baseline, MIN_SAMPLE_COUNT
 from app.analysis.anomaly_detector import detect_anomaly
 from app.analysis.scorer import compute_score
+from app.analysis.buckets import bucket_for_duration, stops_allowed
+from app.scraper.reverify import reverify_flight_price
 from app.composer.package_builder import build_packages
 from app.notifications.telegram import (
     send_deal_alert,
@@ -122,48 +124,70 @@ async def _analyze_new_flights(flights: list[dict]):
         return
 
     for flight in flights:
-        # Calculate days ahead for this flight to pick the right baseline window
-        try:
-            dep = datetime.strptime(flight["departure_date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
-            days_ahead = (dep - datetime.now(timezone.utc)).days
-        except (ValueError, TypeError):
-            days_ahead = 30
+        # Bucket lookup based on trip duration
+        days = flight.get("trip_duration_days") or 0
+        bucket = bucket_for_duration(days)
+        if not bucket:
+            continue
 
-        from app.scraper.travelpayouts_flights import _window_label
-        window = _window_label(max(days_ahead, 15))
-        route_key = f"{flight['origin']}-{flight['destination']}-{window}"
+        # Stops rule based on haul type. Missing duration_minutes is treated
+        # as short-haul (strictest rule, 0 stops max) to avoid false positives.
+        duration_minutes = flight.get("duration_minutes") or 0
+        max_stops = stops_allowed(duration_minutes)
+        if (flight.get("stops") or 0) > max_stops:
+            continue
 
-        # Try window-specific baseline first, then generic
-        baseline_resp = db.table("price_baselines").select("*").eq("route_key", route_key).eq("type", "flight").execute()
-        if not baseline_resp.data:
-            # Fallback: try without window
-            generic_key = f"{flight['origin']}-{flight['destination']}"
-            baseline_resp = db.table("price_baselines").select("*").eq("route_key", generic_key).eq("type", "flight").execute()
+        # Lookup baseline for this (route, bucket)
+        route_key = f"{flight['origin']}-{flight['destination']}-bucket_{bucket}"
+        baseline_resp = (
+            db.table("price_baselines")
+            .select("*")
+            .eq("route_key", route_key)
+            .eq("type", "flight")
+            .execute()
+        )
         if not baseline_resp.data:
             continue
 
         baseline = baseline_resp.data[0]
+        if (baseline.get("sample_count") or 0) < MIN_SAMPLE_COUNT:
+            continue
+
+        # Anomaly detection (existing helper)
         anomaly = detect_anomaly(price=flight["price"], baseline=baseline)
+        if not anomaly:
+            continue
 
-        if anomaly:
-            score = compute_score(
-                discount_pct=anomaly.discount_pct,
-                destination_code=flight["destination"],
-                date_flexibility=0,
-                accommodation_rating=None,
-            )
+        # Extra filters on top of detect_anomaly's tiering
+        if anomaly.discount_pct < 20 or anomaly.z_score < 2.0:
+            continue
 
-            db.table("qualified_items").insert({
-                "type": "flight",
-                "item_id": flight.get("id", ""),
-                "price": anomaly.price,
-                "baseline_price": anomaly.baseline_price,
-                "discount_pct": anomaly.discount_pct,
-                "score": score,
-                "status": "active",
-            }).execute()
+        # Real-time re-verification — reject silently if the deal is gone
+        if not await reverify_flight_price(flight):
+            continue
 
-            await _compose_packages_for_flight(flight, baseline)
+        # Tier classification
+        tier = "premium" if anomaly.discount_pct >= 40 else "free"
+
+        score = compute_score(
+            discount_pct=anomaly.discount_pct,
+            destination_code=flight["destination"],
+            date_flexibility=0,
+            accommodation_rating=None,
+        )
+
+        db.table("qualified_items").insert({
+            "type": "flight",
+            "item_id": flight.get("id", ""),
+            "price": anomaly.price,
+            "baseline_price": anomaly.baseline_price,
+            "discount_pct": anomaly.discount_pct,
+            "score": score,
+            "tier": tier,
+            "status": "active",
+        }).execute()
+
+        await _compose_packages_for_flight(flight, baseline)
 
 
 async def _compose_packages_for_flight(flight: dict, flight_baseline: dict):
