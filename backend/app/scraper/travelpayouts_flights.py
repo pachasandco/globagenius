@@ -50,39 +50,6 @@ def _build_aviasales_url(origin: str, destination: str, dep_date: str, ret_date:
     )
 
 
-def _normalize_calendar_entry(entry: dict, origin: str, destination: str) -> dict | None:
-    """Map a Travelpayouts calendar entry to the raw_flights row format.
-    Returns None if the entry is unusable (missing date, zero price)."""
-    departure_at = entry.get("departure_at") or ""
-    price = entry.get("price") or 0
-    if not departure_at or not price:
-        return None
-
-    departure_date = departure_at[:10]
-    return_at = entry.get("return_at") or ""
-    if return_at:
-        return_date = return_at[:10]
-    else:
-        try:
-            dep = datetime.strptime(departure_date, "%Y-%m-%d")
-            return_date = (dep + timedelta(days=DEFAULT_TRIP_DURATION_DAYS)).strftime("%Y-%m-%d")
-        except ValueError:
-            return None
-
-    raw = {
-        "price": float(price),
-        "currency": "EUR",
-        "origin": origin,
-        "destination": destination,
-        "departureDate": departure_date,
-        "returnDate": return_date,
-        "airline": entry.get("airline", ""),
-        "stops": int(entry.get("transfers", 0) or 0),
-        "url": _build_aviasales_url(origin, destination, departure_date, return_date),
-    }
-
-    return normalize_flight(raw, source=SOURCE)
-
 
 def _normalize_priced_entry(entry: dict) -> dict | None:
     """Map a Travelpayouts prices_for_dates entry to the raw_flights row format.
@@ -118,9 +85,7 @@ def _normalize_priced_entry(entry: dict) -> dict | None:
     else:
         source_url = _build_aviasales_url(origin, destination, departure_date, return_date)
 
-    duration_to = int(entry.get("duration_to") or 0)
-    duration_back = int(entry.get("duration_back") or 0)
-    duration_minutes = (duration_to + duration_back) // 2 if (duration_to or duration_back) else 0
+    duration_minutes = int(entry.get("duration_to") or 0)
 
     raw = {
         "price": float(price),
