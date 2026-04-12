@@ -306,6 +306,7 @@ async def trigger_job(job_name: str, request: Request):
         job_scrape_accommodations,
         job_recalculate_baselines,
         job_expire_stale_data,
+        job_travelpayouts_enrichment,
     )
 
     jobs = {
@@ -313,6 +314,7 @@ async def trigger_job(job_name: str, request: Request):
         "scrape_accommodations": job_scrape_accommodations,
         "recalculate_baselines": job_recalculate_baselines,
         "expire_stale_data": job_expire_stale_data,
+        "travelpayouts_enrichment": job_travelpayouts_enrichment,
     }
 
     if job_name not in jobs:
