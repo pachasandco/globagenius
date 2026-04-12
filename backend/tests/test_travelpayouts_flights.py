@@ -229,3 +229,48 @@ def test_scrape_flights_for_airport_skips_self_destination():
 
     destinations_called = [d for _, d in seen_routes]
     assert destinations_called == ["BCN"]
+
+
+def test_scrape_all_flights_returns_tuple_of_three():
+    from app.scraper.travelpayouts_flights import scrape_all_flights
+    import asyncio
+
+    fixed_now = datetime(2026, 4, 12, 10, tzinfo=timezone.utc)
+
+    def fake_airport(origin):
+        return [{"origin": origin, "price": 100.0}]
+
+    with patch("app.scraper.travelpayouts_flights.scrape_flights_for_airport", side_effect=fake_airport), \
+         patch("app.scraper.travelpayouts_flights._utcnow", return_value=fixed_now), \
+         patch("app.scraper.travelpayouts_flights.settings") as mock_settings:
+        mock_settings.MVP_AIRPORTS = ["CDG", "ORY", "LYS", "MRS", "NCE", "BOD", "NTE", "TLS"]
+        flights, errors, baselines = asyncio.run(scrape_all_flights())
+
+    assert isinstance(flights, list)
+    assert isinstance(errors, int)
+    assert isinstance(baselines, list)
+    assert errors == 0
+    assert len(flights) == 2  # AIRPORTS_PER_CYCLE = 2
+    assert baselines == []
+
+
+def test_scrape_all_flights_counts_errors_per_airport():
+    from app.scraper.travelpayouts_flights import scrape_all_flights
+    import asyncio
+
+    fixed_now = datetime(2026, 4, 12, 10, tzinfo=timezone.utc)
+
+    def fake_airport(origin):
+        if origin == "LYS":
+            raise RuntimeError("api down")
+        return [{"origin": origin, "price": 100.0}]
+
+    with patch("app.scraper.travelpayouts_flights.scrape_flights_for_airport", side_effect=fake_airport), \
+         patch("app.scraper.travelpayouts_flights._utcnow", return_value=fixed_now), \
+         patch("app.scraper.travelpayouts_flights.settings") as mock_settings:
+        mock_settings.MVP_AIRPORTS = ["LYS", "MRS"]
+        flights, errors, baselines = asyncio.run(scrape_all_flights())
+
+    assert errors == 1
+    assert len(flights) == 1
+    assert flights[0]["origin"] == "MRS"

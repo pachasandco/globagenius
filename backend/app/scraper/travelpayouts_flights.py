@@ -131,3 +131,34 @@ def scrape_flights_for_airport(origin: str) -> list[dict]:
         except Exception as e:
             logger.warning(f"Failed to scrape {origin}->{dest}: {e}")
     return all_flights
+
+
+async def scrape_all_flights() -> tuple[list[dict], int, list[dict]]:
+    """Top-level scraper. Rotates over MVP_AIRPORTS using current hour.
+
+    Signature kept compatible with the legacy flights.py module:
+    returns (flights, errors, baselines). Baselines are always empty
+    here — they are populated by job_travelpayouts_enrichment instead."""
+    airports = settings.MVP_AIRPORTS
+    hour = _utcnow().hour
+    cycle_index = hour // 4  # 0..5, changes every 4 hours
+    start_idx = (cycle_index * AIRPORTS_PER_CYCLE) % len(airports)
+    cycle_airports = [
+        airports[(start_idx + i) % len(airports)]
+        for i in range(AIRPORTS_PER_CYCLE)
+    ]
+
+    logger.info(f"Cycle (hour={hour}, idx={cycle_index}): scraping airports {cycle_airports}")
+
+    all_flights = []
+    errors = 0
+    for airport in cycle_airports:
+        try:
+            flights = scrape_flights_for_airport(airport)
+            all_flights.extend(flights)
+            logger.info(f"Scraped {len(flights)} flights from {airport}")
+        except Exception as e:
+            errors += 1
+            logger.error(f"Failed to scrape flights from {airport}: {e}")
+
+    return all_flights, errors, []
