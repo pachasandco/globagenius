@@ -376,9 +376,16 @@ async def test_recalculate_baselines_builds_bucket_baselines_from_history():
     pb_table = MagicMock()
     pb_table.upsert.return_value.execute.return_value = MagicMock(data=[{}])
 
+    # raw_flights chain: select().gte().not_.is_().order().range().execute()
+    # First page returns fake_flights, subsequent pages return empty (breaks loop)
     rf_table = MagicMock()
-    rf_table.select.return_value.gte.return_value.execute.return_value = MagicMock(data=fake_flights)
+    rf_chain = rf_table.select.return_value.gte.return_value
+    rf_chain.not_.is_.return_value.order.return_value.range.return_value.execute.side_effect = [
+        MagicMock(data=fake_flights),
+        MagicMock(data=[]),
+    ]
 
+    # raw_accommodations chain: select().gte().execute()
     ra_table = MagicMock()
     ra_table.select.return_value.gte.return_value.execute.return_value = MagicMock(data=[])
 
@@ -429,7 +436,11 @@ async def test_recalculate_baselines_skips_routes_without_enough_history():
     pb_table.upsert.return_value.execute.return_value = MagicMock(data=[{}])
 
     rf_table = MagicMock()
-    rf_table.select.return_value.gte.return_value.execute.return_value = MagicMock(data=fake_flights)
+    rf_chain = rf_table.select.return_value.gte.return_value
+    rf_chain.not_.is_.return_value.order.return_value.range.return_value.execute.side_effect = [
+        MagicMock(data=fake_flights),
+        MagicMock(data=[]),
+    ]
 
     ra_table = MagicMock()
     ra_table.select.return_value.gte.return_value.execute.return_value = MagicMock(data=[])

@@ -427,15 +427,31 @@ async def job_recalculate_baselines():
     now = datetime.now(timezone.utc)
     thirty_days_ago = (now - timedelta(days=30)).isoformat()
 
-    flights_resp = (
-        db.table("raw_flights")
-        .select("origin, destination, price, scraped_at, trip_duration_days, stops, duration_minutes")
-        .gte("scraped_at", thirty_days_ago)
-        .execute()
-    )
+    # Paginate: Supabase defaults to a 1000-row cap per request. Older rows
+    # (inserted before the trip_duration_days migration) have NULL and are
+    # useless for bucket baselines, so we filter them out at the source.
+    # We also page through up to 10k rows to cover the full 30-day window.
+    flights_data: list[dict] = []
+    page_size = 1000
+    for offset in range(0, 10000, page_size):
+        page = (
+            db.table("raw_flights")
+            .select("origin, destination, price, scraped_at, trip_duration_days, stops, duration_minutes")
+            .gte("scraped_at", thirty_days_ago)
+            .not_.is_("trip_duration_days", "null")
+            .order("scraped_at", desc=True)
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        rows = page.data or []
+        flights_data.extend(rows)
+        if len(rows) < page_size:
+            break
+
+    logger.info(f"Recalculate: fetched {len(flights_data)} flights with trip_duration_days")
 
     routes: dict[str, list] = {}
-    for f in (flights_resp.data or []):
+    for f in flights_data:
         key = f"{f['origin']}-{f['destination']}"
         routes.setdefault(key, []).append(f)
 
