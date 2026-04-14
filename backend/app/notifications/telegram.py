@@ -5,6 +5,9 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+_FR_MONTHS_SHORT = ["", "janv", "févr", "mars", "avr", "mai", "juin",
+                    "juil", "août", "sept", "oct", "nov", "déc"]
+
 
 def _get_bot() -> Bot | None:
     if not settings.TELEGRAM_BOT_TOKEN:
@@ -154,6 +157,98 @@ async def send_flight_deal_alert(
         return True
     except Exception as e:
         logger.error(f"Failed to send flight alert to {chat_id}: {e}")
+        return False
+
+
+def format_grouped_flight_alerts(
+    origin_city: str,
+    dest_city: str,
+    destination_iata: str,
+    offers: list[dict],
+    tier: str = "premium",
+) -> str:
+    """Format a grouped Telegram alert for multiple flight offers to one destination.
+
+    offers: list of dicts with keys departure_date (YYYY-MM-DD), price, discount_pct,
+            optionally score. Caps display to 10 best offers (by discount_pct),
+            shows total count in header.
+    """
+    from app.config import settings
+
+    total = len(offers)
+    sorted_offers = sorted(offers, key=lambda o: o.get("discount_pct", 0), reverse=True)
+    shown = sorted_offers[:10]
+    remaining = total - len(shown)
+
+    max_discount = max(o.get("discount_pct", 0) for o in shown)
+    if max_discount >= 60:
+        badge = "🔴"
+    elif max_discount >= 40:
+        badge = "🟠"
+    else:
+        badge = "🟡"
+
+    noun = "offre" if total == 1 else "offres"
+    header = f"{badge} {dest_city.upper()} — {total} {noun} à saisir"
+    route = f"✈️ {origin_city} → {dest_city}"
+
+    # Group shown offers by month (chronological)
+    by_month: dict[int, list[dict]] = {}
+    for o in shown:
+        m = int(o["departure_date"][5:7])
+        by_month.setdefault(m, []).append(o)
+
+    lines = []
+    for month in sorted(by_month.keys()):
+        month_offers = by_month[month]
+        parts = [
+            f"{int(round(o['price']))}€ (-{int(round(o.get('discount_pct', 0)))}%)"
+            for o in month_offers
+        ]
+        lines.append(f"📅 {_FR_MONTHS_SHORT[month].capitalize()}: {' · '.join(parts)}")
+
+    msg_parts = [header, "", route, ""] + lines
+    if remaining > 0:
+        msg_parts.append(f"+ {remaining} autres")
+
+    scores = [o.get("score", 0) for o in shown if o.get("score")]
+    if scores:
+        max_score = int(round(max(scores)))
+        msg_parts += ["", f"🎯 Score max : {max_score}/100"]
+
+    link = f"👉 Voir toutes les offres : {settings.FRONTEND_URL}/home?dest={destination_iata}"
+    msg_parts += ["", link]
+
+    msg = "\n".join(msg_parts)
+
+    if tier == "free":
+        msg += (
+            "\n\n💎 Réservation directe réservée aux abonnés premium. "
+            "Créez un compte premium pour débloquer les meilleurs deals."
+        )
+
+    return msg
+
+
+async def send_grouped_flight_alerts(
+    chat_id: int,
+    origin_city: str,
+    dest_city: str,
+    destination_iata: str,
+    offers: list[dict],
+    tier: str = "premium",
+) -> bool:
+    """Send a grouped Telegram alert containing multiple flight offers for one destination."""
+    bot = _get_bot()
+    if not bot:
+        logger.warning("Telegram bot not configured, skipping grouped flight alert")
+        return False
+    msg = format_grouped_flight_alerts(origin_city, dest_city, destination_iata, offers, tier)
+    try:
+        await bot.send_message(chat_id=chat_id, text=msg)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send grouped flight alert to {chat_id}: {e}")
         return False
 
 
