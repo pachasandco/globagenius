@@ -121,7 +121,7 @@ def format_flight_deal_alert(flight: dict, discount_pct: float, baseline_price: 
     duration_line = f"🗓 {duration} jours sur place\n" if duration else ""
 
     return (
-        f"✈️ GLOBE GENIUS — {alert_badge}\n\n"
+        f"{alert_badge}\n\n"
         f"🌍 {origin_city} → {dest_city}\n"
         f"📅 {flight['departure_date']} – {flight['return_date']}\n"
         f"{duration_line}"

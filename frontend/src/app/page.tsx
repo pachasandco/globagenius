@@ -296,13 +296,13 @@ export default function Landing() {
             <h1 className="font-[family-name:var(--font-dm-serif)] text-[28px] md:text-[48px] lg:text-[64px] leading-[1.08] tracking-tight mb-4 md:mb-5">
               Des vols
               <br />
-              <span className="text-gradient">à prix cassés.</span>
+              à prix cassés.
             </h1>
             <p className="text-gray-600 text-base md:text-lg leading-relaxed mb-6 md:mb-8">
-              Lisbonne à 89€, Marrakech à 98€, Athènes à 156€. Pas une promo bidon&nbsp;:
-              un <strong className="text-gray-900">vrai prix anormalement bas</strong>, vérifié, qui apparaît parfois
-              quelques heures avant de disparaître. On les détecte avant tout le monde,
-              et on vous envoie un ping Telegram.
+              Lisbonne à 89€, Marrakech à 98€, Athènes à 156€. Des
+              <strong className="text-gray-900"> prix anormalement bas</strong>, vérifiés,
+              qui apparaissent parfois quelques heures avant de disparaître.
+              On les détecte avant tout le monde, et on vous envoie un ping Telegram.
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
               <Link
@@ -339,6 +339,89 @@ export default function Landing() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* ── TELEGRAM PREVIEW ── */}
+      <section className="py-12 md:py-24 bg-white">
+        <div className="max-w-6xl mx-auto px-4 md:px-5 grid md:grid-cols-2 gap-10 md:gap-16 items-center">
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+          >
+            <div className="text-xs font-bold text-cyan-600 tracking-widest uppercase mb-2">
+              Notification Telegram
+            </div>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-[28px] md:text-[36px] mb-4">
+              Une alerte. Vous partez.
+            </h2>
+            <p className="text-gray-600 text-base leading-relaxed mb-6">
+              Pas d&apos;email perdu dans un dossier promo, pas de notif push qui s&apos;empile.
+              Un message Telegram simple, lisible en 5 secondes, avec le prix, la baseline,
+              et le lien direct vers la réservation. Vous décidez en moins d&apos;une minute.
+            </p>
+            <ul className="space-y-3 text-sm text-gray-600">
+              <li className="flex items-start gap-3">
+                <span className="text-emerald-500 mt-0.5">✓</span>
+                <span>Prix vérifié en direct juste avant l&apos;envoi</span>
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="text-emerald-500 mt-0.5">✓</span>
+                <span>Comparaison à la médiane historique sur la même route</span>
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="text-emerald-500 mt-0.5">✓</span>
+                <span>Lien de réservation direct, vous quittez Telegram et c&apos;est réglé</span>
+              </li>
+            </ul>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5, delay: 0.1 }}
+            className="flex justify-center"
+          >
+            {/* Telegram message mockup */}
+            <div className="w-full max-w-sm bg-[#212d3b] rounded-2xl shadow-2xl shadow-black/20 overflow-hidden border border-gray-800">
+              {/* Bot identity */}
+              <div className="px-5 pt-5 pb-4 flex items-center gap-3 border-b border-gray-700/50">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-white font-bold text-sm">
+                  GG
+                </div>
+                <div>
+                  <div className="text-white font-semibold text-[15px]">Globe Genius</div>
+                  <div className="text-gray-400 text-xs">bot</div>
+                </div>
+              </div>
+
+              {/* Message bubble */}
+              <div className="p-5">
+                <div className="bg-[#2b3a4d] rounded-2xl rounded-tl-sm p-4 text-[13px] leading-relaxed">
+                  <div className="text-orange-400 font-bold mb-3">🟠 PROMO FLASH</div>
+                  <div className="text-gray-100 space-y-1.5">
+                    <div>🌍 <span className="text-white">Paris → Lisbonne</span></div>
+                    <div>📅 12 mai – 19 mai</div>
+                    <div>🗓 7 jours sur place</div>
+                    <div>✈️ TAP Portugal</div>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-white/10">
+                    <div className="text-white font-semibold">
+                      💰 89€ <span className="text-gray-400 font-normal">au lieu de ~181€</span>
+                      <span className="text-orange-400 ml-2">· 🔥 -51%</span>
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-white/10">
+                    <div className="text-cyan-400 underline">👉 Réserver sur Aviasales</div>
+                  </div>
+                  <div className="text-right text-gray-500 text-[11px] mt-2">14:23</div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
         </div>
       </section>
 
