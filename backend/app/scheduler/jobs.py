@@ -15,6 +15,7 @@ from app.scraper.reverify import reverify_flight_price
 from app.composer.package_builder import build_packages
 from app.notifications.telegram import (
     send_deal_alert,
+    send_flight_deal_alert,
     send_digest,
     send_admin_report,
     send_admin_alert,
@@ -221,6 +222,27 @@ async def _analyze_new_flights(flights: list[dict]):
             "tier": tier,
             "status": "active",
         }).execute()
+
+        # Flight-only Telegram alert (vol seul, no hotel required)
+        if score >= settings.MIN_SCORE_ALERT:
+            try:
+                subs_resp = (
+                    db.table("telegram_subscribers")
+                    .select("chat_id")
+                    .eq("airport_code", flight["origin"])
+                    .lte("min_score", score)
+                    .execute()
+                )
+                for sub in (subs_resp.data or []):
+                    await send_flight_deal_alert(
+                        chat_id=sub["chat_id"],
+                        flight=flight,
+                        discount_pct=anomaly.discount_pct,
+                        baseline_price=anomaly.baseline_price,
+                        tier=tier,
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to send flight deal alert: {e}")
 
         await _compose_packages_for_flight(flight, baseline)
 

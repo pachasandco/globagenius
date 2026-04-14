@@ -101,6 +101,62 @@ def format_admin_report(stats: dict) -> str:
     return "\n".join(lines)
 
 
+def format_flight_deal_alert(flight: dict, discount_pct: float, baseline_price: float) -> str:
+    """Format an alert message for a flight-only deal (no hotel package).
+
+    `flight` is expected to contain: origin, destination, departure_date,
+    return_date, price, airline, source_url, trip_duration_days (optional)."""
+    from app.config import IATA_TO_CITY
+    origin_city = IATA_TO_CITY.get(flight["origin"], flight["origin"])
+    dest_city = IATA_TO_CITY.get(flight["destination"], flight["destination"])
+
+    if discount_pct >= 60:
+        alert_badge = "🔴 ERREUR DE PRIX"
+    elif discount_pct >= 40:
+        alert_badge = "🟠 PROMO FLASH"
+    else:
+        alert_badge = "🟡 BON DEAL"
+
+    duration = flight.get("trip_duration_days")
+    duration_line = f"🗓 {duration} jours sur place\n" if duration else ""
+
+    return (
+        f"✈️ GLOBE GENIUS — {alert_badge}\n\n"
+        f"🌍 {origin_city} → {dest_city}\n"
+        f"📅 {flight['departure_date']} – {flight['return_date']}\n"
+        f"{duration_line}"
+        f"✈️ {flight.get('airline', 'Compagnie')}\n\n"
+        f"💰 {flight['price']}€ au lieu de ~{round(baseline_price)}€  ·  🔥 -{round(discount_pct)}%\n\n"
+        f"👉 Réservation : {flight.get('source_url', 'N/A')}"
+    )
+
+
+async def send_flight_deal_alert(
+    chat_id: int,
+    flight: dict,
+    discount_pct: float,
+    baseline_price: float,
+    tier: str = "premium",
+) -> bool:
+    """Send a Telegram alert for a flight-only deal."""
+    bot = _get_bot()
+    if not bot:
+        logger.warning("Telegram bot not configured, skipping flight alert")
+        return False
+    msg = format_flight_deal_alert(flight, discount_pct, baseline_price)
+    if tier == "free":
+        msg += (
+            "\n\n💎 Réservation directe réservée aux abonnés premium. "
+            "Créez un compte premium pour débloquer les meilleurs deals."
+        )
+    try:
+        await bot.send_message(chat_id=chat_id, text=msg)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send flight alert to {chat_id}: {e}")
+        return False
+
+
 async def send_deal_alert(chat_id: int, package: dict, flight: dict, accommodation: dict, tier: str = "premium") -> bool:
     bot = _get_bot()
     if not bot:

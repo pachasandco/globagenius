@@ -30,8 +30,8 @@ class Settings:
     BASELINE_RECALC_HOUR: int = int(os.getenv("BASELINE_RECALC_HOUR", "3"))
     DIGEST_HOUR: int = int(os.getenv("DIGEST_HOUR", "8"))
     MIN_DISCOUNT_PCT: int = int(os.getenv("MIN_DISCOUNT_PCT", "40"))
-    MIN_SCORE_ALERT: int = int(os.getenv("MIN_SCORE_ALERT", "70"))
-    MIN_SCORE_DIGEST: int = int(os.getenv("MIN_SCORE_DIGEST", "50"))
+    MIN_SCORE_ALERT: int = int(os.getenv("MIN_SCORE_ALERT", "40"))
+    MIN_SCORE_DIGEST: int = int(os.getenv("MIN_SCORE_DIGEST", "30"))
     DATA_FRESHNESS_HOURS: int = int(os.getenv("DATA_FRESHNESS_HOURS", "2"))
     MVP_AIRPORTS: list = field(default_factory=lambda: os.getenv(
         "MVP_AIRPORTS", "CDG,ORY,LYS,MRS,NCE,BOD,NTE,TLS"
