@@ -144,9 +144,9 @@ export default function HomePage() {
     }
     setEmail(userEmail || "");
 
-    // Auto-logout after 15 min inactivity
-    const cleanup = initSession();
-    if (cleanup) return cleanup;
+    // Auto-logout after 15 min inactivity. Keep the cleanup so we can
+    // return it from the useEffect at the END, after load() has started.
+    const sessionCleanup = initSession();
 
     async function load() {
       try {
@@ -189,7 +189,10 @@ export default function HomePage() {
     }
     load();
     const interval = setInterval(load, 60000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (sessionCleanup) sessionCleanup();
+    };
   }, [router]);
 
   useEffect(() => {
@@ -244,7 +247,6 @@ export default function HomePage() {
           <div className="hidden md:flex items-center gap-5 text-sm text-gray-500">
             <Link href="/home" className="text-gray-900 font-medium">Deals</Link>
             <Link href="/articles" className="hover:text-gray-900 transition-colors">Articles</Link>
-            <Link href="/planner" className="hover:text-gray-900 transition-colors">Planificateur</Link>
           </div>
           <div className="flex items-center gap-2 md:gap-3">
             <span className="text-sm text-gray-400 hidden md:block">{email}</span>

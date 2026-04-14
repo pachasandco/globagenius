@@ -41,7 +41,6 @@ export default function ArticlesPage() {
           </Link>
           <div className="flex items-center gap-2 md:gap-3">
             <Link href="/home" className="text-sm text-gray-500 hover:text-gray-900 hidden sm:block">Dashboard</Link>
-            <Link href="/planner" className="text-sm text-gray-500 hover:text-gray-900 hidden sm:block">Planificateur</Link>
           </div>
         </div>
       </nav>
