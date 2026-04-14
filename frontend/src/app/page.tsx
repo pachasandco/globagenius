@@ -191,7 +191,7 @@ export default function Landing() {
         {/* Background image */}
         <div className="absolute inset-0">
           <img
-            src="https://images.unsplash.com/photo-1436491865332-7a61a109db05?w=1920&q=80"
+            src="https://images.unsplash.com/photo-1488085061387-422e29b40080?w=1920&q=80"
             alt="Travel"
             className="w-full h-full object-cover"
           />
