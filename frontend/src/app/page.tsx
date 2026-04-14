@@ -299,9 +299,10 @@ export default function Landing() {
               <span className="text-gradient">à prix cassés.</span>
             </h1>
             <p className="text-gray-600 text-base md:text-lg leading-relaxed mb-6 md:mb-8">
-              Nous scannons les prix des vols aller-retour toutes les 2 heures sur 8 aéroports français.
-              Dès qu'une anomalie de prix <strong className="text-gray-900">confirmée en temps réel</strong> est détectée,
-              vous recevez une alerte Telegram.
+              Lisbonne à 89€, Marrakech à 98€, Athènes à 156€. Pas une promo bidon&nbsp;:
+              un <strong className="text-gray-900">vrai prix anormalement bas</strong>, vérifié, qui apparaît parfois
+              quelques heures avant de disparaître. On les détecte avant tout le monde,
+              et on vous envoie un ping Telegram.
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
               <Link
