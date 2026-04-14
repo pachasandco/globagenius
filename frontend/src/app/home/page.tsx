@@ -42,7 +42,7 @@ interface Article {
   tags: string[];
 }
 
-function FlightDealCard({ deal, locked = false }: { deal: FlightDeal; locked?: boolean }) {
+function FlightDealCard({ deal }: { deal: FlightDeal }) {
   const days = deal.trip_duration_days ?? Math.round(
     (new Date(deal.return_date).getTime() - new Date(deal.departure_date).getTime()) / 86400000
   );
@@ -50,8 +50,11 @@ function FlightDealCard({ deal, locked = false }: { deal: FlightDeal; locked?: b
   const ret = new Date(deal.return_date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
   const isPremium = deal.tier === "premium";
   const discount = Math.round(deal.discount_pct);
-  const saving = Math.round(deal.baseline_price - deal.price);
   const stopsLabel = deal.stops === 0 ? "Direct" : `${deal.stops} escale${deal.stops > 1 ? "s" : ""}`;
+  const locked = deal.locked || deal.price === null || deal.baseline_price === null;
+  const saving = !locked && deal.baseline_price !== null && deal.price !== null
+    ? Math.round(deal.baseline_price - deal.price)
+    : null;
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
@@ -75,11 +78,23 @@ function FlightDealCard({ deal, locked = false }: { deal: FlightDeal; locked?: b
             <div className="text-xs text-gray-400 mb-0.5">
               Vol aller-retour{deal.airline ? ` · ${deal.airline}` : ""}
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold">{Math.round(deal.price)} €</span>
-              <span className="text-sm text-gray-300 line-through">{Math.round(deal.baseline_price)} €</span>
-            </div>
-            <div className="text-xs text-emerald-600 mt-0.5">Économie de {saving} €</div>
+            {locked ? (
+              <div className="flex items-baseline gap-2 select-none">
+                <span className="text-2xl font-bold blur-sm text-gray-400">••• €</span>
+                <span className="text-sm text-gray-300 line-through blur-sm">••• €</span>
+              </div>
+            ) : (
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold">{Math.round(deal.price as number)} €</span>
+                <span className="text-sm text-gray-300 line-through">{Math.round(deal.baseline_price as number)} €</span>
+              </div>
+            )}
+            {saving !== null && (
+              <div className="text-xs text-emerald-600 mt-0.5">Économie de {saving} €</div>
+            )}
+            {locked && (
+              <div className="text-xs text-gray-400 mt-0.5">Tarif réservé aux abonnés</div>
+            )}
           </div>
           <div className="flex items-center gap-1.5 bg-cyan-50 rounded-lg px-2.5 py-1">
             <div className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
@@ -88,7 +103,7 @@ function FlightDealCard({ deal, locked = false }: { deal: FlightDeal; locked?: b
         </div>
         {locked ? (
           <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-xs text-amber-800">
-            💎 Réservation réservée aux abonnés Premium
+            💎 {isPremium ? "Réservé aux abonnés Premium" : "Connectez-vous pour voir le prix"}
           </div>
         ) : deal.source_url ? (
           <a
@@ -341,11 +356,7 @@ export default function HomePage() {
           {!loading && deals.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
               {deals.map((deal) => (
-                <FlightDealCard
-                  key={deal.id}
-                  deal={deal}
-                  locked={deal.tier === "premium" && !isPremium}
-                />
+                <FlightDealCard key={deal.id} deal={deal} />
               ))}
             </div>
           )}

@@ -85,13 +85,18 @@ export function getTelegramStatus(userId: string) {
 
 /**
  * A flight-only deal as returned by GET /api/packages?plan=free|premium.
- * Enriched with raw_flights info server-side.
+ * Enriched with raw_flights info server-side. Sensitive fields
+ * (price, baseline_price, source_url) are nullified when the caller
+ * doesn't have access — see `locked`.
+ *
+ * Locking rules (server-side, NOT bypass-able from the frontend):
+ * - Anonymous (no JWT): all deals locked
+ * - Authenticated free user: free-tier deals unlocked, premium-tier locked
+ * - Authenticated premium user: all deals unlocked
  */
 export interface FlightDeal {
   id: string;
   tier: "free" | "premium";
-  price: number;
-  baseline_price: number;
   discount_pct: number;
   score: number;
   created_at: string;
@@ -101,9 +106,13 @@ export interface FlightDeal {
   return_date: string;
   airline: string | null;
   stops: number;
-  source_url: string;
   trip_duration_days: number | null;
   duration_minutes: number | null;
+  // Nullable when locked
+  price: number | null;
+  baseline_price: number | null;
+  source_url: string | null;
+  locked: boolean;
 }
 
 /**

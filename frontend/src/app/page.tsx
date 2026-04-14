@@ -1,21 +1,44 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { getFlightDeals, type FlightDeal } from "@/lib/api";
 
-/* ─── DATA ─── */
-// Static demo deals used only for the non-logged-in landing page.
-// Real deals come from /api/packages on /home and /dashboard.
-const deals = [
-  { id: 1, from: "Paris", to: "Lisbonne", code: "CDG → LIS", dates: "10 – 17 mai", days: 7, airline: "TAP Portugal", stops: 0, price: 89, was: 181, off: 50, score: 59, img: "https://images.unsplash.com/photo-1585208798174-6cedd86e019a?w=800&q=80", flag: "🇵🇹" },
-  { id: 2, from: "Lyon", to: "Barcelone", code: "LYS → BCN", dates: "15 – 20 mai", days: 5, airline: "Vueling", stops: 0, price: 62, was: 156, off: 60, score: 67, img: "https://images.unsplash.com/photo-1583422409516-2895a77efded?w=800&q=80", flag: "🇪🇸" },
-  { id: 3, from: "Marseille", to: "Athènes", code: "MRS → ATH", dates: "22 – 28 mai", days: 6, airline: "Aegean", stops: 1, price: 145, was: 245, off: 41, score: 52, img: "https://images.unsplash.com/photo-1555993539-1732b0258235?w=800&q=80", flag: "🇬🇷" },
-  { id: 4, from: "Nice", to: "Prague", code: "NCE → PRG", dates: "18 – 22 mai", days: 4, airline: "Easyjet", stops: 0, price: 78, was: 148, off: 47, score: 48, img: "https://images.unsplash.com/photo-1519677100203-a0e668c92439?w=800&q=80", flag: "🇨🇿" },
-  { id: 5, from: "Bordeaux", to: "Marrakech", code: "BOD → RAK", dates: "25 – 31 mai", days: 6, airline: "Ryanair", stops: 0, price: 98, was: 186, off: 47, score: 55, img: "https://images.unsplash.com/photo-1597212618440-806262de4f6b?w=800&q=80", flag: "🇲🇦" },
-  { id: 6, from: "Toulouse", to: "Amsterdam", code: "TLS → AMS", dates: "12 – 16 mai", days: 4, airline: "KLM", stops: 0, price: 115, was: 210, off: 45, score: 50, img: "https://images.unsplash.com/photo-1534351590666-13e3e96b5017?w=800&q=80", flag: "🇳🇱" },
-];
+/* ─── DESTINATION IMAGES ───
+   Mapped by IATA code so that live deals fetched from /api/packages can
+   pick a relevant cover photo without depending on the backend. */
+const DESTINATION_IMAGES: Record<string, { img: string; flag: string; name: string }> = {
+  LIS: { img: "https://images.unsplash.com/photo-1585208798174-6cedd86e019a?w=800&q=80", flag: "🇵🇹", name: "Lisbonne" },
+  BCN: { img: "https://images.unsplash.com/photo-1583422409516-2895a77efded?w=800&q=80", flag: "🇪🇸", name: "Barcelone" },
+  MAD: { img: "https://images.unsplash.com/photo-1583422409516-2895a77efded?w=800&q=80", flag: "🇪🇸", name: "Madrid" },
+  ATH: { img: "https://images.unsplash.com/photo-1555993539-1732b0258235?w=800&q=80", flag: "🇬🇷", name: "Athènes" },
+  PRG: { img: "https://images.unsplash.com/photo-1519677100203-a0e668c92439?w=800&q=80", flag: "🇨🇿", name: "Prague" },
+  RAK: { img: "https://images.unsplash.com/photo-1597212618440-806262de4f6b?w=800&q=80", flag: "🇲🇦", name: "Marrakech" },
+  CMN: { img: "https://images.unsplash.com/photo-1597212618440-806262de4f6b?w=800&q=80", flag: "🇲🇦", name: "Casablanca" },
+  AMS: { img: "https://images.unsplash.com/photo-1534351590666-13e3e96b5017?w=800&q=80", flag: "🇳🇱", name: "Amsterdam" },
+  FCO: { img: "https://images.unsplash.com/photo-1552832230-c0197dd311b5?w=800&q=80", flag: "🇮🇹", name: "Rome" },
+  IST: { img: "https://images.unsplash.com/photo-1524231757912-21f4fe3a7200?w=800&q=80", flag: "🇹🇷", name: "Istanbul" },
+  TUN: { img: "https://images.unsplash.com/photo-1605000797499-95a51c5269ae?w=800&q=80", flag: "🇹🇳", name: "Tunis" },
+  BUD: { img: "https://images.unsplash.com/photo-1551867633-194f125bddfa?w=800&q=80", flag: "🇭🇺", name: "Budapest" },
+  OPO: { img: "https://images.unsplash.com/photo-1555881400-74d7acaacd8b?w=800&q=80", flag: "🇵🇹", name: "Porto" },
+  NAP: { img: "https://images.unsplash.com/photo-1547595628-c61a29f496f0?w=800&q=80", flag: "🇮🇹", name: "Naples" },
+  BER: { img: "https://images.unsplash.com/photo-1587330979470-3016b6702d89?w=800&q=80", flag: "🇩🇪", name: "Berlin" },
+  EDI: { img: "https://images.unsplash.com/photo-1506377585622-bedcbb027afc?w=800&q=80", flag: "🇬🇧", name: "Édimbourg" },
+  DUB: { img: "https://images.unsplash.com/photo-1518005020951-eccb494ad742?w=800&q=80", flag: "🇮🇪", name: "Dublin" },
+  VCE: { img: "https://images.unsplash.com/photo-1534113416831-ed75ddca41c0?w=800&q=80", flag: "🇮🇹", name: "Venise" },
+  JFK: { img: "https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?w=800&q=80", flag: "🇺🇸", name: "New York" },
+  BKK: { img: "https://images.unsplash.com/photo-1508009603885-50cf7c579365?w=800&q=80", flag: "🇹🇭", name: "Bangkok" },
+  DXB: { img: "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=800&q=80", flag: "🇦🇪", name: "Dubaï" },
+  NRT: { img: "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=800&q=80", flag: "🇯🇵", name: "Tokyo" },
+};
+
+const DEFAULT_DESTINATION_IMAGE = "https://images.unsplash.com/photo-1488085061387-422e29b40080?w=800&q=80";
+
+function destinationMeta(code: string) {
+  return DESTINATION_IMAGES[code] || { img: DEFAULT_DESTINATION_IMAGE, flag: "✈️", name: code };
+}
 
 const destinations = [
   { name: "Lisbonne", img: "https://images.unsplash.com/photo-1585208798174-6cedd86e019a?w=400&q=80", deals: 12 },
@@ -39,8 +62,29 @@ const faqs = [
 ];
 
 /* ─── COMPONENTS ─── */
-function DealCard({ deal, i }: { deal: (typeof deals)[0]; i: number }) {
+function relativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  const now = Date.now();
+  const diffMin = Math.round((now - then) / 60000);
+  if (diffMin < 60) return `il y a ${diffMin} min`;
+  const diffH = Math.round(diffMin / 60);
+  if (diffH < 24) return `il y a ${diffH} h`;
+  const diffD = Math.round(diffH / 24);
+  return `il y a ${diffD} j`;
+}
+
+function LandingDealCard({ deal, i }: { deal: FlightDeal; i: number }) {
+  const meta = destinationMeta(deal.destination);
+  const days = deal.trip_duration_days ?? Math.round(
+    (new Date(deal.return_date).getTime() - new Date(deal.departure_date).getTime()) / 86400000
+  );
+  const dep = new Date(deal.departure_date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+  const ret = new Date(deal.return_date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
   const stopsLabel = deal.stops === 0 ? "Direct" : `${deal.stops} escale${deal.stops > 1 ? "s" : ""}`;
+  const discount = Math.round(deal.discount_pct);
+  const isPremium = deal.tier === "premium";
+  const locked = deal.locked || deal.price === null || deal.baseline_price === null;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -50,30 +94,42 @@ function DealCard({ deal, i }: { deal: (typeof deals)[0]; i: number }) {
       className="group cursor-pointer"
     >
       <div className="relative aspect-[4/3] rounded-2xl overflow-hidden mb-3">
-        <img src={deal.img} alt={deal.to} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
-        <div className="absolute top-3 left-3 bg-red-500 text-white text-xs font-bold px-2.5 py-1 rounded-full">
-          -{deal.off}%
+        <img src={meta.img} alt={meta.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+        <div className="absolute top-3 left-3 flex items-center gap-1.5">
+          <div className={`text-white text-xs font-bold px-2.5 py-1 rounded-full ${isPremium ? "bg-red-500" : "bg-orange-500"}`}>
+            -{discount}%
+          </div>
+          {isPremium && (
+            <div className="bg-amber-400 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full">PREMIUM</div>
+          )}
         </div>
-        <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm text-xs font-semibold px-2.5 py-1 rounded-full text-gray-800">
-          ★ {deal.score}
+        <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm text-[10px] font-semibold px-2 py-1 rounded-full text-gray-700">
+          {relativeTime(deal.created_at)}
         </div>
         <div className="absolute bottom-3 left-3 right-3">
-          <div className="text-white font-semibold text-lg drop-shadow-lg">{deal.flag} {deal.from} → {deal.to}</div>
-          <div className="text-white/80 text-xs">{deal.dates} · {deal.days} jours</div>
+          <div className="text-white font-semibold text-lg drop-shadow-lg">{meta.flag} {deal.origin} → {deal.destination}</div>
+          <div className="text-white/80 text-xs">{dep} – {ret} · {days} jour{days > 1 ? "s" : ""}</div>
         </div>
       </div>
       <div className="px-1">
         <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
-          <span>✈️ {deal.airline}</span>
+          <span>✈️ {deal.airline || "Compagnie"}</span>
           <span>·</span>
           <span>{stopsLabel}</span>
         </div>
-        <div className="flex items-baseline gap-2">
-          <span className="text-xl font-bold">{deal.price} €</span>
-          <span className="text-sm text-gray-400 line-through">{deal.was} €</span>
-          <span className="text-xs text-gray-400 ml-auto">vol aller-retour</span>
-        </div>
+        {locked ? (
+          <div className="flex items-baseline gap-2 select-none">
+            <span className="text-xl font-bold blur-sm text-gray-400">••• €</span>
+            <span className="text-xs text-gray-400 ml-auto">Connectez-vous</span>
+          </div>
+        ) : (
+          <div className="flex items-baseline gap-2">
+            <span className="text-xl font-bold">{Math.round(deal.price as number)} €</span>
+            <span className="text-sm text-gray-400 line-through">{Math.round(deal.baseline_price as number)} €</span>
+            <span className="text-xs text-gray-400 ml-auto">vol aller-retour</span>
+          </div>
+        )}
       </div>
     </motion.div>
   );
@@ -145,6 +201,8 @@ const faqSchema = {
 /* ─── PAGE ─── */
 export default function Landing() {
   const router = useRouter();
+  const [recentDeals, setRecentDeals] = useState<FlightDeal[]>([]);
+  const [dealsUpdatedAt, setDealsUpdatedAt] = useState<string | null>(null);
 
   useEffect(() => {
     const userId = localStorage.getItem("gg_user_id");
@@ -153,6 +211,31 @@ export default function Landing() {
       router.replace("/home");
     }
   }, [router]);
+
+  useEffect(() => {
+    // Fetch live deals as social proof. Anonymous call → backend returns
+    // route/dates/airline/discount but locks price/baseline/source_url.
+    let cancelled = false;
+    async function load() {
+      try {
+        const [freeRes, premiumRes] = await Promise.allSettled([
+          getFlightDeals("free", 6),
+          getFlightDeals("premium", 6),
+        ]);
+        const all: FlightDeal[] = [];
+        if (freeRes.status === "fulfilled") all.push(...(freeRes.value.items || []));
+        if (premiumRes.status === "fulfilled") all.push(...(premiumRes.value.items || []));
+        // Sort by created_at desc, take 6 most recent across both tiers
+        all.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        if (!cancelled && all.length > 0) {
+          setRecentDeals(all.slice(0, 6));
+          setDealsUpdatedAt(all[0].created_at);
+        }
+      } catch { /* keep empty, section will hide */ }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <div className="min-h-screen bg-white">
@@ -259,34 +342,39 @@ export default function Landing() {
       </section>
 
       {/* ── DEALS ── */}
-      <section id="deals" className="py-12 md:py-24">
-        <div className="max-w-6xl mx-auto px-4 md:px-5">
-          <div className="flex items-end justify-between mb-10">
-            <div>
-              <motion.div
-                initial={{ opacity: 0 }}
-                whileInView={{ opacity: 1 }}
-                viewport={{ once: true }}
-                className="text-xs font-bold text-cyan-600 tracking-widest uppercase mb-2"
-              >
-                Mis à jour il y a 23 min
-              </motion.div>
-              <h2 className="font-[family-name:var(--font-dm-serif)] text-[28px] md:text-[36px]">
-                Deals du moment
-              </h2>
+      {recentDeals.length > 0 && (
+        <section id="deals" className="py-12 md:py-24">
+          <div className="max-w-6xl mx-auto px-4 md:px-5">
+            <div className="flex items-end justify-between mb-10">
+              <div>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  whileInView={{ opacity: 1 }}
+                  viewport={{ once: true }}
+                  className="text-xs font-bold text-cyan-600 tracking-widest uppercase mb-2"
+                >
+                  {dealsUpdatedAt ? `Dernier deal détecté ${relativeTime(dealsUpdatedAt)}` : "Mis à jour en continu"}
+                </motion.div>
+                <h2 className="font-[family-name:var(--font-dm-serif)] text-[28px] md:text-[36px]">
+                  Deals récents
+                </h2>
+                <p className="text-gray-500 text-sm mt-2 max-w-lg">
+                  Vrais deals détectés ces derniers jours. Créez un compte pour voir le prix exact et accéder au lien de réservation.
+                </p>
+              </div>
+              <Link href="/signup" className="text-sm font-semibold text-cyan-600 hover:underline hidden sm:block">
+                Créer un compte →
+              </Link>
             </div>
-            <Link href="/signup" className="text-sm font-semibold text-cyan-600 hover:underline hidden sm:block">
-              Voir tous les deals →
-            </Link>
-          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-7">
-            {deals.map((d, i) => (
-              <DealCard key={d.id} deal={d} i={i} />
-            ))}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-7">
+              {recentDeals.map((d, i) => (
+                <LandingDealCard key={d.id} deal={d} i={i} />
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* ── HOW IT WORKS ── */}
       <section id="how" className="py-12 md:py-24 bg-gray-50">

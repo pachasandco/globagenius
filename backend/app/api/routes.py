@@ -74,6 +74,36 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     return payload
 
 
+async def get_optional_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> dict | None:
+    """Optional JWT verification: returns None if no token or invalid token,
+    instead of raising. Used by endpoints that have public + private modes."""
+    if not credentials:
+        return None
+    try:
+        return _verify_jwt(credentials.credentials)
+    except HTTPException:
+        return None
+
+
+def _is_premium_user(user: dict | None) -> bool:
+    """Check if a user dict (from get_optional_user/get_current_user) maps to
+    a premium subscription. Returns False for anonymous or non-premium users."""
+    if not user or not db:
+        return False
+    user_id = user.get("user_id") or user.get("sub")
+    if not user_id:
+        return False
+    try:
+        prefs = db.table("user_preferences").select("is_premium").eq("user_id", user_id).execute()
+        if prefs.data and prefs.data[0].get("is_premium"):
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def _require_admin(request: Request):
     """Check admin API key in X-Admin-Key header."""
     admin_key = request.headers.get("X-Admin-Key", "")
@@ -244,15 +274,28 @@ def debug_data(request: Request):
 
 
 @router.get("/api/packages")
-def list_packages(min_score: int = 0, limit: int = 20, plan: str = "free"):
-    """List deals.
+def list_packages(
+    min_score: int = 0,
+    limit: int = 20,
+    plan: str = "free",
+    user: dict | None = Depends(get_optional_user),
+):
+    """List deals with paywall on sensitive fields.
 
     free  = qualified flight items 20-39% (vol seul, tier "free")
     premium = qualified flight items 40%+ (vol seul, tier "premium")
 
-    Both paths enrich each qualified_item with its underlying raw_flights
-    row so the frontend can render origin/destination/dates/airline/URL
-    without a second round-trip per card."""
+    Sensitive fields (price, baseline_price, source_url) are nullified
+    server-side based on the caller's auth state:
+
+    - Anonymous (no JWT)         → all fields nullified for all deals
+    - Authenticated, non-premium → free deals visible in full,
+                                   premium deals masked
+    - Authenticated, premium     → all fields visible
+
+    Non-sensitive fields (origin, destination, dates, airline, stops,
+    discount_pct, tier, ...) are always returned so the UI can show a
+    visible-but-locked card with a CTA to upgrade."""
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
@@ -291,27 +334,42 @@ def list_packages(min_score: int = 0, limit: int = 20, plan: str = "free"):
         for f in (rf_resp.data or []):
             flights_by_id[f["id"]] = f
 
+    is_authenticated = user is not None
+    is_premium = _is_premium_user(user)
+
     items = []
     for qi in qualified:
         flight = flights_by_id.get(qi.get("item_id")) or {}
+        tier = qi.get("tier", "free")
+
+        # Decide whether sensitive fields are visible for this deal
+        if is_premium:
+            unlocked = True
+        elif is_authenticated and tier == "free":
+            unlocked = True
+        else:
+            unlocked = False
+
         items.append({
             "id": qi["id"],
-            "tier": qi.get("tier", "free"),
-            "price": qi["price"],
-            "baseline_price": qi["baseline_price"],
+            "tier": tier,
             "discount_pct": qi["discount_pct"],
             "score": qi["score"],
             "created_at": qi["created_at"],
-            # Enriched from raw_flights
+            # Always-visible enrichment
             "origin": flight.get("origin", ""),
             "destination": flight.get("destination", ""),
             "departure_date": flight.get("departure_date", ""),
             "return_date": flight.get("return_date", ""),
             "airline": flight.get("airline"),
             "stops": flight.get("stops", 0),
-            "source_url": flight.get("source_url", ""),
             "trip_duration_days": flight.get("trip_duration_days"),
             "duration_minutes": flight.get("duration_minutes"),
+            # Sensitive fields — nullified when locked
+            "price": qi["price"] if unlocked else None,
+            "baseline_price": qi["baseline_price"] if unlocked else None,
+            "source_url": flight.get("source_url", "") if unlocked else None,
+            "locked": not unlocked,
         })
 
     return {"items": items, "plan": plan}
