@@ -9,6 +9,7 @@ load_dotenv()
 class Settings:
     APIFY_API_TOKEN: str = os.getenv("APIFY_API_TOKEN", "")
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "https://globegenius.app")
     SUPABASE_SERVICE_KEY: str = os.getenv("SUPABASE_SERVICE_KEY", "")
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_ADMIN_CHAT_ID: str = os.getenv("TELEGRAM_ADMIN_CHAT_ID", "")
