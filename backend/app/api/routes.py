@@ -104,6 +104,33 @@ def _is_premium_user(user: dict | None) -> bool:
     return False
 
 
+def _get_user_tier(user_id: str | None) -> str:
+    """Return 'premium' or 'free' for a user.
+
+    Source of truth: presence of a stripe_customer_id on the
+    user_preferences row (the Stripe Customer Portal endpoint uses the
+    same signal). Falls back conservatively to 'free' on any error or
+    when the user cannot be resolved. This helper intentionally avoids
+    the `is_premium` column read by `_is_premium_user`, which targets a
+    column absent from the declared schema migrations."""
+    if not user_id or not db:
+        return "free"
+    try:
+        row = (
+            db.table("user_preferences")
+            .select("stripe_customer_id")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        if row.data:
+            customer_id = row.data[0].get("stripe_customer_id")
+            if customer_id:
+                return "premium"
+    except Exception:
+        pass
+    return "free"
+
+
 def _require_admin(request: Request):
     """Check admin API key in X-Admin-Key header."""
     admin_key = request.headers.get("X-Admin-Key", "")
@@ -131,6 +158,14 @@ class PreferencesRequest(BaseModel):
     min_discount: int = 40
     max_budget: int | None = None
     preferred_destinations: list[str] | None = None
+
+    @field_validator("min_discount")
+    @classmethod
+    def validate_min_discount(cls, v: int) -> int:
+        allowed = {20, 30, 40, 50, 60}
+        if v not in allowed:
+            raise ValueError(f"min_discount must be one of {sorted(allowed)}")
+        return v
 
 
 class TelegramConnectRequest(BaseModel):
@@ -278,6 +313,7 @@ def list_packages(
     min_score: int = 0,
     limit: int = 20,
     plan: str = "free",
+    min_discount: int = 0,
     user: dict | None = Depends(get_optional_user),
 ):
     """List deals with paywall on sensitive fields.
@@ -300,9 +336,14 @@ def list_packages(
         raise HTTPException(status_code=503, detail="Database not configured")
 
     if plan == "premium":
+        plan_floor = 40
         discount_filter = ("gte", 40)
     else:
+        plan_floor = 20
         discount_filter = ("range", 20, 40)  # 20 <= d < 40
+
+    # A caller-supplied min_discount raises the floor (but never lowers it).
+    effective_floor = max(min_discount, plan_floor)
 
     query = (
         db.table("qualified_items").select("*")
@@ -311,9 +352,13 @@ def list_packages(
         .gte("score", min_score)
     )
     if discount_filter[0] == "gte":
-        query = query.gte("discount_pct", discount_filter[1])
+        query = query.gte("discount_pct", effective_floor)
+    elif effective_floor >= discount_filter[2]:
+        # Caller raised the floor past the free-tier ceiling → drop the
+        # upper bound and behave like a plain gte(effective_floor).
+        query = query.gte("discount_pct", effective_floor)
     else:
-        query = query.gte("discount_pct", discount_filter[1]).lt("discount_pct", discount_filter[2])
+        query = query.gte("discount_pct", effective_floor).lt("discount_pct", discount_filter[2])
 
     qi_resp = query.order("score", desc=True).limit(limit).execute()
     qualified = qi_resp.data or []
@@ -515,10 +560,20 @@ def update_preferences(user_id: str, req: PreferencesRequest, user: dict = Depen
         if ot not in VALID_OFFER_TYPES:
             raise HTTPException(status_code=400, detail=f"Invalid offer type. Valid: {VALID_OFFER_TYPES}")
 
+    # Free tier cannot filter on discounts >= 40 — silently floor to 39
+    # and signal the cap back to the client via `capped`.
+    caller_id = user.get("user_id") or user.get("sub")
+    tier = _get_user_tier(caller_id)
+    capped = False
+    effective_min_discount = req.min_discount
+    if tier == "free" and effective_min_discount >= 40:
+        effective_min_discount = 39
+        capped = True
+
     update_data = {
         "airport_codes": req.airport_codes,
         "offer_types": req.offer_types,
-        "min_discount": req.min_discount,
+        "min_discount": effective_min_discount,
         "max_budget": req.max_budget,
         "preferred_destinations": req.preferred_destinations or [],
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -528,7 +583,7 @@ def update_preferences(user_id: str, req: PreferencesRequest, user: dict = Depen
     if not resp.data:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return resp.data[0]
+    return {**resp.data[0], "capped": capped}
 
 
 # ─── TELEGRAM CONNECT ───
