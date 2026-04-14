@@ -158,9 +158,14 @@ export interface PipelineStatus {
   active_baselines: number;
 }
 
-export function getFlightDeals(plan: "free" | "premium" = "free", limit = 20, minScore = 0) {
+export function getFlightDeals(
+  plan: "free" | "premium" = "free",
+  limit = 20,
+  minScore = 0,
+  minDiscount = 0
+) {
   return fetchAPI<{ items: FlightDeal[]; plan: string }>(
-    `/api/packages?min_score=${minScore}&limit=${limit}&plan=${plan}`
+    `/api/packages?min_score=${minScore}&limit=${limit}&plan=${plan}&min_discount=${minDiscount}`
   );
 }
 

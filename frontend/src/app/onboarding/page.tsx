@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getPreferences, updatePreferences, generateTelegramLink } from "@/lib/api";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 const AIRPORTS = [
   { code: "CDG", label: "Paris Charles de Gaulle" },
   { code: "ORY", label: "Paris Orly" },
@@ -57,6 +59,9 @@ export default function OnboardingPage() {
   const [airports, setAirports] = useState<string[]>(["CDG"]);
   const [offerTypes, setOfferTypes] = useState<string[]>(["package", "flight", "accommodation"]);
   const [destinations, setDestinations] = useState<string[]>([]);
+  const [minDiscount, setMinDiscount] = useState<number>(20);
+  const [isPremium, setIsPremium] = useState(false);
+  const [showUpsellBanner, setShowUpsellBanner] = useState(false);
   const [telegramLink, setTelegramLink] = useState("");
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState("");
@@ -82,10 +87,22 @@ export default function OnboardingPage() {
         if (prefs.preferred_destinations && prefs.preferred_destinations.length > 0) {
           setDestinations(prefs.preferred_destinations);
         }
+        if (prefs.min_discount) {
+          setMinDiscount(prefs.min_discount);
+        }
       })
       .catch(() => {
         // First-time user or API error — keep defaults
       });
+
+    // Check premium status for upsell gating on high thresholds
+    const token = localStorage.getItem("gg_token");
+    if (token) {
+      fetch(`${API_URL}/api/stripe/status`, { headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => r.json())
+        .then((d) => setIsPremium(d.is_premium || false))
+        .catch(() => {});
+    }
   }, [router]);
 
   function toggleOfferType(id: string) {
@@ -107,6 +124,7 @@ export default function OnboardingPage() {
         airport_codes: airports.length > 0 ? airports : ["CDG"],
         offer_types: offerTypes.length > 0 ? offerTypes : ["package"],
         preferred_destinations: destinations.length > 0 ? destinations : null,
+        min_discount: minDiscount,
       });
       setStep(4);
     } catch {
@@ -298,6 +316,41 @@ export default function OnboardingPage() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div className="mb-8">
+              <h3 className="font-semibold text-[15px] mb-1">Seuil minimum de réduction</h3>
+              <p className="text-sm text-gray-400 mb-4">Vous ne recevrez des alertes qu&apos;à partir de ce pourcentage.</p>
+              <div className="flex flex-wrap gap-2">
+                {[20, 30, 40, 50, 60].map((val) => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => {
+                      if (!isPremium && val >= 40) {
+                        setShowUpsellBanner(true);
+                        return;
+                      }
+                      setShowUpsellBanner(false);
+                      setMinDiscount(val);
+                    }}
+                    className="px-4 py-2 rounded-xl border-2 font-semibold text-sm transition-all"
+                    style={{
+                      borderColor: minDiscount === val ? "#06b6d4" : "#e5e7eb",
+                      background: minDiscount === val ? "#ecfeff" : "white",
+                      color: minDiscount === val ? "#0891b2" : "#6b7280",
+                    }}
+                  >
+                    -{val}%
+                  </button>
+                ))}
+              </div>
+              {showUpsellBanner && !isPremium && (
+                <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800">
+                  💎 Les seuils 40% et plus sont réservés aux abonnés Premium.{" "}
+                  <a href="/home" className="underline font-semibold">Passer en Premium</a>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3">

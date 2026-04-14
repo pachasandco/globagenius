@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getFlightDeals, getPipelineStatus, type FlightDeal, type PipelineStatus } from "@/lib/api";
+import { getFlightDeals, getPipelineStatus, getPreferences, updatePreferences, type FlightDeal, type PipelineStatus, type UserPreferences } from "@/lib/api";
 import { initSession } from "@/lib/session";
 
 interface PlanDay {
@@ -129,6 +129,9 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [isPremium, setIsPremium] = useState(false);
   const [activeTab, setActiveTab] = useState<"premium" | "free">("premium");
+  const [minDiscount, setMinDiscount] = useState<number>(20);
+  const [userPrefs, setUserPrefs] = useState<UserPreferences | null>(null);
+  const [showUpsellBanner, setShowUpsellBanner] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
@@ -151,8 +154,8 @@ export default function HomePage() {
     async function load() {
       try {
         const [premRes, freeRes, statusRes] = await Promise.allSettled([
-          getFlightDeals("premium", 50),
-          getFlightDeals("free", 50),
+          getFlightDeals("premium", 50, 0, minDiscount),
+          getFlightDeals("free", 50, 0, minDiscount),
           getPipelineStatus(),
         ]);
         if (premRes.status === "fulfilled") {
@@ -165,6 +168,17 @@ export default function HomePage() {
           setStatus(statusRes.value as PipelineStatus);
         }
       } catch { /* ignore */ }
+
+      // Load user preferences so we can persist min_discount changes with a full payload
+      if (userId) {
+        try {
+          const prefs = await getPreferences(userId);
+          setUserPrefs(prefs);
+          if (prefs.min_discount) {
+            setMinDiscount(prefs.min_discount);
+          }
+        } catch { /* ignore */ }
+      }
 
       // Check premium status
       try {
@@ -193,7 +207,7 @@ export default function HomePage() {
       clearInterval(interval);
       if (sessionCleanup) sessionCleanup();
     };
-  }, [router]);
+  }, [router, minDiscount]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -337,6 +351,51 @@ export default function HomePage() {
                 {freeDeals.length > 0 && <span className="ml-1 bg-gray-200 text-gray-600 text-[10px] md:text-xs px-1.5 py-0.5 rounded-full">{freeDeals.length}</span>}
               </button>
             </div>
+          </div>
+
+          {/* Min-discount threshold pills */}
+          <div className="mb-5">
+            <p className="text-xs font-bold text-gray-400 tracking-wider uppercase mb-2">Seuil minimum de réduction</p>
+            <div className="flex flex-wrap gap-2">
+              {[20, 30, 40, 50, 60].map((val) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => {
+                    if (!isPremium && val >= 40) {
+                      setShowUpsellBanner(true);
+                      return;
+                    }
+                    setShowUpsellBanner(false);
+                    setMinDiscount(val);
+                    // Fire-and-forget persist. Requires full payload — use preloaded userPrefs.
+                    const userId = localStorage.getItem("gg_user_id");
+                    if (userId && userPrefs) {
+                      updatePreferences(userId, {
+                        airport_codes: userPrefs.airport_codes,
+                        offer_types: userPrefs.offer_types,
+                        min_discount: val,
+                        max_budget: userPrefs.max_budget,
+                        preferred_destinations: userPrefs.preferred_destinations,
+                      }).catch(() => {});
+                    }
+                  }}
+                  className="px-4 py-2 rounded-xl border-2 font-semibold text-sm transition-all"
+                  style={{
+                    borderColor: minDiscount === val ? "#06b6d4" : "#e5e7eb",
+                    background: minDiscount === val ? "#ecfeff" : "white",
+                    color: minDiscount === val ? "#0891b2" : "#6b7280",
+                  }}
+                >
+                  -{val}%
+                </button>
+              ))}
+            </div>
+            {showUpsellBanner && !isPremium && (
+              <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800">
+                💎 Les seuils 40% et plus sont réservés aux abonnés Premium. Passez en Premium pour débloquer les erreurs de prix.
+              </div>
+            )}
           </div>
 
           {loading && <div className="text-center py-12 text-gray-400">Chargement...</div>}
