@@ -460,3 +460,256 @@ async def test_recalculate_baselines_skips_routes_without_enough_history():
         await jobs.job_recalculate_baselines()
 
     pb_table.upsert.assert_not_called()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 3: Telegram alert filtering by user_preferences.min_discount
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _build_alert_db_mock(
+    baseline_row: dict,
+    subscribers: list[dict],
+    user_prefs: list[dict] | Exception | None = None,
+):
+    """Build a db mock that routes table() calls by name:
+    - price_baselines: returns baseline_row for .select().eq().eq().execute()
+    - qualified_items: .insert().execute() returns data=[{}]
+    - telegram_subscribers: .select().eq().lte().execute() returns `subscribers`
+    - user_preferences: .select().in_().execute() returns `user_prefs`
+                       (or raises if user_prefs is an Exception)
+    - raw_accommodations: .select() chain returns data=[] (skip _compose_packages)
+    """
+    # price_baselines chain
+    pb_table = MagicMock()
+    pb_eq2 = MagicMock()
+    pb_eq2.execute.return_value = MagicMock(data=[baseline_row])
+    pb_table.select.return_value.eq.return_value.eq.return_value = pb_eq2
+
+    # qualified_items chain (insert)
+    qi_table = MagicMock()
+    qi_table.insert.return_value.execute.return_value = MagicMock(data=[{}])
+
+    # telegram_subscribers chain
+    ts_table = MagicMock()
+    ts_table.select.return_value.eq.return_value.lte.return_value.execute.return_value = MagicMock(
+        data=subscribers
+    )
+
+    # user_preferences chain
+    up_table = MagicMock()
+    up_chain = up_table.select.return_value.in_.return_value
+    if isinstance(user_prefs, Exception):
+        up_chain.execute.side_effect = user_prefs
+    else:
+        up_chain.execute.return_value = MagicMock(data=user_prefs or [])
+
+    # raw_accommodations chain: skip packages composition (return no hotels)
+    ra_table = MagicMock()
+    ra_chain = (
+        ra_table.select.return_value
+        .eq.return_value
+        .eq.return_value
+        .eq.return_value
+        .gte.return_value
+        .gte.return_value
+    )
+    ra_chain.execute.return_value = MagicMock(data=[])
+
+    db_mock = MagicMock()
+
+    def fake_table(name):
+        return {
+            "price_baselines": pb_table,
+            "qualified_items": qi_table,
+            "telegram_subscribers": ts_table,
+            "user_preferences": up_table,
+            "raw_accommodations": ra_table,
+        }.get(name, MagicMock())
+
+    db_mock.table.side_effect = fake_table
+    return db_mock
+
+
+@pytest.mark.asyncio
+async def test_flight_alert_filtered_by_user_min_discount():
+    """User min_discount=50 blocks a 30% discount flight alert."""
+    from app.scheduler import jobs
+
+    baseline_row = {
+        "route_key": "CDG-BCN-bucket_medium",
+        "type": "flight",
+        "avg_price": 200.0,
+        "std_dev": 25.0,
+        "sample_count": 50,
+    }
+    # price 140 -> -30% discount, z = 2.4 (passes 20% floor)
+    flight = _flight_for_analysis(price=140.0)
+
+    db_mock = _build_alert_db_mock(
+        baseline_row=baseline_row,
+        subscribers=[{"chat_id": 123, "user_id": "u1"}],
+        user_prefs=[{"user_id": "u1", "min_discount": 50}],
+    )
+
+    send_alert_mock = AsyncMock()
+    with patch.object(jobs, "db", db_mock), \
+         patch.object(jobs, "reverify_flight_price", new=AsyncMock(return_value=True)), \
+         patch.object(jobs, "send_flight_deal_alert", new=send_alert_mock), \
+         patch.object(jobs.settings, "MIN_SCORE_ALERT", 0):
+        await jobs._analyze_new_flights([flight])
+
+    send_alert_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_flight_alert_sent_when_discount_meets_threshold():
+    """User min_discount=30 allows a 45% discount flight alert."""
+    from app.scheduler import jobs
+
+    baseline_row = {
+        "route_key": "CDG-BCN-bucket_medium",
+        "type": "flight",
+        "avg_price": 200.0,
+        "std_dev": 25.0,
+        "sample_count": 50,
+    }
+    # price 110 -> -45% discount, z = 3.6
+    flight = _flight_for_analysis(price=110.0)
+
+    db_mock = _build_alert_db_mock(
+        baseline_row=baseline_row,
+        subscribers=[{"chat_id": 123, "user_id": "u1"}],
+        user_prefs=[{"user_id": "u1", "min_discount": 30}],
+    )
+
+    send_alert_mock = AsyncMock()
+    with patch.object(jobs, "db", db_mock), \
+         patch.object(jobs, "reverify_flight_price", new=AsyncMock(return_value=True)), \
+         patch.object(jobs, "send_flight_deal_alert", new=send_alert_mock), \
+         patch.object(jobs.settings, "MIN_SCORE_ALERT", 0):
+        await jobs._analyze_new_flights([flight])
+
+    assert send_alert_mock.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_flight_alert_default_min_when_user_prefs_missing():
+    """If a subscriber has no user_id (legacy row), default min_discount=20 applies."""
+    from app.scheduler import jobs
+
+    baseline_row = {
+        "route_key": "CDG-BCN-bucket_medium",
+        "type": "flight",
+        "avg_price": 200.0,
+        "std_dev": 25.0,
+        "sample_count": 50,
+    }
+    # price 150 -> -25% discount, z = 2.0 (passes 20% floor, above default 20)
+    flight = _flight_for_analysis(price=150.0)
+
+    db_mock = _build_alert_db_mock(
+        baseline_row=baseline_row,
+        subscribers=[{"chat_id": 123, "user_id": None}],
+        user_prefs=[],
+    )
+
+    send_alert_mock = AsyncMock()
+    with patch.object(jobs, "db", db_mock), \
+         patch.object(jobs, "reverify_flight_price", new=AsyncMock(return_value=True)), \
+         patch.object(jobs, "send_flight_deal_alert", new=send_alert_mock), \
+         patch.object(jobs.settings, "MIN_SCORE_ALERT", 0):
+        await jobs._analyze_new_flights([flight])
+
+    assert send_alert_mock.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_package_alert_filtered_by_user_min_discount():
+    """User min_discount=50 blocks a 30% discount package alert in _compose_packages_for_flight."""
+    from app.scheduler import jobs
+
+    pkg = {
+        "origin": "CDG",
+        "destination": "BCN",
+        "score": 80,
+        "discount_pct": 30,
+        "flight_id": "f-1",
+        "accommodation_id": "a-1",
+    }
+    flight = _flight_for_analysis()
+    flight_baseline = {"avg_price": 200.0, "sample_count": 50}
+
+    # Build a db mock tailored to _compose_packages_for_flight
+    acc_row = {
+        "id": "a-1",
+        "city": "Barcelona",
+        "source": "booking",
+        "check_in": flight["departure_date"],
+        "check_out": flight["return_date"],
+        "rating": 4.5,
+        "name": "Test Hotel",
+        "source_url": "http://example.com",
+    }
+
+    ra_table = MagicMock()
+    ra_chain = (
+        ra_table.select.return_value
+        .eq.return_value
+        .eq.return_value
+        .eq.return_value
+        .gte.return_value
+        .gte.return_value
+    )
+    ra_chain.execute.return_value = MagicMock(data=[acc_row])
+    # Also handle the raw_accommodations lookup by id: select().eq().execute()
+    ra_table.select.return_value.eq.return_value.execute.return_value = MagicMock(
+        data=[{"name": "Test Hotel", "rating": 4.5, "source_url": "http://example.com"}]
+    )
+
+    pb_table = MagicMock()
+    pb_table.select.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(
+        data=[]
+    )
+
+    pkg_table = MagicMock()
+    pkg_table.insert.return_value.execute.return_value = MagicMock(data=[{}])
+
+    rf_table = MagicMock()
+    rf_table.select.return_value.eq.return_value.execute.return_value = MagicMock(
+        data=[{"source_url": "http://af.com", "airline": "AF"}]
+    )
+
+    ts_table = MagicMock()
+    ts_table.select.return_value.eq.return_value.lte.return_value.execute.return_value = MagicMock(
+        data=[{"chat_id": 123, "user_id": "u1"}]
+    )
+
+    up_table = MagicMock()
+    up_table.select.return_value.in_.return_value.execute.return_value = MagicMock(
+        data=[{"user_id": "u1", "min_discount": 50}]
+    )
+
+    db_mock = MagicMock()
+
+    def fake_table(name):
+        return {
+            "raw_accommodations": ra_table,
+            "price_baselines": pb_table,
+            "packages": pkg_table,
+            "raw_flights": rf_table,
+            "telegram_subscribers": ts_table,
+            "user_preferences": up_table,
+        }.get(name, MagicMock())
+
+    db_mock.table.side_effect = fake_table
+
+    # Build packages should return one package
+    send_alert_mock = AsyncMock()
+    with patch.object(jobs, "db", db_mock), \
+         patch.object(jobs, "build_packages", return_value=[pkg]), \
+         patch.object(jobs, "send_deal_alert", new=send_alert_mock), \
+         patch.object(jobs.settings, "MIN_SCORE_ALERT", 0):
+        await jobs._compose_packages_for_flight(flight, flight_baseline)
+
+    send_alert_mock.assert_not_called()

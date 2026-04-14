@@ -240,12 +240,40 @@ async def _analyze_new_flights(flights: list[dict]):
             try:
                 subs_resp = (
                     db.table("telegram_subscribers")
-                    .select("chat_id")
+                    .select("chat_id,user_id")
                     .eq("airport_code", flight["origin"])
                     .lte("min_score", score)
                     .execute()
                 )
-                for sub in (subs_resp.data or []):
+                subs = subs_resp.data or []
+
+                # Fetch each subscriber's min_discount preference. Default to
+                # 20 for users without a preferences row (free tier default).
+                # On query error, fall back to default for all subscribers so
+                # alerts still dispatch (fail-open for reliability).
+                prefs_by_user: dict[str, int] = {}
+                user_ids = [s["user_id"] for s in subs if s.get("user_id")]
+                if user_ids:
+                    try:
+                        prefs_resp = (
+                            db.table("user_preferences")
+                            .select("user_id,min_discount")
+                            .in_("user_id", user_ids)
+                            .execute()
+                        )
+                        prefs_by_user = {
+                            p["user_id"]: p.get("min_discount", 20)
+                            for p in (prefs_resp.data or [])
+                        }
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to fetch user preferences for filtering: {e}"
+                        )
+
+                for sub in subs:
+                    user_min = prefs_by_user.get(sub.get("user_id"), 20)
+                    if anomaly.discount_pct < user_min:
+                        continue
                     await send_flight_deal_alert(
                         chat_id=sub["chat_id"],
                         flight=flight,
@@ -330,7 +358,7 @@ async def _compose_packages_for_flight(flight: dict, flight_baseline: dict):
         if pkg["score"] >= settings.MIN_SCORE_ALERT:
             subscribers = (
                 db.table("telegram_subscribers")
-                .select("chat_id")
+                .select("chat_id,user_id")
                 .eq("airport_code", pkg["origin"])
                 .lte("min_score", pkg["score"])
                 .execute()
@@ -340,7 +368,34 @@ async def _compose_packages_for_flight(flight: dict, flight_baseline: dict):
 
             if flight_data.data and acc_data.data and subscribers.data:
                 pkg_tier = "premium" if pkg.get("discount_pct", 0) >= 40 else "free"
+                pkg_discount = pkg.get("discount_pct", 0) or 0
+
+                # Fetch each subscriber's min_discount preference. Fall back to
+                # default 20 for users without a preferences row, and fail-open
+                # (default for all) if the query errors out.
+                prefs_by_user: dict[str, int] = {}
+                user_ids = [s["user_id"] for s in subscribers.data if s.get("user_id")]
+                if user_ids:
+                    try:
+                        prefs_resp = (
+                            db.table("user_preferences")
+                            .select("user_id,min_discount")
+                            .in_("user_id", user_ids)
+                            .execute()
+                        )
+                        prefs_by_user = {
+                            p["user_id"]: p.get("min_discount", 20)
+                            for p in (prefs_resp.data or [])
+                        }
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to fetch user preferences for filtering: {e}"
+                        )
+
                 for sub in subscribers.data:
+                    user_min = prefs_by_user.get(sub.get("user_id"), 20)
+                    if pkg_discount < user_min:
+                        continue
                     await send_deal_alert(
                         sub["chat_id"], pkg, flight_data.data[0], acc_data.data[0],
                         tier=pkg_tier,
