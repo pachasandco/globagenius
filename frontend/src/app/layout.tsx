@@ -16,27 +16,27 @@ const plusJakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Globe Genius — Packages Voyage à Prix Cassés | -40% minimum",
+  title: "Globe Genius — Vols à Prix Cassés | Alertes Telegram temps réel",
   description:
-    "Globe Genius vous trouve des packages voyage (vol + hôtel) à -40% minimum sur le prix du marché. Alertes Telegram, 8 aéroports français couverts.",
+    "Globe Genius détecte les vols aller-retour à prix anormalement bas sur 8 aéroports français. Chaque deal est statistiquement vérifié et reconfirmé en temps réel avant l'alerte Telegram.",
   keywords: [
-    "packages voyage pas cher",
-    "vol hôtel prix cassé",
-    "deal voyage pas cher",
+    "vol pas cher alerte",
+    "deal vol aller-retour",
+    "erreur de prix vol",
     "alerte voyage telegram",
     "bons plans voyage",
-    "package vol hotel",
-    "voyage prix cassé france",
-    "offre voyage dernière minute",
+    "vol prix cassé",
+    "vol pas cher Paris",
+    "détecter deal vol",
   ],
   metadataBase: new URL("https://www.globegenius.app"),
   alternates: {
     canonical: "https://www.globegenius.app",
   },
   openGraph: {
-    title: "Globe Genius — Packages Voyage à Prix Cassés | -40% minimum",
+    title: "Globe Genius — Vols à Prix Cassés | Alertes Telegram temps réel",
     description:
-      "Globe Genius vous trouve des packages voyage (vol + hôtel) à -40% minimum sur le prix du marché. Recevez les alertes sur Telegram.",
+      "Détection des vols aller-retour à prix anormalement bas sur 8 aéroports français. Alertes Telegram dès qu'un deal est confirmé.",
     url: "https://www.globegenius.app",
     siteName: "Globe Genius",
     images: [
@@ -44,7 +44,7 @@ export const metadata: Metadata = {
         url: "https://www.globegenius.app/og-image.png",
         width: 1200,
         height: 630,
-        alt: "Globe Genius — Packages Voyage à Prix Cassés",
+        alt: "Globe Genius — Vols à Prix Cassés",
       },
     ],
     locale: "fr_FR",
@@ -52,9 +52,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Globe Genius — Packages Voyage à Prix Cassés | -40% minimum",
+    title: "Globe Genius — Vols à Prix Cassés",
     description:
-      "Globe Genius vous propose des packages voyage (vol + hôtel) à -40% minimum. Alertes sur Telegram.",
+      "Détection de vols aller-retour à prix anormalement bas. Alertes Telegram temps réel. 8 aéroports français.",
     images: ["https://www.globegenius.app/og-image.png"],
     creator: "@globegenius",
   },

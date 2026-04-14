@@ -81,8 +81,36 @@ export function getTelegramStatus(userId: string) {
   return fetchAPI<{ connected: boolean; chat_id: number | null }>(`/api/users/${userId}/telegram/status`);
 }
 
-// ─── Packages ───
+// ─── Deals ───
 
+/**
+ * A flight-only deal as returned by GET /api/packages?plan=free|premium.
+ * Enriched with raw_flights info server-side.
+ */
+export interface FlightDeal {
+  id: string;
+  tier: "free" | "premium";
+  price: number;
+  baseline_price: number;
+  discount_pct: number;
+  score: number;
+  created_at: string;
+  origin: string;
+  destination: string;
+  departure_date: string;
+  return_date: string;
+  airline: string | null;
+  stops: number;
+  source_url: string;
+  trip_duration_days: number | null;
+  duration_minutes: number | null;
+}
+
+/**
+ * A vol+hotel package (legacy path, still used by GET /api/packages/{id}).
+ * Not currently produced by the free/premium list endpoints — those return
+ * FlightDeal only. Kept for backwards compatibility with the detail view.
+ */
 export interface Package {
   id: string;
   flight_id: string;
@@ -106,18 +134,6 @@ export interface Package {
   ai_tags?: string[];
 }
 
-export interface QualifiedItem {
-  id: string;
-  type: "flight" | "accommodation";
-  item_id: string;
-  price: number;
-  baseline_price: number;
-  discount_pct: number;
-  score: number;
-  status: string;
-  created_at: string;
-}
-
 export interface PipelineStatus {
   status: string;
   recent_scrapes: Array<{
@@ -133,18 +149,14 @@ export interface PipelineStatus {
   active_baselines: number;
 }
 
-export function getPackages(minScore = 0, limit = 20, plan = "free") {
-  return fetchAPI<{ packages?: Package[]; items?: Package[]; plan: string }>(`/api/packages?min_score=${minScore}&limit=${limit}&plan=${plan}`);
+export function getFlightDeals(plan: "free" | "premium" = "free", limit = 20, minScore = 0) {
+  return fetchAPI<{ items: FlightDeal[]; plan: string }>(
+    `/api/packages?min_score=${minScore}&limit=${limit}&plan=${plan}`
+  );
 }
 
 export function getPackage(id: string) {
   return fetchAPI<Package>(`/api/packages/${id}`);
-}
-
-export function getQualifiedItems(type = "", limit = 20) {
-  const params = new URLSearchParams({ limit: String(limit) });
-  if (type) params.set("type_filter", type);
-  return fetchAPI<{ items: QualifiedItem[] }>(`/api/qualified-items?${params}`);
 }
 
 export function getPipelineStatus() {

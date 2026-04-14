@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getPackages, getPipelineStatus, type Package, type PipelineStatus } from "@/lib/api";
+import { getFlightDeals, getPipelineStatus, type FlightDeal, type PipelineStatus } from "@/lib/api";
 import { initSession } from "@/lib/session";
 
 interface PlanDay {
@@ -42,53 +42,64 @@ interface Article {
   tags: string[];
 }
 
-function DealCard({ pkg }: { pkg: Package }) {
-  const nights = Math.round(
-    (new Date(pkg.return_date).getTime() - new Date(pkg.departure_date).getTime()) / 86400000
+function FlightDealCard({ deal, locked = false }: { deal: FlightDeal; locked?: boolean }) {
+  const days = deal.trip_duration_days ?? Math.round(
+    (new Date(deal.return_date).getTime() - new Date(deal.departure_date).getTime()) / 86400000
   );
-  const dep = new Date(pkg.departure_date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
-  const ret = new Date(pkg.return_date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
-  const isPremium = pkg.discount_pct >= 40;
+  const dep = new Date(deal.departure_date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+  const ret = new Date(deal.return_date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+  const isPremium = deal.tier === "premium";
+  const discount = Math.round(deal.discount_pct);
+  const saving = Math.round(deal.baseline_price - deal.price);
+  const stopsLabel = deal.stops === 0 ? "Direct" : `${deal.stops} escale${deal.stops > 1 ? "s" : ""}`;
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
       <div className={`px-4 py-3 flex items-center justify-between ${isPremium ? "bg-gray-900" : "bg-gray-700"}`}>
         <div>
-          <div className="text-white text-sm font-semibold">{pkg.origin} → {pkg.destination}</div>
-          <div className="text-gray-400 text-xs">{dep} – {ret} · {nights} nuits</div>
+          <div className="text-white text-sm font-semibold">{deal.origin} → {deal.destination}</div>
+          <div className="text-gray-400 text-xs">
+            {dep} – {ret} · {days} jour{days > 1 ? "s" : ""} · {stopsLabel}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {isPremium && <span className="bg-amber-400 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full">PREMIUM</span>}
           <div className={`text-white text-xs font-bold px-2.5 py-1 rounded-full ${isPremium ? "bg-red-500" : "bg-orange-500"}`}>
-            -{Math.round(pkg.discount_pct)}%
+            -{discount}%
           </div>
         </div>
       </div>
       <div className="p-4">
-        {pkg.ai_description && <p className="text-sm text-gray-500 italic mb-3 leading-relaxed">{pkg.ai_description}</p>}
-        <div className="flex items-end justify-between mb-2">
+        <div className="flex items-end justify-between mb-3">
           <div>
-            <div className="text-xs text-gray-400 mb-0.5">Vol + Hôtel</div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold">{Math.round(pkg.total_price)} €</span>
-              <span className="text-sm text-gray-300 line-through">{Math.round(pkg.baseline_total)} €</span>
+            <div className="text-xs text-gray-400 mb-0.5">
+              Vol aller-retour{deal.airline ? ` · ${deal.airline}` : ""}
             </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-bold">{Math.round(deal.price)} €</span>
+              <span className="text-sm text-gray-300 line-through">{Math.round(deal.baseline_price)} €</span>
+            </div>
+            <div className="text-xs text-emerald-600 mt-0.5">Économie de {saving} €</div>
           </div>
           <div className="flex items-center gap-1.5 bg-cyan-50 rounded-lg px-2.5 py-1">
             <div className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
-            <span className="text-xs font-semibold text-cyan-700">Score {pkg.score}</span>
+            <span className="text-xs font-semibold text-cyan-700">Score {deal.score}</span>
           </div>
         </div>
-        {pkg.ai_tip && (
-          <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-xs text-amber-800">💡 {pkg.ai_tip}</div>
-        )}
-        {pkg.ai_tags && pkg.ai_tags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {pkg.ai_tags.map((tag: string) => (
-              <span key={tag} className="text-[11px] text-cyan-600 bg-cyan-50 px-2 py-0.5 rounded-full">{tag}</span>
-            ))}
+        {locked ? (
+          <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-xs text-amber-800">
+            💎 Réservation réservée aux abonnés Premium
           </div>
-        )}
+        ) : deal.source_url ? (
+          <a
+            href={deal.source_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block w-full text-center bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors"
+          >
+            Voir l&apos;offre
+          </a>
+        ) : null}
       </div>
     </div>
   );
@@ -96,8 +107,8 @@ function DealCard({ pkg }: { pkg: Package }) {
 
 export default function HomePage() {
   const [email, setEmail] = useState("");
-  const [premiumDeals, setPremiumDeals] = useState<Package[]>([]);
-  const [freeDeals, setFreeDeals] = useState<Package[]>([]);
+  const [premiumDeals, setPremiumDeals] = useState<FlightDeal[]>([]);
+  const [freeDeals, setFreeDeals] = useState<FlightDeal[]>([]);
   const [, setStatus] = useState<PipelineStatus | null>(null);
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
@@ -125,17 +136,15 @@ export default function HomePage() {
     async function load() {
       try {
         const [premRes, freeRes, statusRes] = await Promise.allSettled([
-          getPackages(0, 50, "premium"),
-          getPackages(0, 50, "free"),
+          getFlightDeals("premium", 50),
+          getFlightDeals("free", 50),
           getPipelineStatus(),
         ]);
         if (premRes.status === "fulfilled") {
-          const d = premRes.value as { packages?: Package[]; items?: Package[] };
-          setPremiumDeals(d?.packages || d?.items || []);
+          setPremiumDeals(premRes.value.items || []);
         }
         if (freeRes.status === "fulfilled") {
-          const d = freeRes.value as { packages?: Package[]; items?: Package[] };
-          setFreeDeals(d?.packages || d?.items || []);
+          setFreeDeals(freeRes.value.items || []);
         }
         if (statusRes.status === "fulfilled") {
           setStatus(statusRes.value as PipelineStatus);
@@ -241,8 +250,8 @@ export default function HomePage() {
                 <h3 className="font-semibold">Passez en Premium</h3>
               </div>
               <p className="text-sm text-amber-800">
-                Accedez aux deals a -40% et plus, packages vol + hotel, alertes Telegram prioritaires.
-                <strong> 7 jours d'essai gratuit.</strong>
+                Accédez aux deals à -40% et plus (erreurs de prix, flash sales), alertes Telegram temps réel,
+                et packages vol+hôtel dès qu'un hôtel matche vos dates.
               </p>
             </div>
             <button
@@ -261,7 +270,7 @@ export default function HomePage() {
               }}
               className="bg-amber-500 hover:bg-amber-600 text-white font-semibold px-6 py-3 rounded-xl text-sm shrink-0 transition-colors"
             >
-              Essai gratuit 7 jours — 2,99€/mois
+              Passer en Premium — 2,99€/mois
             </button>
           </div>
         )}
@@ -331,8 +340,12 @@ export default function HomePage() {
 
           {!loading && deals.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
-              {deals.map((pkg) => (
-                <DealCard key={pkg.id} pkg={pkg} />
+              {deals.map((deal) => (
+                <FlightDealCard
+                  key={deal.id}
+                  deal={deal}
+                  locked={deal.tier === "premium" && !isPremium}
+                />
               ))}
             </div>
           )}
@@ -479,7 +492,7 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="border-t border-gray-100 py-6 mt-8">
         <div className="max-w-6xl mx-auto px-5 text-center text-xs text-gray-300">
-          Globe Genius © 2026 — Packages voyage à prix cassés
+          Globe Genius © 2026 — Vols à prix cassés
         </div>
       </footer>
     </div>

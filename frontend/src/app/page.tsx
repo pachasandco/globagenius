@@ -6,13 +6,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 /* ─── DATA ─── */
+// Static demo deals used only for the non-logged-in landing page.
+// Real deals come from /api/packages on /home and /dashboard.
 const deals = [
-  { id: 1, from: "Paris", to: "Lisbonne", code: "CDG → LIS", dates: "10 – 17 mai", nights: 7, hotel: "Hotel Lisboa Plaza", stars: 4.3, price: 509, was: 978, off: 48, score: 84, img: "https://images.unsplash.com/photo-1585208798174-6cedd86e019a?w=800&q=80", flag: "🇵🇹" },
-  { id: 2, from: "Lyon", to: "Barcelone", code: "LYS → BCN", dates: "15 – 20 mai", nights: 5, hotel: "Casa Bonay", stars: 4.5, price: 320, was: 668, off: 52, score: 78, img: "https://images.unsplash.com/photo-1583422409516-2895a77efded?w=800&q=80", flag: "🇪🇸" },
-  { id: 3, from: "Marseille", to: "Athènes", code: "MRS → ATH", dates: "22 – 28 mai", nights: 6, hotel: "Electra Palace", stars: 4.6, price: 445, was: 812, off: 45, score: 75, img: "https://images.unsplash.com/photo-1555993539-1732b0258235?w=800&q=80", flag: "🇬🇷" },
-  { id: 4, from: "Nice", to: "Prague", code: "NCE → PRG", dates: "18 – 22 mai", nights: 4, hotel: "Mosaic House", stars: 4.4, price: 289, was: 525, off: 45, score: 72, img: "https://images.unsplash.com/photo-1519677100203-a0e668c92439?w=800&q=80", flag: "🇨🇿" },
-  { id: 5, from: "Bordeaux", to: "Marrakech", code: "BOD → RAK", dates: "25 – 31 mai", nights: 6, hotel: "Riad Yasmine", stars: 4.7, price: 395, was: 740, off: 47, score: 81, img: "https://images.unsplash.com/photo-1597212618440-806262de4f6b?w=800&q=80", flag: "🇲🇦" },
-  { id: 6, from: "Toulouse", to: "Amsterdam", code: "TLS → AMS", dates: "12 – 16 mai", nights: 4, hotel: "The Hoxton", stars: 4.4, price: 310, was: 580, off: 47, score: 76, img: "https://images.unsplash.com/photo-1534351590666-13e3e96b5017?w=800&q=80", flag: "🇳🇱" },
+  { id: 1, from: "Paris", to: "Lisbonne", code: "CDG → LIS", dates: "10 – 17 mai", days: 7, airline: "TAP Portugal", stops: 0, price: 89, was: 181, off: 50, score: 59, img: "https://images.unsplash.com/photo-1585208798174-6cedd86e019a?w=800&q=80", flag: "🇵🇹" },
+  { id: 2, from: "Lyon", to: "Barcelone", code: "LYS → BCN", dates: "15 – 20 mai", days: 5, airline: "Vueling", stops: 0, price: 62, was: 156, off: 60, score: 67, img: "https://images.unsplash.com/photo-1583422409516-2895a77efded?w=800&q=80", flag: "🇪🇸" },
+  { id: 3, from: "Marseille", to: "Athènes", code: "MRS → ATH", dates: "22 – 28 mai", days: 6, airline: "Aegean", stops: 1, price: 145, was: 245, off: 41, score: 52, img: "https://images.unsplash.com/photo-1555993539-1732b0258235?w=800&q=80", flag: "🇬🇷" },
+  { id: 4, from: "Nice", to: "Prague", code: "NCE → PRG", dates: "18 – 22 mai", days: 4, airline: "Easyjet", stops: 0, price: 78, was: 148, off: 47, score: 48, img: "https://images.unsplash.com/photo-1519677100203-a0e668c92439?w=800&q=80", flag: "🇨🇿" },
+  { id: 5, from: "Bordeaux", to: "Marrakech", code: "BOD → RAK", dates: "25 – 31 mai", days: 6, airline: "Ryanair", stops: 0, price: 98, was: 186, off: 47, score: 55, img: "https://images.unsplash.com/photo-1597212618440-806262de4f6b?w=800&q=80", flag: "🇲🇦" },
+  { id: 6, from: "Toulouse", to: "Amsterdam", code: "TLS → AMS", dates: "12 – 16 mai", days: 4, airline: "KLM", stops: 0, price: 115, was: 210, off: 45, score: 50, img: "https://images.unsplash.com/photo-1534351590666-13e3e96b5017?w=800&q=80", flag: "🇳🇱" },
 ];
 
 const destinations = [
@@ -27,15 +29,18 @@ const destinations = [
 const airports = ["Paris CDG", "Paris ORY", "Lyon", "Marseille", "Nice", "Bordeaux", "Nantes", "Toulouse"];
 
 const faqs = [
-  { q: "Comment sont détectés les deals ?", a: "Notre pipeline analyse les prix de milliers de vols et d'hôtels toutes les 2 heures. On compare chaque prix à la moyenne des 30 derniers jours. Seuls les packages avec une remise réelle de 40% ou plus sont retenus." },
-  { q: "Est-ce que les prix affichés sont fiables ?", a: "Oui. Chaque prix est vérifié au moment du scraping et les données expirent après 2 heures. Les liens pointent directement vers les sites de réservation (Google Flights, Booking.com)." },
-  { q: "Comment recevoir les alertes ?", a: "Après inscription, connectez votre compte Telegram via l'onboarding. Vous recevrez les alertes instantanément pour les deals avec un score supérieur à 70, et un digest quotidien à 8h." },
-  { q: "Combien ça coûte ?", a: "L'accès est gratuit pendant la période de lancement. Un abonnement à 2,99€/mois sera mis en place prochainement avec un essai gratuit de 7 jours." },
-  { q: "Quels aéroports sont couverts ?", a: "8 aéroports français : Paris CDG, Paris Orly, Lyon, Marseille, Nice, Bordeaux, Nantes et Toulouse. D'autres aéroports seront ajoutés selon la demande." },
+  { q: "Comment sont détectés les deals ?", a: "Notre pipeline scanne les prix des vols aller-retour toutes les 2 heures sur les 8 aéroports français couverts. Chaque prix est comparé à la médiane des 30 derniers jours sur la même route et la même durée de séjour (weekend, semaine, vacances longues). Seuls les vols avec une remise statistiquement anormale (minimum -20%) et confirmés en temps réel sont retenus." },
+  { q: "Est-ce que les prix affichés sont fiables ?", a: "Oui. Juste avant chaque alerte, le prix est revérifié en direct contre l'API Aviasales/Travelpayouts. Si le vol a disparu ou que le prix a augmenté de plus de 5%, l'alerte est annulée. Les liens pointent directement vers les pages de réservation Aviasales." },
+  { q: "Quelle est la différence entre Gratuit et Premium ?", a: "Gratuit : alertes pour les vols avec -20% à -39% de remise, visibles sur le site. Premium : accès aux deals les plus puissants (-40% et plus, incluant les erreurs de prix), alertes Telegram temps réel, packages vol+hôtel quand disponibles." },
+  { q: "Comment recevoir les alertes ?", a: "Après inscription, connectez votre compte Telegram via l'onboarding. Vous recevrez les alertes dès qu'un deal correspond à votre aéroport de départ, envoyées au maximum 2 heures après la détection d'une nouvelle anomalie de prix." },
+  { q: "Combien ça coûte ?", a: "La formule Gratuite permet de voir tous les deals -20% à -39% sur le site, sans limite. La formule Premium (2,99€/mois) donne accès aux deals -40% et plus et aux alertes Telegram prioritaires. Pas de période d'essai : la formule gratuite sert à découvrir le produit." },
+  { q: "Quels aéroports sont couverts ?", a: "8 aéroports français : Paris CDG, Paris Orly, Lyon, Marseille, Nice, Bordeaux, Nantes et Toulouse. Les long-courriers sont scrapés uniquement depuis CDG. D'autres aéroports seront ajoutés selon la demande." },
+  { q: "Quelle durée de séjour ?", a: "De 1 à 12 jours — du weekend prolongé aux vacances de deux semaines. Les séjours très longs sont exclus car ils suivent une autre logique tarifaire." },
 ];
 
 /* ─── COMPONENTS ─── */
 function DealCard({ deal, i }: { deal: (typeof deals)[0]; i: number }) {
+  const stopsLabel = deal.stops === 0 ? "Direct" : `${deal.stops} escale${deal.stops > 1 ? "s" : ""}`;
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -55,19 +60,19 @@ function DealCard({ deal, i }: { deal: (typeof deals)[0]; i: number }) {
         </div>
         <div className="absolute bottom-3 left-3 right-3">
           <div className="text-white font-semibold text-lg drop-shadow-lg">{deal.flag} {deal.from} → {deal.to}</div>
-          <div className="text-white/80 text-xs">{deal.dates} · {deal.nights} nuits</div>
+          <div className="text-white/80 text-xs">{deal.dates} · {deal.days} jours</div>
         </div>
       </div>
       <div className="px-1">
         <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
-          <span>🏨 {deal.hotel}</span>
+          <span>✈️ {deal.airline}</span>
           <span>·</span>
-          <span>★ {deal.stars}</span>
+          <span>{stopsLabel}</span>
         </div>
         <div className="flex items-baseline gap-2">
           <span className="text-xl font-bold">{deal.price} €</span>
           <span className="text-sm text-gray-400 line-through">{deal.was} €</span>
-          <span className="text-xs text-gray-400 ml-auto">vol + hôtel / pers.</span>
+          <span className="text-xs text-gray-400 ml-auto">vol aller-retour</span>
         </div>
       </div>
     </motion.div>
@@ -106,7 +111,7 @@ const organizationSchema = {
     height: 512,
   },
   description:
-    "Globe Genius trouve les packages voyage (vol + hôtel) à -40% minimum sur le prix du marché.",
+    "Globe Genius détecte les vols aller-retour à prix anormalement bas sur les 8 aéroports français. Alertes Telegram dès qu'une anomalie est confirmée.",
   sameAs: ["https://t.me/Globegenius_bot"],
   contactPoint: {
     "@type": "ContactPoint",
@@ -122,7 +127,7 @@ const websiteSchema = {
   name: "Globe Genius",
   url: "https://www.globegenius.app",
   description:
-    "Packages voyage à prix cassés. Vols + hôtels à -40% minimum.",
+    "Deals vols à prix cassés. Vols aller-retour avec anomalies de prix confirmées, alertes Telegram.",
   inLanguage: "fr-FR",
   publisher: { "@id": "https://www.globegenius.app/#organization" },
 };
@@ -206,14 +211,14 @@ export default function Landing() {
             </div>
 
             <h1 className="font-[family-name:var(--font-dm-serif)] text-[28px] md:text-[48px] lg:text-[64px] leading-[1.08] tracking-tight mb-4 md:mb-5">
-              Des packages voyage
+              Des vols
               <br />
               <span className="text-gradient">à prix cassés.</span>
             </h1>
             <p className="text-gray-600 text-base md:text-lg leading-relaxed mb-6 md:mb-8">
-              Nous analysons des milliers de vols et d'hôtels pour vous trouver des packages
-              <strong className="text-gray-900"> à -40% minimum</strong> sur le prix du marché.
-              Recevez les alertes sur Telegram.
+              Nous scannons les prix des vols aller-retour toutes les 2 heures sur 8 aéroports français.
+              Dès qu'une anomalie de prix <strong className="text-gray-900">confirmée en temps réel</strong> est détectée,
+              vous recevez une alerte Telegram.
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
               <Link
@@ -301,7 +306,7 @@ export default function Landing() {
               {
                 n: "1",
                 t: "Scan permanent",
-                d: "Notre pipeline analyse des milliers de vols et d'hôtels toutes les 2h depuis 8 aéroports français.",
+                d: "Notre pipeline analyse les prix des vols aller-retour toutes les 2h depuis les 8 aéroports français couverts.",
                 icon: (
                   <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5a17.92 17.92 0 01-8.716-2.247m0 0A8.966 8.966 0 013 12c0-1.777.515-3.435 1.404-4.832" />
@@ -312,7 +317,7 @@ export default function Landing() {
               {
                 n: "2",
                 t: "Détection d'anomalies",
-                d: "Chaque prix est comparé à la moyenne 30 jours. Seules les baisses de +40% sont retenues et scorées.",
+                d: "Chaque prix est comparé à la médiane des 30 derniers jours sur la même route et la même durée de séjour. Seules les anomalies statistiquement significatives (minimum -20%) sont qualifiées.",
                 icon: (
                   <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" />
@@ -323,7 +328,7 @@ export default function Landing() {
               {
                 n: "3",
                 t: "Alerte Telegram",
-                d: "Dès qu'un deal est qualifié, vous recevez une alerte détaillée avec description et lien de réservation.",
+                d: "Avant chaque envoi, le prix est revérifié en direct. Dès qu'un deal est confirmé, vous recevez une alerte avec le prix, la baseline et le lien de réservation.",
                 icon: (
                   <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
@@ -520,7 +525,7 @@ export default function Landing() {
                 <span className="font-[family-name:var(--font-dm-serif)] text-[15px]">Globe Genius</span>
               </div>
               <p className="text-xs text-gray-400 max-w-xs">
-                Packages voyage à prix cassés. Vols + hôtels à -40% minimum.
+                Vols à prix cassés. Anomalies de prix détectées, alertes Telegram temps réel.
               </p>
             </div>
             <div className="flex gap-8 text-sm text-gray-400">
