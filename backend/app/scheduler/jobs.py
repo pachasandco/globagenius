@@ -26,13 +26,15 @@ logger = logging.getLogger(__name__)
 
 def get_scheduler_jobs() -> list[dict]:
     return [
-        # ── VOLS : toutes les 4h (6x/jour) — optimise pour couts ──
+        # ── VOLS : toutes les 2h (12x/jour) ──
+        # Travelpayouts est gratuit et rapide, on scrape TOUS les airports
+        # à chaque run pour que les alertes soient réactives.
         *[{
             "id": f"scrape_flights_{h:02d}",
             "func": job_scrape_flights,
             "trigger": "cron",
             "hour": h,
-        } for h in [2, 6, 10, 14, 18, 22]],
+        } for h in [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22]],
         # ── HOTELS : 1x/jour a 3h ──
         {
             "id": "scrape_accommodations_03",

@@ -14,12 +14,12 @@ def test_get_scheduler_jobs_returns_all_jobs():
     assert "daily_admin_report" in job_names
 
 
-def test_get_scheduler_jobs_flight_every_4h():
+def test_get_scheduler_jobs_flight_every_2h():
     jobs = get_scheduler_jobs()
     flight_jobs = [j for j in jobs if j["id"].startswith("scrape_flights")]
-    assert len(flight_jobs) == 6
+    assert len(flight_jobs) == 12
     hours = sorted([j["hour"] for j in flight_jobs])
-    assert hours == [2, 6, 10, 14, 18, 22]
+    assert hours == [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22]
 
 
 def test_get_scheduler_jobs_hotels_1x_daily():

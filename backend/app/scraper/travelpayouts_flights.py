@@ -17,8 +17,6 @@ SOURCE = "travelpayouts"
 
 DEFAULT_TRIP_DURATION_DAYS = 7
 
-AIRPORTS_PER_CYCLE = 2
-
 
 def _window_label(days_ahead: int) -> str:
     if days_ahead <= 30:
@@ -105,11 +103,6 @@ def _normalize_priced_entry(entry: dict) -> dict | None:
     return normalized
 
 
-def _utcnow() -> datetime:
-    """Indirection so tests can freeze time."""
-    return datetime.now(timezone.utc)
-
-
 def scrape_flights_for_route(origin: str, destination: str) -> list[dict]:
     """Fetch real round-trip prices for one route via Travelpayouts."""
     flights = []
@@ -142,25 +135,23 @@ def scrape_flights_for_airport(origin: str) -> list[dict]:
 
 
 async def scrape_all_flights() -> tuple[list[dict], int, list[dict]]:
-    """Top-level scraper. Rotates over MVP_AIRPORTS using current hour.
+    """Top-level scraper. Scrapes ALL MVP_AIRPORTS on every cron run.
+
+    Travelpayouts is free and fast enough that rotating over airports is
+    unnecessary — every cron scans every airport, so users get alerts
+    as soon as a deal is detected rather than waiting for their airport
+    to come up in a daily rotation.
 
     Signature kept compatible with the legacy flights.py module:
     returns (flights, errors, baselines). Baselines are always empty
     here — they are populated by job_travelpayouts_enrichment instead."""
-    airports = settings.MVP_AIRPORTS
-    hour = _utcnow().hour
-    cycle_index = hour // 4  # 0..5, changes every 4 hours
-    start_idx = (cycle_index * AIRPORTS_PER_CYCLE) % len(airports)
-    cycle_airports = [
-        airports[(start_idx + i) % len(airports)]
-        for i in range(AIRPORTS_PER_CYCLE)
-    ]
+    airports = list(settings.MVP_AIRPORTS)
 
-    logger.info(f"Cycle (hour={hour}, idx={cycle_index}): scraping airports {cycle_airports}")
+    logger.info(f"Scraping all {len(airports)} airports: {airports}")
 
     all_flights = []
     errors = 0
-    for airport in cycle_airports:
+    for airport in airports:
         try:
             flights = scrape_flights_for_airport(airport)
             all_flights.extend(flights)
