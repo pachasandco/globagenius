@@ -3,7 +3,9 @@ from app.analysis.route_selector import is_long_haul, LONG_HAUL_DESTINATIONS
 
 def test_long_haul_set_contains_expected_destinations():
     expected = {"NRT", "JFK", "BKK", "YUL", "DXB", "MIA", "SYD",
-                "CUN", "PUJ", "MLE", "MRU", "RUN", "GIG", "LAX"}
+                "CUN", "PUJ", "MLE", "MRU", "RUN", "GIG", "LAX",
+                "HND", "ICN", "HKG", "SIN", "KUL", "DEL", "BOM",
+                "BOG", "LIM", "EZE", "SCL", "JNB", "CPT", "ZNZ"}
     assert expected == LONG_HAUL_DESTINATIONS
 
 

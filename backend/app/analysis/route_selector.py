@@ -11,8 +11,10 @@ SEASONAL_DESTINATIONS = {
             "TFS", "PMI", "AGP", "HER",
             # US + Australie (ete la-bas)
             "JFK", "MIA", "SYD",
+            # Sun escapes (Canaries, Madere, Mer Rouge, Andalousie)
+            "FUE", "LPA", "ACE", "FNC", "SSH", "HRG", "SVQ",
         ],
-        "secondary": ["LIS", "FCO", "ATH", "IST", "CAI", "TUN", "GVA"],
+        "secondary": ["LIS", "FCO", "ATH", "IST", "CAI", "TUN", "GVA", "PDL"],
     },
     "spring": {  # Mar-May
         "primary": [
@@ -22,8 +24,14 @@ SEASONAL_DESTINATIONS = {
             "RAK", "CMN", "TUN",
             # Long-courrier
             "IST", "NRT", "JFK",
+            # Europe du Sud + Balkans mi-saison
+            "FAO", "ALC", "BLQ", "SAW", "TIV", "SKG",
         ],
-        "secondary": ["AMS", "FCO", "BER", "MAD", "VCE", "SPU", "EDI", "BKK", "YUL", "DXB", "MIA", "SYD"],
+        "secondary": [
+            "AMS", "FCO", "BER", "MAD", "VCE", "SPU", "EDI",
+            "BKK", "YUL", "DXB", "MIA", "SYD",
+            "HND", "ICN", "SIN", "HKG",
+        ],
     },
     "summer": {  # Jun-Aug
         "primary": [
@@ -32,8 +40,10 @@ SEASONAL_DESTINATIONS = {
             "EDI", "CPH", "HEL", "OSL", "ARN",
             # Long-courrier
             "YUL", "NRT", "SYD",
+            # Mediterranee estivale (iles grecques, Italie du sud, Espagne)
+            "VLC", "CAG", "OLB", "BRI", "CTA", "RHO", "JTR", "JMK", "CFU", "IBZ",
         ],
-        "secondary": ["IST", "RAK", "ATH", "LIS", "OPO", "VCE", "JFK"],
+        "secondary": ["IST", "RAK", "ATH", "LIS", "OPO", "VCE", "JFK", "KUL", "BOM", "DEL"],
     },
     "autumn": {  # Sep-Nov
         "primary": [
@@ -43,8 +53,13 @@ SEASONAL_DESTINATIONS = {
             "BCN", "LIS", "FCO", "IST", "BUD", "PRG", "ATH",
             # Maghreb
             "RAK",
+            # City-breaks Europe centrale + Baltes + Alpes
+            "KRK", "WAW", "VIE", "SOF", "TLL", "RIX", "VNO", "HEL", "BRU", "ZRH", "GVA",
         ],
-        "secondary": ["AMS", "BER", "DUB", "NAP", "MAD", "BKK", "DXB", "CMN"],
+        "secondary": [
+            "AMS", "BER", "DUB", "NAP", "MAD", "BKK", "DXB", "CMN",
+            "BOG", "LIM", "EZE", "SCL", "JNB", "CPT", "ZNZ",
+        ],
     },
 }
 
@@ -53,12 +68,17 @@ HIGH_FARE_MISTAKE_ROUTES = {
     "CDG-JFK", "CDG-EWR", "ORY-JFK", "LYS-JFK",
     # Asia via hub
     "CDG-BKK", "CDG-NRT", "CDG-HKG", "CDG-DXB",
+    "CDG-HND", "CDG-ICN", "CDG-SIN", "CDG-KUL", "CDG-DEL", "CDG-BOM",
     # Caribbean
     "CDG-CUN", "CDG-PUJ", "ORY-PUJ",
     # US
     "CDG-MIA", "CDG-LAX", "CDG-SFO",
     # Iles + Oceanie
     "CDG-MLE", "CDG-MRU", "ORY-RUN", "CDG-SYD",
+    # South America
+    "CDG-EZE", "CDG-BOG", "CDG-LIM", "CDG-SCL",
+    # Africa
+    "CDG-JNB", "CDG-CPT", "CDG-ZNZ",
 }
 
 LOW_COST_COMPETITION = {
@@ -71,6 +91,8 @@ LOW_COST_COMPETITION = {
 LONG_HAUL_DESTINATIONS = {
     "NRT", "JFK", "BKK", "YUL", "DXB", "MIA", "SYD",
     "CUN", "PUJ", "MLE", "MRU", "RUN", "GIG", "LAX",
+    "HND", "ICN", "HKG", "SIN", "KUL", "DEL", "BOM",
+    "BOG", "LIM", "EZE", "SCL", "JNB", "CPT", "ZNZ",
 }
 
 
