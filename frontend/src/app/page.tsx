@@ -388,14 +388,9 @@ export default function Landing() {
             {/* Telegram message mockup */}
             <div className="w-full max-w-sm bg-[#212d3b] rounded-2xl shadow-2xl shadow-black/20 overflow-hidden border border-gray-800">
               {/* Bot identity */}
-              <div className="px-5 pt-5 pb-4 flex items-center gap-3 border-b border-gray-700/50">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-white font-bold text-sm">
-                  GG
-                </div>
-                <div>
-                  <div className="text-white font-semibold text-[15px]">Globe Genius</div>
-                  <div className="text-gray-400 text-xs">bot</div>
-                </div>
+              <div className="px-5 pt-5 pb-4 border-b border-gray-700/50">
+                <div className="text-white font-semibold text-[15px]">Globe Genius</div>
+                <div className="text-gray-400 text-xs">bot</div>
               </div>
 
               {/* Message bubble */}
