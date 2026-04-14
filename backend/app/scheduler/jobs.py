@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from app.config import settings, IATA_TO_CITY
@@ -97,7 +98,7 @@ async def job_scrape_flights():
         logger.info(f"Bootstrapped {len(baselines)} baselines from Google Flights price insights")
 
     inserted = 0
-    for flight in flights:
+    for idx, flight in enumerate(flights):
         try:
             resp = db.table("raw_flights").upsert(flight, on_conflict="hash").execute()
             # Capture the DB-generated id so _analyze_new_flights can reference it
@@ -108,6 +109,10 @@ async def job_scrape_flights():
         except Exception as e:
             logger.warning(f"Failed to insert flight: {e}")
             errors += 1
+        # Yield the event loop every 10 upserts so HTTP requests
+        # (like /health or /api/auth/login) don't stall during big scrapes.
+        if idx % 10 == 9:
+            await asyncio.sleep(0)
 
     completed_at = datetime.now(timezone.utc)
     duration_ms = int((completed_at - started_at).total_seconds() * 1000)
@@ -146,7 +151,12 @@ async def _analyze_new_flights(flights: list[dict]):
         "qualified": 0,
     }
 
-    for flight in flights:
+    for idx, flight in enumerate(flights):
+        # Yield the event loop every 10 flights so HTTP requests
+        # don't stall during big analyze passes.
+        if idx % 10 == 9:
+            await asyncio.sleep(0)
+
         # Bucket lookup based on trip duration
         days = flight.get("trip_duration_days") or 0
         bucket = bucket_for_duration(days)
@@ -490,7 +500,7 @@ async def job_recalculate_baselines():
         routes.setdefault(key, []).append(f)
 
     flight_baselines_published = 0
-    for route_key_prefix, observations in routes.items():
+    for idx, (route_key_prefix, observations) in enumerate(routes.items()):
         baselines = compute_baselines_by_bucket(route_key_prefix, observations)
         for baseline in baselines:
             try:
@@ -498,6 +508,9 @@ async def job_recalculate_baselines():
                 flight_baselines_published += 1
             except Exception as e:
                 logger.warning(f"Failed to upsert baseline {baseline['route_key']}: {e}")
+        # Yield the event loop every 5 routes to keep HTTP requests responsive.
+        if idx % 5 == 4:
+            await asyncio.sleep(0)
 
     logger.info(f"Recalculated {flight_baselines_published} flight bucket baselines from {len(routes)} routes")
 
@@ -636,5 +649,7 @@ async def job_travelpayouts_enrichment():
                     total_published += 1
                 except Exception as e:
                     logger.warning(f"Failed to upsert baseline {baseline['route_key']}: {e}")
+            # Yield the event loop after each route to keep HTTP requests responsive.
+            await asyncio.sleep(0)
 
     logger.info(f"Travelpayouts enrichment: {total_published} bucket baselines upserted")
