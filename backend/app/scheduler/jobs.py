@@ -96,7 +96,11 @@ async def job_scrape_flights():
     inserted = 0
     for flight in flights:
         try:
-            db.table("raw_flights").upsert(flight, on_conflict="hash").execute()
+            resp = db.table("raw_flights").upsert(flight, on_conflict="hash").execute()
+            # Capture the DB-generated id so _analyze_new_flights can reference it
+            # when inserting a qualified_item (item_id column is uuid NOT NULL).
+            if resp.data:
+                flight["id"] = resp.data[0].get("id")
             inserted += 1
         except Exception as e:
             logger.warning(f"Failed to insert flight: {e}")
@@ -201,9 +205,15 @@ async def _analyze_new_flights(flights: list[dict]):
             accommodation_rating=None,
         )
 
+        # item_id must be a valid UUID; skip if we couldn't capture it at upsert time
+        flight_id = flight.get("id")
+        if not flight_id:
+            logger.warning(f"Skipping qualified_item insert: missing flight id for {flight['origin']}->{flight['destination']}")
+            continue
+
         db.table("qualified_items").insert({
             "type": "flight",
-            "item_id": flight.get("id", ""),
+            "item_id": flight_id,
             "price": anomaly.price,
             "baseline_price": anomaly.baseline_price,
             "discount_pct": anomaly.discount_pct,
