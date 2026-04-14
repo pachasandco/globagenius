@@ -5,8 +5,8 @@ and the deal analyzer to apply consistent rules across the pipeline."""
 
 DURATION_BUCKETS: dict[str, tuple[int, int]] = {
     "short":  (1, 3),
-    "medium": (4, 9),
-    "long":   (10, 21),
+    "medium": (4, 7),
+    "long":   (8, 12),
 }
 
 SHORT_HAUL_MAX_MINUTES = 180

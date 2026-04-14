@@ -53,7 +53,7 @@ def _normalize_priced_entry(entry: dict) -> dict | None:
     """Map a Travelpayouts prices_for_dates entry to the raw_flights row format.
 
     Returns None if the entry is unusable: missing dates, zero price, or
-    trip duration outside [1, 21] days."""
+    trip duration outside [1, 12] days."""
     departure_at = entry.get("departure_at") or ""
     return_at = entry.get("return_at") or ""
     price = entry.get("price") or 0
@@ -69,7 +69,7 @@ def _normalize_priced_entry(entry: dict) -> dict | None:
         return None
 
     trip_duration_days = (ret - dep).days
-    if trip_duration_days < 1 or trip_duration_days > 21:
+    if trip_duration_days < 1 or trip_duration_days > 12:
         return None
 
     origin = entry.get("origin_airport") or ""

@@ -148,9 +148,9 @@ def test_normalize_priced_entry_rejects_duration_zero():
     assert _normalize_priced_entry(entry) is None
 
 
-def test_normalize_priced_entry_rejects_duration_above_21():
+def test_normalize_priced_entry_rejects_duration_above_12():
     from app.scraper.travelpayouts_flights import _normalize_priced_entry
-    entry = _priced_entry(dep="2026-05-12", ret="2026-06-15")  # 34 days
+    entry = _priced_entry(dep="2026-05-12", ret="2026-05-25")  # 13 days
     assert _normalize_priced_entry(entry) is None
 
 
@@ -162,12 +162,12 @@ def test_normalize_priced_entry_accepts_duration_one_day():
     assert result["trip_duration_days"] == 1
 
 
-def test_normalize_priced_entry_accepts_duration_21_days():
+def test_normalize_priced_entry_accepts_duration_12_days():
     from app.scraper.travelpayouts_flights import _normalize_priced_entry
-    entry = _priced_entry(dep="2026-05-01", ret="2026-05-22")  # exactly 21 days
+    entry = _priced_entry(dep="2026-05-01", ret="2026-05-13")  # exactly 12 days
     result = _normalize_priced_entry(entry)
     assert result is not None
-    assert result["trip_duration_days"] == 21
+    assert result["trip_duration_days"] == 12
 
 
 def test_normalize_priced_entry_rejects_zero_price():

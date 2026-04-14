@@ -10,8 +10,8 @@ from app.analysis.buckets import (
 def test_duration_buckets_constant():
     assert DURATION_BUCKETS == {
         "short":  (1, 3),
-        "medium": (4, 9),
-        "long":   (10, 21),
+        "medium": (4, 7),
+        "long":   (8, 12),
     }
 
 
@@ -27,20 +27,20 @@ def test_bucket_for_duration_short_boundaries():
 
 def test_bucket_for_duration_medium_boundaries():
     assert bucket_for_duration(4) == "medium"
+    assert bucket_for_duration(5) == "medium"
     assert bucket_for_duration(7) == "medium"
-    assert bucket_for_duration(9) == "medium"
 
 
 def test_bucket_for_duration_long_boundaries():
+    assert bucket_for_duration(8) == "long"
     assert bucket_for_duration(10) == "long"
-    assert bucket_for_duration(15) == "long"
-    assert bucket_for_duration(21) == "long"
+    assert bucket_for_duration(12) == "long"
 
 
 def test_bucket_for_duration_outside_range():
     assert bucket_for_duration(0) is None
-    assert bucket_for_duration(22) is None
-    assert bucket_for_duration(56) is None
+    assert bucket_for_duration(13) is None
+    assert bucket_for_duration(21) is None
     assert bucket_for_duration(-1) is None
 
 

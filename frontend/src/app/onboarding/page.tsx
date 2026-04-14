@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { updatePreferences, generateTelegramLink } from "@/lib/api";
+import { getPreferences, updatePreferences, generateTelegramLink } from "@/lib/api";
 
 const AIRPORTS = [
   { code: "CDG", label: "Paris Charles de Gaulle" },
@@ -69,6 +69,23 @@ export default function OnboardingPage() {
       return;
     }
     setUserId(id);
+
+    // Preload existing preferences so returning users see their current selection
+    getPreferences(id)
+      .then((prefs) => {
+        if (prefs.airport_codes && prefs.airport_codes.length > 0) {
+          setAirports(prefs.airport_codes);
+        }
+        if (prefs.offer_types && prefs.offer_types.length > 0) {
+          setOfferTypes(prefs.offer_types);
+        }
+        if (prefs.preferred_destinations && prefs.preferred_destinations.length > 0) {
+          setDestinations(prefs.preferred_destinations);
+        }
+      })
+      .catch(() => {
+        // First-time user or API error — keep defaults
+      });
   }, [router]);
 
   function toggleOfferType(id: string) {

@@ -71,8 +71,8 @@ def test_min_sample_count_constant():
 
 def test_compute_baselines_by_bucket_groups_by_bucket():
     short_obs = [_obs(100, duration_days=2) for _ in range(30)]
-    medium_obs = [_obs(200, duration_days=7) for _ in range(30)]
-    long_obs = [_obs(400, duration_days=14) for _ in range(30)]
+    medium_obs = [_obs(200, duration_days=5) for _ in range(30)]
+    long_obs = [_obs(400, duration_days=10) for _ in range(30)]
 
     result = compute_baselines_by_bucket("CDG-BCN", short_obs + medium_obs + long_obs)
 
