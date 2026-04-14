@@ -471,15 +471,26 @@ def _build_alert_db_mock(
     baseline_row: dict,
     subscribers: list[dict],
     user_prefs: list[dict] | Exception | None = None,
+    already_sent_keys: list[str] | None = None,
+    sent_alerts_upsert_spy: MagicMock | None = None,
 ):
     """Build a db mock that routes table() calls by name:
     - price_baselines: returns baseline_row for .select().eq().eq().execute()
     - qualified_items: .insert().execute() returns data=[{}]
-    - telegram_subscribers: .select().eq().lte().execute() returns `subscribers`
+    - telegram_subscribers: .select().in_("airport_code",...).execute() returns `subscribers`
     - user_preferences: .select().in_().execute() returns `user_prefs`
                        (or raises if user_prefs is an Exception)
     - raw_accommodations: .select() chain returns data=[] (skip _compose_packages)
+    - sent_alerts:
+        .select("alert_key").eq("user_id",...).in_("alert_key",...).execute()
+            → [{"alert_key": k} for k in already_sent_keys if k in queried]
+        .select("id").eq("user_id",...).eq("alert_key",...).limit(1).execute()
+            → [{"id": "x"}] if queried alert_key in already_sent_keys, else []
+        .upsert(rows, on_conflict=...).execute()
+            → records call on sent_alerts_upsert_spy when provided
     """
+    already_sent_keys = already_sent_keys or []
+
     # price_baselines chain
     pb_table = MagicMock()
     pb_eq2 = MagicMock()
@@ -490,9 +501,10 @@ def _build_alert_db_mock(
     qi_table = MagicMock()
     qi_table.insert.return_value.execute.return_value = MagicMock(data=[{}])
 
-    # telegram_subscribers chain
+    # telegram_subscribers chain — new grouped dispatch uses
+    #   .select("chat_id,user_id,airport_code").in_("airport_code", origins).execute()
     ts_table = MagicMock()
-    ts_table.select.return_value.eq.return_value.lte.return_value.execute.return_value = MagicMock(
+    ts_table.select.return_value.in_.return_value.execute.return_value = MagicMock(
         data=subscribers
     )
 
@@ -516,6 +528,55 @@ def _build_alert_db_mock(
     )
     ra_chain.execute.return_value = MagicMock(data=[])
 
+    # sent_alerts chain
+    sa_table = MagicMock()
+
+    # .select("alert_key").eq("user_id",...).in_("alert_key", keys).execute()
+    def _sa_bulk_execute(*args, **kwargs):
+        # We can't easily inspect which keys were requested through MagicMock
+        # chaining side_effects, so just return rows for every already_sent key.
+        return MagicMock(data=[{"alert_key": k} for k in already_sent_keys])
+
+    (
+        sa_table.select.return_value
+        .eq.return_value
+        .in_.return_value
+        .execute.side_effect
+    ) = _sa_bulk_execute
+
+    # .select("id").eq("user_id",...).eq("alert_key", k).limit(1).execute()
+    # Build a side_effect on the .eq.return_value.eq to capture the alert_key
+    # being queried, then return data accordingly at .limit(1).execute().
+    _pkg_last_key = {"value": None}
+
+    def _pkg_eq_alert_key(column, value):
+        if column == "alert_key":
+            _pkg_last_key["value"] = value
+        m = MagicMock()
+        limit_mock = MagicMock()
+
+        def _pkg_limit_execute():
+            if _pkg_last_key["value"] in already_sent_keys:
+                return MagicMock(data=[{"id": "existing-id"}])
+            return MagicMock(data=[])
+
+        limit_mock.execute.side_effect = _pkg_limit_execute
+        m.limit.return_value = limit_mock
+        return m
+
+    sa_table.select.return_value.eq.return_value.eq.side_effect = _pkg_eq_alert_key
+
+    # .upsert(rows, on_conflict=...).execute()
+    if sent_alerts_upsert_spy is not None:
+        def _sa_upsert(*args, **kwargs):
+            sent_alerts_upsert_spy(*args, **kwargs)
+            m = MagicMock()
+            m.execute.return_value = MagicMock(data=[])
+            return m
+        sa_table.upsert.side_effect = _sa_upsert
+    else:
+        sa_table.upsert.return_value.execute.return_value = MagicMock(data=[])
+
     db_mock = MagicMock()
 
     def fake_table(name):
@@ -525,103 +586,299 @@ def _build_alert_db_mock(
             "telegram_subscribers": ts_table,
             "user_preferences": up_table,
             "raw_accommodations": ra_table,
+            "sent_alerts": sa_table,
         }.get(name, MagicMock())
 
     db_mock.table.side_effect = fake_table
     return db_mock
 
 
-@pytest.mark.asyncio
-async def test_flight_alert_filtered_by_user_min_discount():
-    """User min_discount=50 blocks a 30% discount flight alert."""
-    from app.scheduler import jobs
-
-    baseline_row = {
+def _baseline_row_cdg_bcn():
+    return {
         "route_key": "CDG-BCN-bucket_medium",
         "type": "flight",
         "avg_price": 200.0,
         "std_dev": 25.0,
         "sample_count": 50,
     }
+
+
+def _baseline_row(route_key: str):
+    return {
+        "route_key": route_key,
+        "type": "flight",
+        "avg_price": 200.0,
+        "std_dev": 25.0,
+        "sample_count": 50,
+    }
+
+
+@pytest.mark.asyncio
+async def test_flight_alert_filtered_by_user_min_discount():
+    """User min_discount=50 blocks a 30% discount flight alert.
+
+    After the grouped-dispatch refactor, filtering happens before send_grouped_flight_alerts
+    is called. With a single filtered offer, no grouped call is emitted at all.
+    """
+    from app.scheduler import jobs
+
+    baseline_row = _baseline_row_cdg_bcn()
     # price 140 -> -30% discount, z = 2.4 (passes 20% floor)
     flight = _flight_for_analysis(price=140.0)
 
     db_mock = _build_alert_db_mock(
         baseline_row=baseline_row,
-        subscribers=[{"chat_id": 123, "user_id": "u1"}],
+        subscribers=[{"chat_id": 123, "user_id": "u1", "airport_code": "CDG"}],
         user_prefs=[{"user_id": "u1", "min_discount": 50}],
     )
 
-    send_alert_mock = AsyncMock()
+    send_grouped_mock = AsyncMock(return_value=True)
     with patch.object(jobs, "db", db_mock), \
          patch.object(jobs, "reverify_flight_price", new=AsyncMock(return_value=True)), \
-         patch.object(jobs, "send_flight_deal_alert", new=send_alert_mock), \
+         patch.object(jobs, "send_grouped_flight_alerts", new=send_grouped_mock), \
+         patch.object(jobs, "_compose_packages_for_flight", new=AsyncMock()), \
          patch.object(jobs.settings, "MIN_SCORE_ALERT", 0):
         await jobs._analyze_new_flights([flight])
 
-    send_alert_mock.assert_not_called()
+    send_grouped_mock.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_flight_alert_sent_when_discount_meets_threshold():
-    """User min_discount=30 allows a 45% discount flight alert."""
+    """User min_discount=30 allows a 45% discount flight alert via grouped dispatch."""
     from app.scheduler import jobs
 
-    baseline_row = {
-        "route_key": "CDG-BCN-bucket_medium",
-        "type": "flight",
-        "avg_price": 200.0,
-        "std_dev": 25.0,
-        "sample_count": 50,
-    }
+    baseline_row = _baseline_row_cdg_bcn()
     # price 110 -> -45% discount, z = 3.6
     flight = _flight_for_analysis(price=110.0)
 
     db_mock = _build_alert_db_mock(
         baseline_row=baseline_row,
-        subscribers=[{"chat_id": 123, "user_id": "u1"}],
+        subscribers=[{"chat_id": 123, "user_id": "u1", "airport_code": "CDG"}],
         user_prefs=[{"user_id": "u1", "min_discount": 30}],
     )
 
-    send_alert_mock = AsyncMock()
+    send_grouped_mock = AsyncMock(return_value=True)
     with patch.object(jobs, "db", db_mock), \
          patch.object(jobs, "reverify_flight_price", new=AsyncMock(return_value=True)), \
-         patch.object(jobs, "send_flight_deal_alert", new=send_alert_mock), \
+         patch.object(jobs, "send_grouped_flight_alerts", new=send_grouped_mock), \
+         patch.object(jobs, "_compose_packages_for_flight", new=AsyncMock()), \
          patch.object(jobs.settings, "MIN_SCORE_ALERT", 0):
         await jobs._analyze_new_flights([flight])
 
-    assert send_alert_mock.call_count == 1
+    assert send_grouped_mock.call_count == 1
+    kwargs = send_grouped_mock.call_args.kwargs
+    assert len(kwargs["offers"]) >= 1
 
 
 @pytest.mark.asyncio
 async def test_flight_alert_default_min_when_user_prefs_missing():
-    """If a subscriber has no user_id (legacy row), default min_discount=20 applies."""
+    """Legacy subscribers with no user_id fall back to default min_discount=20."""
     from app.scheduler import jobs
 
-    baseline_row = {
-        "route_key": "CDG-BCN-bucket_medium",
-        "type": "flight",
-        "avg_price": 200.0,
-        "std_dev": 25.0,
-        "sample_count": 50,
-    }
+    baseline_row = _baseline_row_cdg_bcn()
     # price 150 -> -25% discount, z = 2.0 (passes 20% floor, above default 20)
     flight = _flight_for_analysis(price=150.0)
 
     db_mock = _build_alert_db_mock(
         baseline_row=baseline_row,
-        subscribers=[{"chat_id": 123, "user_id": None}],
+        subscribers=[{"chat_id": 123, "user_id": None, "airport_code": "CDG"}],
         user_prefs=[],
     )
 
-    send_alert_mock = AsyncMock()
+    send_grouped_mock = AsyncMock(return_value=True)
     with patch.object(jobs, "db", db_mock), \
          patch.object(jobs, "reverify_flight_price", new=AsyncMock(return_value=True)), \
-         patch.object(jobs, "send_flight_deal_alert", new=send_alert_mock), \
+         patch.object(jobs, "send_grouped_flight_alerts", new=send_grouped_mock), \
+         patch.object(jobs, "_compose_packages_for_flight", new=AsyncMock()), \
          patch.object(jobs.settings, "MIN_SCORE_ALERT", 0):
         await jobs._analyze_new_flights([flight])
 
-    assert send_alert_mock.call_count == 1
+    assert send_grouped_mock.call_count == 1
+    kwargs = send_grouped_mock.call_args.kwargs
+    assert len(kwargs["offers"]) >= 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 3: Grouped flight alerts + sent_alerts dedup
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_dedup_skips_already_sent_flight():
+    """If the alert_key for a flight already exists in sent_alerts, no grouped
+    alert is dispatched for that flight."""
+    from app.scheduler import jobs
+    from app.notifications.dedup import compute_alert_key
+
+    baseline_row = _baseline_row_cdg_bcn()
+    flight = _flight_for_analysis(price=110.0)  # -45%
+
+    expected_key = compute_alert_key(
+        "u1",
+        flight["origin"],
+        flight["destination"],
+        flight["departure_date"],
+        flight["return_date"],
+        flight["price"],
+    )
+
+    db_mock = _build_alert_db_mock(
+        baseline_row=baseline_row,
+        subscribers=[{"chat_id": 123, "user_id": "u1", "airport_code": "CDG"}],
+        user_prefs=[{"user_id": "u1", "min_discount": 20}],
+        already_sent_keys=[expected_key],
+    )
+
+    send_grouped_mock = AsyncMock(return_value=True)
+    with patch.object(jobs, "db", db_mock), \
+         patch.object(jobs, "reverify_flight_price", new=AsyncMock(return_value=True)), \
+         patch.object(jobs, "send_grouped_flight_alerts", new=send_grouped_mock), \
+         patch.object(jobs, "_compose_packages_for_flight", new=AsyncMock()), \
+         patch.object(jobs.settings, "MIN_SCORE_ALERT", 0):
+        await jobs._analyze_new_flights([flight])
+
+    send_grouped_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_dedup_stores_alert_keys_after_send():
+    """After a successful grouped send, the alert_key(s) are upserted into sent_alerts."""
+    from app.scheduler import jobs
+    from app.notifications.dedup import compute_alert_key
+
+    baseline_row = _baseline_row_cdg_bcn()
+    flight = _flight_for_analysis(price=110.0)  # -45%
+
+    expected_key = compute_alert_key(
+        "u1",
+        flight["origin"],
+        flight["destination"],
+        flight["departure_date"],
+        flight["return_date"],
+        flight["price"],
+    )
+
+    upsert_spy = MagicMock()
+    db_mock = _build_alert_db_mock(
+        baseline_row=baseline_row,
+        subscribers=[{"chat_id": 123, "user_id": "u1", "airport_code": "CDG"}],
+        user_prefs=[{"user_id": "u1", "min_discount": 20}],
+        sent_alerts_upsert_spy=upsert_spy,
+    )
+
+    send_grouped_mock = AsyncMock(return_value=True)
+    with patch.object(jobs, "db", db_mock), \
+         patch.object(jobs, "reverify_flight_price", new=AsyncMock(return_value=True)), \
+         patch.object(jobs, "send_grouped_flight_alerts", new=send_grouped_mock), \
+         patch.object(jobs, "_compose_packages_for_flight", new=AsyncMock()), \
+         patch.object(jobs.settings, "MIN_SCORE_ALERT", 0):
+        await jobs._analyze_new_flights([flight])
+
+    assert upsert_spy.call_count >= 1
+    # Spy signature: _sa_upsert(rows, on_conflict=...)
+    stored_rows = upsert_spy.call_args.args[0]
+    assert isinstance(stored_rows, list)
+    assert any(r.get("alert_key") == expected_key for r in stored_rows)
+
+
+@pytest.mark.asyncio
+async def test_grouped_flight_alert_respects_min_discount():
+    """With user min=40, a 30% offer is filtered out and not in the offers payload."""
+    from app.scheduler import jobs
+
+    baseline_row = _baseline_row_cdg_bcn()
+    flight = _flight_for_analysis(price=140.0)  # -30%
+
+    db_mock = _build_alert_db_mock(
+        baseline_row=baseline_row,
+        subscribers=[{"chat_id": 123, "user_id": "u1", "airport_code": "CDG"}],
+        user_prefs=[{"user_id": "u1", "min_discount": 40}],
+    )
+
+    send_grouped_mock = AsyncMock(return_value=True)
+    with patch.object(jobs, "db", db_mock), \
+         patch.object(jobs, "reverify_flight_price", new=AsyncMock(return_value=True)), \
+         patch.object(jobs, "send_grouped_flight_alerts", new=send_grouped_mock), \
+         patch.object(jobs, "_compose_packages_for_flight", new=AsyncMock()), \
+         patch.object(jobs.settings, "MIN_SCORE_ALERT", 0):
+        await jobs._analyze_new_flights([flight])
+
+    # Only offer was filtered: no send.
+    send_grouped_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_grouped_flight_alert_two_offers_same_destination():
+    """Two qualified flights CDG->LIS on different dates for same user group
+    into a single send with 2 offers."""
+    from app.scheduler import jobs
+
+    baseline_row = _baseline_row("CDG-LIS-bucket_medium")
+
+    f1 = _flight_for_analysis(price=110.0, destination="LIS")
+    f1["id"] = "lis-1"
+    f1["departure_date"] = "2026-05-12"
+    f1["return_date"] = "2026-05-19"
+
+    f2 = _flight_for_analysis(price=115.0, destination="LIS")
+    f2["id"] = "lis-2"
+    f2["departure_date"] = "2026-06-02"
+    f2["return_date"] = "2026-06-09"
+
+    db_mock = _build_alert_db_mock(
+        baseline_row=baseline_row,
+        subscribers=[{"chat_id": 123, "user_id": "u1", "airport_code": "CDG"}],
+        user_prefs=[{"user_id": "u1", "min_discount": 20}],
+    )
+
+    send_grouped_mock = AsyncMock(return_value=True)
+    with patch.object(jobs, "db", db_mock), \
+         patch.object(jobs, "reverify_flight_price", new=AsyncMock(return_value=True)), \
+         patch.object(jobs, "send_grouped_flight_alerts", new=send_grouped_mock), \
+         patch.object(jobs, "_compose_packages_for_flight", new=AsyncMock()), \
+         patch.object(jobs.settings, "MIN_SCORE_ALERT", 0):
+        await jobs._analyze_new_flights([f1, f2])
+
+    assert send_grouped_mock.call_count == 1
+    kwargs = send_grouped_mock.call_args.kwargs
+    assert len(kwargs["offers"]) == 2
+    assert kwargs["destination_iata"] == "LIS"
+
+
+@pytest.mark.asyncio
+async def test_grouped_flight_alert_different_destinations_separate_sends():
+    """A CDG->LIS and a CDG->BCN flight produce 2 distinct grouped sends."""
+    from app.scheduler import jobs
+
+    # Baseline mock returns the same row for both routes — good enough since
+    # the anomaly detector only compares avg/std to the incoming price.
+    baseline_row = _baseline_row_cdg_bcn()
+
+    f1 = _flight_for_analysis(price=110.0, destination="LIS")
+    f1["id"] = "lis-1"
+    f2 = _flight_for_analysis(price=110.0, destination="BCN")
+    f2["id"] = "bcn-1"
+
+    db_mock = _build_alert_db_mock(
+        baseline_row=baseline_row,
+        subscribers=[{"chat_id": 123, "user_id": "u1", "airport_code": "CDG"}],
+        user_prefs=[{"user_id": "u1", "min_discount": 20}],
+    )
+
+    send_grouped_mock = AsyncMock(return_value=True)
+    with patch.object(jobs, "db", db_mock), \
+         patch.object(jobs, "reverify_flight_price", new=AsyncMock(return_value=True)), \
+         patch.object(jobs, "send_grouped_flight_alerts", new=send_grouped_mock), \
+         patch.object(jobs, "_compose_packages_for_flight", new=AsyncMock()), \
+         patch.object(jobs.settings, "MIN_SCORE_ALERT", 0):
+        await jobs._analyze_new_flights([f1, f2])
+
+    assert send_grouped_mock.call_count == 2
+    destinations_sent = {
+        call.kwargs["destination_iata"] for call in send_grouped_mock.call_args_list
+    }
+    assert destinations_sent == {"LIS", "BCN"}
 
 
 @pytest.mark.asyncio
@@ -706,6 +963,131 @@ async def test_package_alert_filtered_by_user_min_discount():
 
     # Build packages should return one package
     send_alert_mock = AsyncMock()
+    with patch.object(jobs, "db", db_mock), \
+         patch.object(jobs, "build_packages", return_value=[pkg]), \
+         patch.object(jobs, "send_deal_alert", new=send_alert_mock), \
+         patch.object(jobs.settings, "MIN_SCORE_ALERT", 0):
+        await jobs._compose_packages_for_flight(flight, flight_baseline)
+
+    send_alert_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_package_alert_dedup_skips_duplicate():
+    """If a package's alert_key already exists in sent_alerts, send_deal_alert is skipped."""
+    from app.scheduler import jobs
+    from app.notifications.dedup import compute_alert_key
+
+    flight = _flight_for_analysis()
+    flight_baseline = {"avg_price": 200.0, "sample_count": 50}
+
+    pkg = {
+        "origin": "CDG",
+        "destination": "BCN",
+        "departure_date": flight["departure_date"],
+        "return_date": flight["return_date"],
+        "score": 80,
+        "discount_pct": 45,
+        "total_price": 500,
+        "flight_id": "f-1",
+        "accommodation_id": "a-1",
+    }
+
+    already_key = compute_alert_key(
+        "u1",
+        pkg["origin"],
+        pkg["destination"],
+        pkg["departure_date"],
+        pkg["return_date"],
+        pkg["total_price"],
+    )
+
+    acc_row = {
+        "id": "a-1",
+        "city": "Barcelona",
+        "source": "booking",
+        "check_in": flight["departure_date"],
+        "check_out": flight["return_date"],
+        "rating": 4.5,
+        "name": "Test Hotel",
+        "source_url": "http://example.com",
+    }
+
+    ra_table = MagicMock()
+    ra_chain = (
+        ra_table.select.return_value
+        .eq.return_value
+        .eq.return_value
+        .eq.return_value
+        .gte.return_value
+        .gte.return_value
+    )
+    ra_chain.execute.return_value = MagicMock(data=[acc_row])
+    ra_table.select.return_value.eq.return_value.execute.return_value = MagicMock(
+        data=[{"name": "Test Hotel", "rating": 4.5, "source_url": "http://example.com"}]
+    )
+
+    pb_table = MagicMock()
+    pb_table.select.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(
+        data=[]
+    )
+
+    pkg_table = MagicMock()
+    pkg_table.insert.return_value.execute.return_value = MagicMock(data=[{}])
+
+    rf_table = MagicMock()
+    rf_table.select.return_value.eq.return_value.execute.return_value = MagicMock(
+        data=[{"source_url": "http://af.com", "airline": "AF"}]
+    )
+
+    ts_table = MagicMock()
+    ts_table.select.return_value.eq.return_value.lte.return_value.execute.return_value = MagicMock(
+        data=[{"chat_id": 123, "user_id": "u1"}]
+    )
+
+    up_table = MagicMock()
+    up_table.select.return_value.in_.return_value.execute.return_value = MagicMock(
+        data=[{"user_id": "u1", "min_discount": 20}]
+    )
+
+    # sent_alerts: .select("id").eq().eq().limit(1).execute() → already present
+    sa_table = MagicMock()
+    _pkg_last_key = {"value": None}
+
+    def _pkg_eq_alert_key(column, value):
+        if column == "alert_key":
+            _pkg_last_key["value"] = value
+        m = MagicMock()
+        limit_mock = MagicMock()
+
+        def _pkg_limit_execute():
+            if _pkg_last_key["value"] == already_key:
+                return MagicMock(data=[{"id": "existing"}])
+            return MagicMock(data=[])
+
+        limit_mock.execute.side_effect = _pkg_limit_execute
+        m.limit.return_value = limit_mock
+        return m
+
+    sa_table.select.return_value.eq.return_value.eq.side_effect = _pkg_eq_alert_key
+    sa_table.upsert.return_value.execute.return_value = MagicMock(data=[])
+
+    db_mock = MagicMock()
+
+    def fake_table(name):
+        return {
+            "raw_accommodations": ra_table,
+            "price_baselines": pb_table,
+            "packages": pkg_table,
+            "raw_flights": rf_table,
+            "telegram_subscribers": ts_table,
+            "user_preferences": up_table,
+            "sent_alerts": sa_table,
+        }.get(name, MagicMock())
+
+    db_mock.table.side_effect = fake_table
+
+    send_alert_mock = AsyncMock(return_value=True)
     with patch.object(jobs, "db", db_mock), \
          patch.object(jobs, "build_packages", return_value=[pkg]), \
          patch.object(jobs, "send_deal_alert", new=send_alert_mock), \

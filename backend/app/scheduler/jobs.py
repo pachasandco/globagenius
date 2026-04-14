@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from app.config import settings, IATA_TO_CITY
 from app.db import db
@@ -14,9 +15,11 @@ from app.analysis.scorer import compute_score
 from app.analysis.buckets import bucket_for_duration, stops_allowed
 from app.scraper.reverify import reverify_flight_price
 from app.composer.package_builder import build_packages
+from app.notifications.dedup import compute_alert_key
 from app.notifications.telegram import (
     send_deal_alert,
     send_flight_deal_alert,
+    send_grouped_flight_alerts,
     send_digest,
     send_admin_report,
     send_admin_alert,
@@ -151,6 +154,10 @@ async def _analyze_new_flights(flights: list[dict]):
         "qualified": 0,
     }
 
+    # Accumulate qualified flights to dispatch as grouped alerts after the
+    # analysis pass. Each entry: (flight, anomaly, tier).
+    qualified_flights: list[tuple[dict, object, str]] = []
+
     for idx, flight in enumerate(flights):
         # Yield the event loop every 10 flights so HTTP requests
         # don't stall during big analyze passes.
@@ -235,58 +242,183 @@ async def _analyze_new_flights(flights: list[dict]):
             "status": "active",
         }).execute()
 
-        # Flight-only Telegram alert (vol seul, no hotel required)
+        # Defer flight alert dispatch: accumulate and send as grouped alerts
+        # (by origin+destination) after the analysis pass completes. This lets
+        # us batch multiple offers per destination into a single Telegram msg
+        # and apply deal-level dedup via the sent_alerts table.
         if score >= settings.MIN_SCORE_ALERT:
-            try:
-                subs_resp = (
-                    db.table("telegram_subscribers")
-                    .select("chat_id,user_id")
-                    .eq("airport_code", flight["origin"])
-                    .lte("min_score", score)
-                    .execute()
-                )
-                subs = subs_resp.data or []
-
-                # Fetch each subscriber's min_discount preference. Default to
-                # 20 for users without a preferences row (free tier default).
-                # On query error, fall back to default for all subscribers so
-                # alerts still dispatch (fail-open for reliability).
-                prefs_by_user: dict[str, int] = {}
-                user_ids = [s["user_id"] for s in subs if s.get("user_id")]
-                if user_ids:
-                    try:
-                        prefs_resp = (
-                            db.table("user_preferences")
-                            .select("user_id,min_discount")
-                            .in_("user_id", user_ids)
-                            .execute()
-                        )
-                        prefs_by_user = {
-                            p["user_id"]: p.get("min_discount", 20)
-                            for p in (prefs_resp.data or [])
-                        }
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to fetch user preferences for filtering: {e}"
-                        )
-
-                for sub in subs:
-                    user_min = prefs_by_user.get(sub.get("user_id"), 20)
-                    if anomaly.discount_pct < user_min:
-                        continue
-                    await send_flight_deal_alert(
-                        chat_id=sub["chat_id"],
-                        flight=flight,
-                        discount_pct=anomaly.discount_pct,
-                        baseline_price=anomaly.baseline_price,
-                        tier=tier,
-                    )
-            except Exception as e:
-                logger.warning(f"Failed to send flight deal alert: {e}")
+            # Stash score back on the flight dict so the grouped dispatcher
+            # can surface it in offers without re-computing.
+            flight["score"] = score
+            qualified_flights.append((flight, anomaly, tier))
 
         await _compose_packages_for_flight(flight, baseline)
 
     logger.info(f"Analyze pipeline counters: {counters}")
+
+    await _dispatch_grouped_flight_alerts(qualified_flights)
+
+
+async def _dispatch_grouped_flight_alerts(
+    qualified_flights: list[tuple[dict, object, str]],
+) -> None:
+    """Group qualified flights by (origin, destination) and dispatch a single
+    Telegram alert per user per destination via send_grouped_flight_alerts.
+    Deals already present in sent_alerts (per user) are skipped. Successful
+    sends are persisted back to sent_alerts for cross-run dedup.
+    """
+    if not db or not qualified_flights:
+        return
+
+    groups: dict[tuple[str, str], list[tuple[dict, object, str]]] = defaultdict(list)
+    for flight, anomaly, tier in qualified_flights:
+        groups[(flight["origin"], flight["destination"])].append((flight, anomaly, tier))
+
+    origins = list({o for (o, _) in groups.keys()})
+    if not origins:
+        return
+
+    try:
+        subs_resp = (
+            db.table("telegram_subscribers")
+            .select("chat_id,user_id,airport_code")
+            .in_("airport_code", origins)
+            .execute()
+        )
+        subs = subs_resp.data or []
+    except Exception as e:
+        logger.warning(f"Failed to fetch subscribers for grouped dispatch: {e}")
+        return
+
+    if not isinstance(subs, list):
+        return
+
+    # Bulk-fetch user preferences (min_discount) once for all subscribers.
+    prefs_by_user: dict[str, int] = {}
+    user_ids = [s["user_id"] for s in subs if isinstance(s, dict) and s.get("user_id")]
+    if user_ids:
+        try:
+            prefs_resp = (
+                db.table("user_preferences")
+                .select("user_id,min_discount")
+                .in_("user_id", user_ids)
+                .execute()
+            )
+            for p in (prefs_resp.data or []):
+                if isinstance(p, dict) and p.get("user_id"):
+                    prefs_by_user[p["user_id"]] = p.get("min_discount", 20)
+        except Exception as e:
+            logger.warning(f"Failed to fetch user preferences: {e}")
+
+    for sub in subs:
+        if not isinstance(sub, dict):
+            continue
+        try:
+            user_id = sub.get("user_id")
+            user_min = prefs_by_user.get(user_id, 20) if user_id else 20
+            sub_origin = sub.get("airport_code")
+            chat_id = sub.get("chat_id")
+            if not sub_origin or chat_id is None:
+                continue
+
+            for (grp_origin, grp_dest), flight_tuples in groups.items():
+                if grp_origin != sub_origin:
+                    continue
+
+                # Build candidate list after min_discount filter
+                candidates: list[tuple[str | None, dict, object, str]] = []
+                for flight, anomaly, tier in flight_tuples:
+                    if anomaly.discount_pct < user_min:
+                        continue
+                    key = None
+                    if user_id:
+                        key = compute_alert_key(
+                            user_id,
+                            flight["origin"],
+                            flight["destination"],
+                            flight["departure_date"],
+                            flight["return_date"],
+                            flight["price"],
+                        )
+                    candidates.append((key, flight, anomaly, tier))
+
+                if not candidates:
+                    continue
+
+                already_keys: set[str] = set()
+                if user_id:
+                    keys_to_check = [k for (k, _, _, _) in candidates if k]
+                    if keys_to_check:
+                        try:
+                            sent_resp = (
+                                db.table("sent_alerts")
+                                .select("alert_key")
+                                .eq("user_id", user_id)
+                                .in_("alert_key", keys_to_check)
+                                .execute()
+                            )
+                            for row in (sent_resp.data or []):
+                                if isinstance(row, dict) and row.get("alert_key"):
+                                    already_keys.add(row["alert_key"])
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed sent_alerts check for {user_id}: {e}"
+                            )
+
+                offers: list[dict] = []
+                keys_to_store: list[str] = []
+                group_tier = "free"
+                for key, flight, anomaly, tier in candidates:
+                    if key and key in already_keys:
+                        continue
+                    offers.append({
+                        "departure_date": flight["departure_date"],
+                        "return_date": flight["return_date"],
+                        "price": flight["price"],
+                        "discount_pct": anomaly.discount_pct,
+                        "score": flight.get("score", 0),
+                    })
+                    if key:
+                        keys_to_store.append(key)
+                    if tier == "premium":
+                        group_tier = "premium"
+
+                if not offers:
+                    continue
+
+                origin_city = IATA_TO_CITY.get(grp_origin, grp_origin)
+                dest_city = IATA_TO_CITY.get(grp_dest, grp_dest)
+                try:
+                    success = await send_grouped_flight_alerts(
+                        chat_id=chat_id,
+                        origin_city=origin_city,
+                        dest_city=dest_city,
+                        destination_iata=grp_dest,
+                        offers=offers,
+                        tier=group_tier,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to send grouped flight alert: {e}")
+                    success = False
+
+                if success and user_id and keys_to_store:
+                    rows = [{
+                        "user_id": user_id,
+                        "chat_id": chat_id,
+                        "alert_key": k,
+                        "destination": grp_dest,
+                        "alert_type": "flight",
+                    } for k in keys_to_store]
+                    try:
+                        db.table("sent_alerts").upsert(
+                            rows, on_conflict="user_id,alert_key"
+                        ).execute()
+                    except Exception as e:
+                        logger.warning(f"Failed to upsert sent_alerts: {e}")
+        except Exception as e:
+            logger.warning(f"Grouped dispatch error for subscriber: {e}")
+
+        await asyncio.sleep(0)
 
 
 async def _compose_packages_for_flight(flight: dict, flight_baseline: dict):
@@ -393,13 +525,56 @@ async def _compose_packages_for_flight(flight: dict, flight_baseline: dict):
                         )
 
                 for sub in subscribers.data:
-                    user_min = prefs_by_user.get(sub.get("user_id"), 20)
+                    user_id = sub.get("user_id")
+                    user_min = prefs_by_user.get(user_id, 20)
                     if pkg_discount < user_min:
                         continue
-                    await send_deal_alert(
+
+                    # Deal-level dedup for packages: skip if this alert_key was
+                    # already sent to this user in a prior run. Fail-open on
+                    # query error (still dispatch rather than lose the alert).
+                    key: str | None = None
+                    if user_id:
+                        try:
+                            key = compute_alert_key(
+                                user_id,
+                                pkg["origin"],
+                                pkg["destination"],
+                                pkg["departure_date"],
+                                pkg["return_date"],
+                                pkg.get("total_price", 0),
+                            )
+                            existing = (
+                                db.table("sent_alerts")
+                                .select("id")
+                                .eq("user_id", user_id)
+                                .eq("alert_key", key)
+                                .limit(1)
+                                .execute()
+                            )
+                            if existing.data:
+                                continue
+                        except Exception as e:
+                            logger.warning(f"Package dedup check failed: {e}")
+
+                    success = await send_deal_alert(
                         sub["chat_id"], pkg, flight_data.data[0], acc_data.data[0],
                         tier=pkg_tier,
                     )
+
+                    if success and user_id and key:
+                        try:
+                            db.table("sent_alerts").upsert({
+                                "user_id": user_id,
+                                "chat_id": sub["chat_id"],
+                                "alert_key": key,
+                                "destination": pkg["destination"],
+                                "alert_type": "package",
+                            }, on_conflict="user_id,alert_key").execute()
+                        except Exception as e:
+                            logger.warning(
+                                f"sent_alerts upsert (package) failed: {e}"
+                            )
 
 
 async def job_scrape_accommodations():
