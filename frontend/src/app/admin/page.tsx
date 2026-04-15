@@ -79,7 +79,7 @@ export default function AdminPage() {
 
   if (!authenticated) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+      <div className="min-h-screen bg-[#FFF8F0] flex items-center justify-center px-4">
         <div className="w-full max-w-sm bg-white rounded-2xl border border-gray-100 p-8">
           <h1 className="font-[family-name:var(--font-dm-serif)] text-2xl text-center mb-6">Admin Globe Genius</h1>
           <input
@@ -90,7 +90,7 @@ export default function AdminPage() {
             placeholder="Admin API Key"
             className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-cyan-500 outline-none text-sm mb-4"
           />
-          <button onClick={handleLogin} className="w-full bg-gray-900 text-white font-semibold py-3 rounded-xl">
+          <button onClick={handleLogin} className="w-full bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold py-3 rounded-xl transition-all">
             Acceder
           </button>
         </div>
@@ -99,7 +99,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#FFF8F0]">
       <nav className="sticky top-0 z-50 bg-white border-b border-gray-100">
         <div className="max-w-6xl mx-auto px-4 h-[64px] flex items-center justify-between">
           <div className="flex items-center gap-2">

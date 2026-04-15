@@ -148,7 +148,7 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white flex items-start md:items-center justify-center px-4 md:px-5 py-8 md:py-0">
+    <div className="min-h-screen bg-[#FFF8F0] flex items-start md:items-center justify-center px-4 md:px-5 py-8 md:py-0">
       <div className="w-full max-w-lg">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 justify-center mb-8">
@@ -162,7 +162,7 @@ export default function OnboardingPage() {
             <div
               key={s}
               className="h-1 flex-1 rounded-full transition-colors"
-              style={{ background: s <= step ? "#06b6d4" : "#e5e7eb" }}
+              style={{ background: s <= step ? "#FF6B47" : "#F0E6D8" }}
             />
           ))}
         </div>
@@ -211,7 +211,7 @@ export default function OnboardingPage() {
             <button
               onClick={() => setStep(2)}
               disabled={airports.length === 0}
-              className="w-full bg-gray-900 text-white font-semibold py-3 rounded-xl hover:bg-black transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold py-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Continuer ({airports.length} aeroport{airports.length !== 1 ? "s" : ""})
             </button>
@@ -261,7 +261,7 @@ export default function OnboardingPage() {
               <button onClick={() => setStep(1)} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-500 font-medium hover:bg-gray-50 transition-colors">
                 Retour
               </button>
-              <button onClick={() => setStep(3)} className="flex-1 bg-gray-900 text-white font-semibold py-3 rounded-xl hover:bg-black transition-colors">
+              <button onClick={() => setStep(3)} className="flex-1 bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold py-3 rounded-xl transition-all">
                 Continuer
               </button>
             </div>
@@ -336,9 +336,9 @@ export default function OnboardingPage() {
                     }}
                     className="px-4 py-2 rounded-xl border-2 font-semibold text-sm transition-all"
                     style={{
-                      borderColor: minDiscount === val ? "#06b6d4" : "#e5e7eb",
-                      background: minDiscount === val ? "#ecfeff" : "white",
-                      color: minDiscount === val ? "#0891b2" : "#6b7280",
+                      borderColor: minDiscount === val ? "#FF6B47" : "#F0E6D8",
+                      background: minDiscount === val ? "#FFF1EC" : "#FFFEF9",
+                      color: minDiscount === val ? "#E55A38" : "#6b7280",
                     }}
                   >
                     -{val}%
@@ -346,7 +346,7 @@ export default function OnboardingPage() {
                 ))}
               </div>
               {showUpsellBanner && !isPremium && (
-                <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800">
+                <div className="mt-3 bg-[#FFF1EC] border border-[#FF6B47] rounded-xl p-3 text-sm text-[#0A1F3D]/70">
                   💎 Les seuils 40% et plus sont réservés aux abonnés Premium.{" "}
                   <a href="/home" className="underline font-semibold">Passer en Premium</a>
                 </div>
@@ -360,7 +360,7 @@ export default function OnboardingPage() {
               <button
                 onClick={handleSavePreferences}
                 disabled={loading}
-                className="flex-1 bg-gray-900 text-white font-semibold py-3 rounded-xl hover:bg-black transition-colors disabled:opacity-50"
+                className="flex-1 bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold py-3 rounded-xl transition-all disabled:opacity-50"
               >
                 {loading ? "Enregistrement..." : "Continuer"}
               </button>

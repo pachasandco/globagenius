@@ -76,7 +76,7 @@ function FlightDealCard({ deal }: { deal: FlightDeal }) {
             href={deal.source_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="block w-full text-center bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors"
+            className="block w-full text-center bg-[#FF6B47] hover:bg-[#E55A38] text-white text-sm font-semibold py-2.5 rounded-xl transition-all"
           >
             Voir l&apos;offre
           </a>
@@ -125,7 +125,7 @@ export default function Dashboard() {
   const deals = activeTab === "free" ? freeDeals : premiumDeals;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#FFF8F0]">
       {/* Nav */}
       <nav className="sticky top-0 z-50 bg-white border-b border-gray-100">
         <div className="max-w-6xl mx-auto px-5 h-[64px] flex items-center justify-between">
@@ -196,10 +196,10 @@ export default function Dashboard() {
 
         {/* Plan info */}
         {activeTab === "premium" && (
-          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-100 rounded-xl p-4 mb-6 flex items-center justify-between">
+          <div className="bg-[#FFFEF9] border border-[#FF6B47] rounded-xl p-4 mb-6 flex items-center justify-between">
             <div>
-              <div className="font-semibold text-sm text-amber-900">Deals Premium — vols à -40% et plus</div>
-              <div className="text-xs text-amber-700 mt-0.5">Les plus grosses anomalies de prix détectées. Réservation directe. Abonnement à 2,99€/mois.</div>
+              <div className="font-semibold text-sm text-[#0A1F3D]">Deals Premium — vols à -40% et plus</div>
+              <div className="text-xs text-[#0A1F3D]/70 mt-0.5">Les plus grosses anomalies de prix détectées. Réservation directe. Abonnement à 2,99€/mois.</div>
             </div>
             <span className="bg-amber-400 text-amber-900 text-xs font-bold px-3 py-1.5 rounded-full shrink-0">PREMIUM</span>
           </div>

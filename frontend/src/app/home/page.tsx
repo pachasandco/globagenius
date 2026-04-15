@@ -110,7 +110,7 @@ function FlightDealCard({ deal }: { deal: FlightDeal }) {
             href={deal.source_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="block w-full text-center bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors"
+            className="block w-full text-center bg-[#FF6B47] hover:bg-[#E55A38] text-white text-sm font-semibold py-2.5 rounded-xl transition-all"
           >
             Voir l&apos;offre
           </a>
@@ -250,7 +250,7 @@ export default function HomePage() {
   const deals = activeTab === "premium" ? premiumDeals : freeDeals;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#FFF8F0]">
       {/* Nav */}
       <nav className="sticky top-0 z-50 bg-white border-b border-gray-100">
         <div className="max-w-6xl mx-auto px-4 md:px-5 h-[64px] flex items-center justify-between">
@@ -274,13 +274,13 @@ export default function HomePage() {
       <div className="max-w-6xl mx-auto px-4 md:px-5 py-6 md:py-8">
         {/* Premium banner */}
         {!isPremium && (
-          <div className="mb-6 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="mb-6 bg-[#FFFEF9] border border-[#FF6B47] rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-lg">⭐</span>
                 <h3 className="font-semibold">Passez en Premium</h3>
               </div>
-              <p className="text-sm text-amber-800">
+              <p className="text-sm text-[#0A1F3D]/70">
                 Accédez aux deals à -40% et plus (erreurs de prix, flash sales), alertes Telegram temps réel,
                 et packages vol+hôtel dès qu'un hôtel matche vos dates.
               </p>
@@ -299,7 +299,7 @@ export default function HomePage() {
                   }
                 } catch { /* ignore */ }
               }}
-              className="bg-amber-500 hover:bg-amber-600 text-white font-semibold px-6 py-3 rounded-xl text-sm shrink-0 transition-colors"
+              className="bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold px-6 py-3 rounded-xl text-sm shrink-0 transition-all"
             >
               Passer en Premium — 2,99€/mois
             </button>
@@ -307,10 +307,10 @@ export default function HomePage() {
         )}
 
         {isPremium && (
-          <div className="mb-6 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-2xl px-5 py-3 flex items-center justify-between">
+          <div className="mb-6 bg-[#FFFEF9] border border-[#16A34A] rounded-2xl px-5 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-lg">✅</span>
-              <span className="text-sm font-medium text-green-800">Abonnement Premium actif</span>
+              <span className="text-sm font-medium text-[#0A1F3D]">Abonnement Premium actif</span>
             </div>
             <button
               onClick={async () => {
@@ -335,17 +335,17 @@ export default function HomePage() {
         <div className="mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
             <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl">Vos deals</h2>
-            <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1 self-start sm:self-auto">
+            <div className="flex items-center gap-1 bg-[#F0E6D8]/40 rounded-xl p-1 self-start sm:self-auto">
               <button
                 onClick={() => setActiveTab("premium")}
-                className={`px-3 py-2 rounded-lg text-xs md:text-sm font-semibold transition-all ${activeTab === "premium" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"}`}
+                className={`px-3 py-2 rounded-lg text-xs md:text-sm font-semibold transition-all ${activeTab === "premium" ? "bg-[#FF6B47] text-white shadow-sm" : "text-[#0A1F3D]/60 hover:text-[#0A1F3D]"}`}
               >
                 ⭐ Premium -{">"}40%
                 {premiumDeals.length > 0 && <span className="ml-1 bg-amber-100 text-amber-700 text-[10px] md:text-xs px-1.5 py-0.5 rounded-full">{premiumDeals.length}</span>}
               </button>
               <button
                 onClick={() => setActiveTab("free")}
-                className={`px-3 py-2 rounded-lg text-xs md:text-sm font-semibold transition-all ${activeTab === "free" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"}`}
+                className={`px-3 py-2 rounded-lg text-xs md:text-sm font-semibold transition-all ${activeTab === "free" ? "bg-[#FF6B47] text-white shadow-sm" : "text-[#0A1F3D]/60 hover:text-[#0A1F3D]"}`}
               >
                 🆓 Gratuit -20 à -39%
                 {freeDeals.length > 0 && <span className="ml-1 bg-gray-200 text-gray-600 text-[10px] md:text-xs px-1.5 py-0.5 rounded-full">{freeDeals.length}</span>}
@@ -382,9 +382,9 @@ export default function HomePage() {
                   }}
                   className="px-4 py-2 rounded-xl border-2 font-semibold text-sm transition-all"
                   style={{
-                    borderColor: minDiscount === val ? "#06b6d4" : "#e5e7eb",
-                    background: minDiscount === val ? "#ecfeff" : "white",
-                    color: minDiscount === val ? "#0891b2" : "#6b7280",
+                    borderColor: minDiscount === val ? "#FF6B47" : "#F0E6D8",
+                    background: minDiscount === val ? "#FFF1EC" : "#FFFEF9",
+                    color: minDiscount === val ? "#E55A38" : "#6b7280",
                   }}
                 >
                   -{val}%
@@ -392,7 +392,7 @@ export default function HomePage() {
               ))}
             </div>
             {showUpsellBanner && !isPremium && (
-              <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800">
+              <div className="mt-3 bg-[#FFF1EC] border border-[#FF6B47] rounded-xl p-3 text-sm text-[#0A1F3D]/70">
                 💎 Les seuils 40% et plus sont réservés aux abonnés Premium. Passez en Premium pour débloquer les erreurs de prix.
               </div>
             )}
@@ -539,7 +539,7 @@ export default function HomePage() {
                 disabled={chatLoading}
               />
               <button onClick={() => sendChat(chatInput)} disabled={chatLoading || !chatInput.trim()}
-                className="bg-gray-900 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-black disabled:opacity-50 shrink-0">
+                className="bg-[#FF6B47] hover:bg-[#E55A38] text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 shrink-0">
                 Envoyer
               </button>
             </div>

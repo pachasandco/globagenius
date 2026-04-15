@@ -91,7 +91,7 @@ export default function ArticlePage() {
   } : null;
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-[#FFF8F0]">
       {/* JSON-LD — static API data, no user input, XSS-safe */}
       {articleSchema && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(articleSchema) }} />}
       {breadcrumbSchema && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }} />}
@@ -173,7 +173,7 @@ export default function ArticlePage() {
           <p className="text-sm text-gray-400 mb-4">
             Nos alertes vous previennent des qu'un deal est detecte pour cette destination.
           </p>
-          <Link href="/signup" className="inline-flex items-center gap-2 bg-gray-900 text-white font-semibold px-6 py-3 rounded-full hover:bg-black text-sm">
+          <Link href="/signup" className="inline-flex items-center gap-2 bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold px-6 py-3 rounded-full transition-all text-sm">
             Recevoir les deals →
           </Link>
         </div>

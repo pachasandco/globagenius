@@ -238,7 +238,7 @@ export default function Landing() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-[#FFF8F0]">
 
       {/* ── JSON-LD STRUCTURED DATA ── */}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }} />
@@ -262,7 +262,7 @@ export default function Landing() {
             <Link href="/login" className="text-sm text-gray-500 hover:text-gray-900 transition-colors font-medium px-2.5 py-2 md:px-3">
               Connexion
             </Link>
-            <Link href="/signup" className="text-sm font-semibold bg-[#222] text-white px-4 py-2 md:px-5 md:py-2.5 rounded-full hover:bg-black transition-colors">
+            <Link href="/signup" className="text-sm font-semibold bg-[#FF6B47] hover:bg-[#E55A38] text-white px-4 py-2 md:px-5 md:py-2.5 rounded-full transition-all">
               S'inscrire
             </Link>
           </div>
@@ -278,7 +278,7 @@ export default function Landing() {
             alt="Travel"
             className="w-full h-full object-cover"
           />
-          <div className="absolute inset-0 bg-gradient-to-r from-white via-white/95 to-white/40" />
+          <div className="absolute inset-0 bg-[#FFF8F0]/85" />
         </div>
 
         <div className="relative max-w-6xl mx-auto px-4 md:px-5 py-12 md:py-32 lg:py-40">
@@ -293,7 +293,7 @@ export default function Landing() {
               <span className="text-xs font-semibold text-cyan-700">Pipeline actif · 2 340+ vols analysés aujourd'hui</span>
             </div>
 
-            <h1 className="font-[family-name:var(--font-dm-serif)] text-[28px] md:text-[48px] lg:text-[64px] leading-[1.08] tracking-tight mb-4 md:mb-5">
+            <h1 className="font-[family-name:var(--font-dm-serif)] text-[40px] md:text-[56px] lg:text-[72px] leading-[1.08] tracking-tight mb-4 md:mb-5">
               Des vols
               <br />
               à prix cassés.
@@ -307,7 +307,7 @@ export default function Landing() {
             <div className="flex flex-col sm:flex-row gap-3">
               <Link
                 href="/signup"
-                className="bg-[#222] text-white font-semibold px-6 py-3.5 md:px-8 md:py-4 rounded-full hover:bg-black transition-colors text-[15px] shadow-lg shadow-black/10 text-center"
+                className="bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold px-6 py-3.5 md:px-8 md:py-4 rounded-full transition-all text-[15px] shadow-[0_8px_24px_rgba(255,107,71,0.25)] hover:shadow-[0_12px_32px_rgba(255,107,71,0.35)] text-center"
               >
                 Découvrir les deals →
               </Link>
@@ -479,7 +479,7 @@ export default function Landing() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5a17.92 17.92 0 01-8.716-2.247m0 0A8.966 8.966 0 013 12c0-1.777.515-3.435 1.404-4.832" />
                   </svg>
                 ),
-                color: "from-cyan-500 to-blue-500",
+                color: "#06B6D4",
               },
               {
                 n: "2",
@@ -490,7 +490,7 @@ export default function Landing() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" />
                   </svg>
                 ),
-                color: "from-amber-400 to-orange-500",
+                color: "#FF6B47",
               },
               {
                 n: "3",
@@ -501,7 +501,7 @@ export default function Landing() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
                   </svg>
                 ),
-                color: "from-emerald-400 to-cyan-500",
+                color: "#FFC940",
               },
             ].map((s, i) => (
               <motion.div
@@ -512,7 +512,10 @@ export default function Landing() {
                 transition={{ delay: i * 0.1 }}
                 className="bg-white rounded-2xl p-8 border border-gray-100 shadow-sm hover:shadow-md transition-shadow"
               >
-                <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${s.color} flex items-center justify-center text-white mb-5 shadow-lg`}>
+                <div
+                  className="w-14 h-14 rounded-2xl flex items-center justify-center text-white mb-5 shadow-lg"
+                  style={{ background: s.color }}
+                >
                   {s.icon}
                 </div>
                 <div className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-[11px] font-bold text-gray-400 mb-3">{s.n}</div>

@@ -108,7 +108,7 @@ export default function AdminUsersPage() {
 
   if (!authed) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-[#FFF8F0] flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow p-8 max-w-sm w-full">
           <h1 className="text-xl font-semibold mb-2">Admin console</h1>
           <p className="text-sm text-gray-500 mb-4">Enter your admin key</p>
@@ -124,7 +124,7 @@ export default function AdminUsersPage() {
           />
           <button
             onClick={handleLogin}
-            className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-2 rounded-lg"
+            className="w-full bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold py-2 rounded-lg transition-all"
           >
             Se connecter
           </button>
@@ -141,7 +141,7 @@ export default function AdminUsersPage() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+    <div className="min-h-screen bg-[#FFF8F0] p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-semibold">
@@ -299,7 +299,7 @@ export default function AdminUsersPage() {
               <div className="flex gap-2">
                 <button
                   onClick={() => handleGrant(selected)}
-                  className="flex-1 bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-2 rounded-lg"
+                  className="flex-1 bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold py-2 rounded-lg transition-all"
                 >
                   Grant
                 </button>

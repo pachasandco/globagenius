@@ -32,7 +32,7 @@ export default function ArticlesPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-[#FFF8F0]">
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
         <div className="max-w-6xl mx-auto px-4 md:px-5 h-[64px] flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
@@ -48,7 +48,7 @@ export default function ArticlesPage() {
       <div className="max-w-6xl mx-auto px-4 md:px-5 py-10 md:py-16">
         <div className="text-center mb-12">
           <div className="text-xs font-bold text-cyan-600 tracking-widest uppercase mb-2">Guides de voyage</div>
-          <h1 className="font-[family-name:var(--font-dm-serif)] text-[26px] md:text-[42px] mb-3">
+          <h1 className="font-[family-name:var(--font-dm-serif)] text-[40px] md:text-[56px] lg:text-[72px] mb-3">
             Nos destinations
           </h1>
           <p className="text-gray-400 max-w-lg mx-auto">
