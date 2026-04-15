@@ -25,6 +25,7 @@ from app.notifications.telegram import (
     send_admin_report,
     send_admin_alert,
 )
+from app.api.routes import _get_user_tier
 
 logger = logging.getLogger(__name__)
 
@@ -217,7 +218,7 @@ async def _analyze_new_flights(flights: list[dict]):
         counters["qualified"] += 1
 
         # Tier classification
-        tier = "premium" if anomaly.discount_pct >= 40 else "free"
+        tier = "premium" if anomaly.discount_pct >= 30 else "free"
 
         score = compute_score(
             discount_pct=anomaly.discount_pct,
@@ -317,6 +318,14 @@ async def _dispatch_grouped_flight_alerts(
         try:
             user_id = sub.get("user_id")
             user_min = prefs_by_user.get(user_id, 20) if user_id else 20
+            # Phase D4: resolve subscriber tier once. Free-tier users must not
+            # receive any offer >= 30% discount, regardless of their
+            # min_discount preference.
+            try:
+                sub_tier = _get_user_tier(user_id) if user_id else "free"
+            except Exception as e:
+                logger.warning(f"Failed to resolve tier for {user_id}: {e}")
+                sub_tier = "free"
             sub_origin = sub.get("airport_code")
             chat_id = sub.get("chat_id")
             if not sub_origin or chat_id is None:
@@ -326,10 +335,13 @@ async def _dispatch_grouped_flight_alerts(
                 if grp_origin != sub_origin:
                     continue
 
-                # Build candidate list after min_discount filter
+                # Build candidate list after min_discount + tier filter
                 candidates: list[tuple[str | None, dict, object, str]] = []
                 for flight, anomaly, tier in flight_tuples:
                     if anomaly.discount_pct < user_min:
+                        continue
+                    # Phase D4: strict tier gate — free users never see >=30%.
+                    if sub_tier == "free" and anomaly.discount_pct >= 30:
                         continue
                     key = None
                     if user_id:
@@ -508,7 +520,7 @@ async def _compose_packages_for_flight(flight: dict, flight_baseline: dict):
             acc_data = db.table("raw_accommodations").select("name,rating,source_url").eq("id", pkg["accommodation_id"]).execute()
 
             if flight_data.data and acc_data.data and subscribers.data:
-                pkg_tier = "premium" if pkg.get("discount_pct", 0) >= 40 else "free"
+                pkg_tier = "premium" if pkg.get("discount_pct", 0) >= 30 else "free"
                 pkg_discount = pkg.get("discount_pct", 0) or 0
 
                 # Fetch each subscriber's min_discount preference. Fall back to

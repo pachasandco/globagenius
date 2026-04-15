@@ -165,8 +165,9 @@ async def test_analyze_skips_when_baseline_sample_count_too_low():
 async def test_analyze_assigns_free_tier_for_25_pct_discount(mock_db_with_baseline):
     db_mock, _ = mock_db_with_baseline
     from app.scheduler import jobs
-    # baseline avg 200, price 140 -> -30%, z = (200-140)/25 = 2.4 (safely above 2.0 floor)
-    flight = _flight_for_analysis(price=140.0)
+    # baseline avg 200, price 148 -> -26%, z = (200-148)/25 = 2.08 (safely above 2.0 floor)
+    # Under Phase D4 rules, 26% < 30% -> free tier.
+    flight = _flight_for_analysis(price=148.0)
     compose_mock = AsyncMock()
     with patch.object(jobs, "db", db_mock), \
          patch.object(jobs, "reverify_flight_price", new=AsyncMock(return_value=True)), \
@@ -645,7 +646,7 @@ async def test_flight_alert_filtered_by_user_min_discount():
 
 @pytest.mark.asyncio
 async def test_flight_alert_sent_when_discount_meets_threshold():
-    """User min_discount=30 allows a 45% discount flight alert via grouped dispatch."""
+    """Premium user min_discount=30 allows a 45% discount flight alert via grouped dispatch."""
     from app.scheduler import jobs
 
     baseline_row = _baseline_row_cdg_bcn()
@@ -663,6 +664,7 @@ async def test_flight_alert_sent_when_discount_meets_threshold():
          patch.object(jobs, "reverify_flight_price", new=AsyncMock(return_value=True)), \
          patch.object(jobs, "send_grouped_flight_alerts", new=send_grouped_mock), \
          patch.object(jobs, "_compose_packages_for_flight", new=AsyncMock()), \
+         patch.object(jobs, "_get_user_tier", return_value="premium"), \
          patch.object(jobs.settings, "MIN_SCORE_ALERT", 0):
         await jobs._analyze_new_flights([flight])
 
@@ -772,6 +774,7 @@ async def test_dedup_stores_alert_keys_after_send():
          patch.object(jobs, "reverify_flight_price", new=AsyncMock(return_value=True)), \
          patch.object(jobs, "send_grouped_flight_alerts", new=send_grouped_mock), \
          patch.object(jobs, "_compose_packages_for_flight", new=AsyncMock()), \
+         patch.object(jobs, "_get_user_tier", return_value="premium"), \
          patch.object(jobs.settings, "MIN_SCORE_ALERT", 0):
         await jobs._analyze_new_flights([flight])
 
@@ -837,6 +840,7 @@ async def test_grouped_flight_alert_two_offers_same_destination():
          patch.object(jobs, "reverify_flight_price", new=AsyncMock(return_value=True)), \
          patch.object(jobs, "send_grouped_flight_alerts", new=send_grouped_mock), \
          patch.object(jobs, "_compose_packages_for_flight", new=AsyncMock()), \
+         patch.object(jobs, "_get_user_tier", return_value="premium"), \
          patch.object(jobs.settings, "MIN_SCORE_ALERT", 0):
         await jobs._analyze_new_flights([f1, f2])
 
@@ -871,6 +875,7 @@ async def test_grouped_flight_alert_different_destinations_separate_sends():
          patch.object(jobs, "reverify_flight_price", new=AsyncMock(return_value=True)), \
          patch.object(jobs, "send_grouped_flight_alerts", new=send_grouped_mock), \
          patch.object(jobs, "_compose_packages_for_flight", new=AsyncMock()), \
+         patch.object(jobs, "_get_user_tier", return_value="premium"), \
          patch.object(jobs.settings, "MIN_SCORE_ALERT", 0):
         await jobs._analyze_new_flights([f1, f2])
 
@@ -1095,3 +1100,62 @@ async def test_package_alert_dedup_skips_duplicate():
         await jobs._compose_packages_for_flight(flight, flight_baseline)
 
     send_alert_mock.assert_not_called()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase D4 — Free tier strict <30% in dispatch
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_jobs_free_user_does_not_receive_30pct_grouped_alert():
+    """A free-tier subscriber must NOT receive an offer with discount_pct >= 30.
+    Even if their min_discount is 20, the tier-aware filter blocks it."""
+    from app.scheduler import jobs
+
+    baseline_row = _baseline_row_cdg_bcn()
+    # price 130 -> (200-130)/200 = 35%, z = 70/25 = 2.8
+    flight = _flight_for_analysis(price=130.0)
+
+    db_mock = _build_alert_db_mock(
+        baseline_row=baseline_row,
+        subscribers=[{"chat_id": 123, "user_id": "u_free", "airport_code": "CDG"}],
+        user_prefs=[{"user_id": "u_free", "min_discount": 20}],
+    )
+    send_grouped_mock = AsyncMock(return_value=True)
+
+    with patch.object(jobs, "db", db_mock), \
+         patch.object(jobs, "reverify_flight_price", new=AsyncMock(return_value=True)), \
+         patch.object(jobs, "send_grouped_flight_alerts", new=send_grouped_mock), \
+         patch.object(jobs, "_compose_packages_for_flight", new=AsyncMock()), \
+         patch.object(jobs, "_get_user_tier", return_value="free"), \
+         patch.object(jobs.settings, "MIN_SCORE_ALERT", 0):
+        await jobs._analyze_new_flights([flight])
+
+    send_grouped_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_jobs_premium_user_receives_30pct_grouped_alert():
+    """A premium-tier subscriber receives a 35% offer normally."""
+    from app.scheduler import jobs
+
+    baseline_row = _baseline_row_cdg_bcn()
+    flight = _flight_for_analysis(price=130.0)  # -35%
+
+    db_mock = _build_alert_db_mock(
+        baseline_row=baseline_row,
+        subscribers=[{"chat_id": 456, "user_id": "u_prem", "airport_code": "CDG"}],
+        user_prefs=[{"user_id": "u_prem", "min_discount": 20}],
+    )
+    send_grouped_mock = AsyncMock(return_value=True)
+
+    with patch.object(jobs, "db", db_mock), \
+         patch.object(jobs, "reverify_flight_price", new=AsyncMock(return_value=True)), \
+         patch.object(jobs, "send_grouped_flight_alerts", new=send_grouped_mock), \
+         patch.object(jobs, "_compose_packages_for_flight", new=AsyncMock()), \
+         patch.object(jobs, "_get_user_tier", return_value="premium"), \
+         patch.object(jobs.settings, "MIN_SCORE_ALERT", 0):
+        await jobs._analyze_new_flights([flight])
+
+    send_grouped_mock.assert_called_once()

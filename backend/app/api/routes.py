@@ -337,8 +337,8 @@ def list_packages(
 ):
     """List deals with paywall on sensitive fields.
 
-    free  = qualified flight items 20-39% (vol seul, tier "free")
-    premium = qualified flight items 40%+ (vol seul, tier "premium")
+    free  = qualified flight items 20-29% (vol seul, tier "free")
+    premium = qualified flight items 30%+ (vol seul, tier "premium")
 
     Sensitive fields (price, baseline_price, source_url) are nullified
     server-side based on the caller's auth state:
@@ -355,11 +355,11 @@ def list_packages(
         raise HTTPException(status_code=503, detail="Database not configured")
 
     if plan == "premium":
-        plan_floor = 40
-        discount_filter = ("gte", 40)
+        plan_floor = 30
+        discount_filter = ("gte", 30)
     else:
         plan_floor = 20
-        discount_filter = ("range", 20, 40)  # 20 <= d < 40
+        discount_filter = ("range", 20, 30)  # 20 <= d < 30
 
     # A caller-supplied min_discount raises the floor (but never lowers it).
     effective_floor = max(min_discount, plan_floor)
@@ -579,14 +579,14 @@ def update_preferences(user_id: str, req: PreferencesRequest, user: dict = Depen
         if ot not in VALID_OFFER_TYPES:
             raise HTTPException(status_code=400, detail=f"Invalid offer type. Valid: {VALID_OFFER_TYPES}")
 
-    # Free tier cannot filter on discounts >= 40 — silently floor to 39
+    # Free tier cannot filter on discounts >= 30 — silently floor to 29
     # and signal the cap back to the client via `capped`.
     caller_id = user.get("user_id") or user.get("sub")
     tier = _get_user_tier(caller_id)
     capped = False
     effective_min_discount = req.min_discount
-    if tier == "free" and effective_min_discount >= 40:
-        effective_min_discount = 39
+    if tier == "free" and effective_min_discount >= 30:
+        effective_min_discount = 29
         capped = True
 
     update_data = {

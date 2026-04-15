@@ -202,7 +202,7 @@ def test_packages_list_premium_user_unlocks_everything():
 
 
 def test_packages_list_premium_same_enrichment_path():
-    """plan=premium uses the same enrichment path with a gte 40 filter."""
+    """plan=premium uses the same enrichment path with a gte 30 filter."""
     fake_qi = [{
         "id": "qi-2",
         "item_id": "flight-2",
@@ -351,12 +351,12 @@ def test_update_preferences_min_discount_invalid_value():
 
 
 def test_update_preferences_min_discount_free_user_capped():
-    """Free user with min_discount=50 should be capped to 39 and capped=True."""
+    """Free user with min_discount=50 should be capped to 29 and capped=True."""
     _auth_override()
     try:
         with patch("app.api.routes.db") as mock_db, \
              patch("app.api.routes._get_user_tier", return_value="free"):
-            mock_db.table.side_effect = _patch_db_for_update_preferences(39)
+            mock_db.table.side_effect = _patch_db_for_update_preferences(29)
             response = client.put(
                 "/api/users/user-1/preferences",
                 json={
@@ -367,7 +367,7 @@ def test_update_preferences_min_discount_free_user_capped():
             )
             assert response.status_code == 200, response.text
             body = response.json()
-            assert body["min_discount"] == 39, f"expected stored 39, got {body['min_discount']}"
+            assert body["min_discount"] == 29, f"expected stored 29, got {body['min_discount']}"
             assert body.get("capped") is True, f"expected capped=True, got {body.get('capped')}"
     finally:
         _clear_overrides()
@@ -758,3 +758,140 @@ def test_admin_reset_prefs_resets_to_defaults(monkeypatch):
     update_args = update_spy.call_args[0][0]
     assert update_args["min_discount"] == 20
     assert update_args["airport_codes"] == ["CDG"]
+
+
+# ---------- Phase D4 — Free tier strict <30% ----------
+
+def test_update_preferences_free_cap_at_29():
+    """Free user requesting min_discount=50 -> stored as 29, capped=True."""
+    _auth_override()
+    try:
+        with patch("app.api.routes.db") as mock_db, \
+             patch("app.api.routes._get_user_tier", return_value="free"):
+            # Echo whatever the route sends
+            captured = {}
+
+            def _table(name):
+                prefs_table = MagicMock()
+
+                def _update_side_effect(update_data):
+                    captured["update_data"] = update_data
+                    update_chain = MagicMock()
+                    update_chain.eq.return_value.execute.return_value = MagicMock(
+                        data=[{
+                            "user_id": "user-1",
+                            "airport_codes": update_data.get("airport_codes", []),
+                            "offer_types": update_data.get("offer_types", []),
+                            "min_discount": update_data.get("min_discount"),
+                            "max_budget": update_data.get("max_budget"),
+                            "preferred_destinations": update_data.get("preferred_destinations", []),
+                            "updated_at": update_data.get("updated_at"),
+                        }]
+                    )
+                    return update_chain
+
+                prefs_table.update.side_effect = _update_side_effect
+                return prefs_table
+
+            mock_db.table.side_effect = _table
+            response = client.put(
+                "/api/users/user-1/preferences",
+                json={
+                    "airport_codes": ["CDG"],
+                    "offer_types": ["flight"],
+                    "min_discount": 50,
+                },
+            )
+            assert response.status_code == 200, response.text
+            body = response.json()
+            assert body.get("capped") is True
+            assert captured["update_data"]["min_discount"] == 29
+            assert body["min_discount"] == 29
+    finally:
+        _clear_overrides()
+
+
+def test_list_packages_free_excludes_30_percent_offer():
+    """Free plan returns only discount_pct in [20, 30)."""
+    calls = {"gte": [], "lt": []}
+
+    class _Chain:
+        def select(self, *a, **kw):
+            return self
+
+        def eq(self, *a, **kw):
+            return self
+
+        def gte(self, col, val):
+            calls["gte"].append((col, val))
+            return self
+
+        def lt(self, col, val):
+            calls["lt"].append((col, val))
+            return self
+
+        def order(self, *a, **kw):
+            return self
+
+        def limit(self, *a, **kw):
+            return self
+
+        def execute(self):
+            return MagicMock(data=[])
+
+    qi_chain = _Chain()
+
+    with patch("app.api.routes.db") as mock_db:
+        def _table(name):
+            if name == "qualified_items":
+                return qi_chain
+            raise KeyError(name)
+
+        mock_db.table.side_effect = _table
+        response = client.get("/api/packages?plan=free&limit=5")
+    assert response.status_code == 200
+    # Free plan applies gte(20) and lt(30) — the free band
+    assert ("discount_pct", 20) in calls["gte"]
+    assert ("discount_pct", 30) in calls["lt"]
+
+
+def test_list_packages_premium_includes_30_percent_offer():
+    """Premium plan floor is 30 (not 40)."""
+    calls = {"gte": []}
+
+    class _Chain:
+        def select(self, *a, **kw):
+            return self
+
+        def eq(self, *a, **kw):
+            return self
+
+        def gte(self, col, val):
+            calls["gte"].append((col, val))
+            return self
+
+        def lt(self, *a, **kw):
+            return self
+
+        def order(self, *a, **kw):
+            return self
+
+        def limit(self, *a, **kw):
+            return self
+
+        def execute(self):
+            return MagicMock(data=[])
+
+    qi_chain = _Chain()
+
+    with patch("app.api.routes.db") as mock_db:
+        def _table(name):
+            if name == "qualified_items":
+                return qi_chain
+            raise KeyError(name)
+
+        mock_db.table.side_effect = _table
+        response = client.get("/api/packages?plan=premium&limit=5")
+    assert response.status_code == 200
+    # Premium plan gte(30)
+    assert ("discount_pct", 30) in calls["gte"]
