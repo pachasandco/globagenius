@@ -107,14 +107,35 @@ def _is_premium_user(user: dict | None) -> bool:
 def _get_user_tier(user_id: str | None) -> str:
     """Return 'premium' or 'free' for a user.
 
-    Source of truth: presence of a stripe_customer_id on the
-    user_preferences row (the Stripe Customer Portal endpoint uses the
-    same signal). Falls back conservatively to 'free' on any error or
-    when the user cannot be resolved. This helper intentionally avoids
-    the `is_premium` column read by `_is_premium_user`, which targets a
-    column absent from the declared schema migrations."""
+    Priority 1: active premium_grants row (manual admin grant, can have expiry)
+    Priority 2: stripe_customer_id on user_preferences (Stripe subscriber)
+    Fallback: 'free'
+    """
     if not user_id or not db:
         return "free"
+    # Priority 1: manual admin grant
+    try:
+        grant_resp = (
+            db.table("premium_grants")
+            .select("expires_at,revoked")
+            .eq("user_id", user_id)
+            .eq("revoked", False)
+            .limit(1)
+            .execute()
+        )
+        if grant_resp.data:
+            expires_at = grant_resp.data[0].get("expires_at")
+            if not expires_at:
+                return "premium"
+            try:
+                exp = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+                if exp > datetime.now(timezone.utc):
+                    return "premium"
+            except Exception:
+                pass
+    except Exception:
+        pass
+    # Priority 2: stripe customer id
     try:
         row = (
             db.table("user_preferences")
@@ -122,10 +143,8 @@ def _get_user_tier(user_id: str | None) -> str:
             .eq("user_id", user_id)
             .execute()
         )
-        if row.data:
-            customer_id = row.data[0].get("stripe_customer_id")
-            if customer_id:
-                return "premium"
+        if row.data and row.data[0].get("stripe_customer_id"):
+            return "premium"
     except Exception:
         pass
     return "free"

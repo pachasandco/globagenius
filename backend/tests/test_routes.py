@@ -474,3 +474,84 @@ def test_list_packages_with_min_discount_param():
         # (min_discount=40, plan_floor=20)
         discount_gte = [v for col, v in gte_calls if col == "discount_pct"]
         assert 40 in discount_gte, f"expected gte(discount_pct, 40), got gte calls: {gte_calls}"
+
+
+# ---------- Phase D1 — _get_user_tier with premium_grants ----------
+
+def _build_tier_db_mock(grants_data=None, prefs_data=None, grants_raises=False):
+    """Build a db mock that routes .table() calls to different chains.
+    grants_data: list of dicts returned by premium_grants select
+    prefs_data: list of dicts returned by user_preferences select
+    grants_raises: if True, premium_grants.execute() raises Exception
+    """
+    from unittest.mock import MagicMock
+    db_mock = MagicMock()
+
+    # premium_grants chain
+    grants_table = MagicMock()
+    if grants_raises:
+        grants_table.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.side_effect = Exception("db fail")
+    else:
+        grants_table.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(data=grants_data or [])
+
+    # user_preferences chain
+    prefs_table = MagicMock()
+    prefs_table.select.return_value.eq.return_value.execute.return_value = MagicMock(data=prefs_data or [])
+
+    def table_router(name):
+        if name == "premium_grants":
+            return grants_table
+        elif name == "user_preferences":
+            return prefs_table
+        return MagicMock()
+
+    db_mock.table.side_effect = table_router
+    return db_mock
+
+
+def test_get_user_tier_reads_active_grant_no_expiry():
+    from app.api import routes
+    from unittest.mock import patch
+    db_mock = _build_tier_db_mock(grants_data=[{"expires_at": None, "revoked": False}])
+    with patch.object(routes, "db", db_mock):
+        assert routes._get_user_tier("u1") == "premium"
+
+
+def test_get_user_tier_reads_grant_with_future_expiry():
+    from app.api import routes
+    from unittest.mock import patch
+    db_mock = _build_tier_db_mock(grants_data=[{"expires_at": "2099-01-01T00:00:00+00:00", "revoked": False}])
+    with patch.object(routes, "db", db_mock):
+        assert routes._get_user_tier("u1") == "premium"
+
+
+def test_get_user_tier_ignores_expired_grant_falls_back_free():
+    from app.api import routes
+    from unittest.mock import patch
+    # Expired grant + no stripe customer → free
+    db_mock = _build_tier_db_mock(
+        grants_data=[{"expires_at": "2020-01-01T00:00:00+00:00", "revoked": False}],
+        prefs_data=[{"stripe_customer_id": None}],
+    )
+    with patch.object(routes, "db", db_mock):
+        assert routes._get_user_tier("u1") == "free"
+
+
+def test_get_user_tier_ignores_revoked_grant_falls_back_free():
+    from app.api import routes
+    from unittest.mock import patch
+    # The eq("revoked", False) filter excludes revoked rows so the mock returns [] for grants
+    db_mock = _build_tier_db_mock(grants_data=[], prefs_data=[{"stripe_customer_id": None}])
+    with patch.object(routes, "db", db_mock):
+        assert routes._get_user_tier("u1") == "free"
+
+
+def test_get_user_tier_fallback_stripe_customer_id():
+    from app.api import routes
+    from unittest.mock import patch
+    db_mock = _build_tier_db_mock(
+        grants_data=[],
+        prefs_data=[{"stripe_customer_id": "cus_123"}],
+    )
+    with patch.object(routes, "db", db_mock):
+        assert routes._get_user_tier("u1") == "premium"

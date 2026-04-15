@@ -37,6 +37,10 @@ class Settings:
     MVP_AIRPORTS: list = field(default_factory=lambda: os.getenv(
         "MVP_AIRPORTS", "CDG,ORY,LYS,MRS,NCE,BOD,NTE,TLS"
     ).split(","))
+    ADMIN_EMAILS: list = field(default_factory=lambda: [
+        e.strip() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()
+    ])
+    TRAVELPAYOUTS_MARKER: str = os.getenv("TRAVELPAYOUTS_MARKER", "")
 
 
 IATA_TO_CITY = {
