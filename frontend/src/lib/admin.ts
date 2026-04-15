@@ -15,7 +15,7 @@ export interface AdminUser {
 
 function adminKey(): string {
   if (typeof window === "undefined") return "";
-  return sessionStorage.getItem("gg_admin_key") || "";
+  return localStorage.getItem("gg_admin_key") || "";
 }
 
 async function adminFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
@@ -66,7 +66,7 @@ export const resetPrefs = (id: string) =>
   adminFetch(`/api/admin/users/${id}/reset_prefs`, { method: "POST" });
 
 export function setAdminKey(key: string) {
-  sessionStorage.setItem("gg_admin_key", key);
+  localStorage.setItem("gg_admin_key", key);
 }
 
 export function hasAdminKey(): boolean {

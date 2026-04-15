@@ -149,7 +149,7 @@ export default function AdminUsersPage() {
           </h1>
           <button
             onClick={() => {
-              sessionStorage.removeItem("gg_admin_key");
+              localStorage.removeItem("gg_admin_key");
               setAuthed(false);
               setUsers([]);
             }}
