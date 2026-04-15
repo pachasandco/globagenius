@@ -131,7 +131,7 @@ export default function Dashboard() {
         <div className="max-w-6xl mx-auto px-5 h-[64px] flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
             <img src="/globe1.png" alt="Globe Genius" className="w-8 h-8 shrink-0 object-contain" />
-            <span className="font-[family-name:var(--font-dm-serif)] text-[19px]">Globe Genius</span>
+            <span className="font-[family-name:var(--font-dm-serif)] text-[19px] leading-none">Globe Genius</span>
           </Link>
           <div className="flex items-center gap-4 text-sm">
             <span className="text-gray-400">Dashboard</span>

@@ -45,7 +45,7 @@ export default function SignupPage() {
       <div className="w-full max-w-sm">
         <Link href="/" className="flex items-center gap-2 justify-center mb-10">
           <img src="/globe1.png" alt="Globe Genius" className="w-9 h-9 shrink-0 object-contain" />
-          <span className="font-[family-name:var(--font-dm-serif)] text-xl">Globe Genius</span>
+          <span className="font-[family-name:var(--font-dm-serif)] text-xl leading-none">Globe Genius</span>
         </Link>
 
         <h1 className="font-[family-name:var(--font-dm-serif)] text-2xl text-center mb-2">
