@@ -15,6 +15,7 @@ from app.analysis.scorer import compute_score
 from app.analysis.buckets import bucket_for_duration, stops_allowed
 from app.scraper.reverify import reverify_flight_price
 from app.composer.package_builder import build_packages
+from app.notifications.aviasales import build_aviasales_url
 from app.notifications.dedup import compute_alert_key
 from app.notifications.telegram import (
     send_deal_alert,
@@ -377,6 +378,14 @@ async def _dispatch_grouped_flight_alerts(
                         "price": flight["price"],
                         "discount_pct": anomaly.discount_pct,
                         "score": flight.get("score", 0),
+                        "airline": flight.get("airline", ""),
+                        "booking_url": build_aviasales_url(
+                            flight["origin"],
+                            flight["destination"],
+                            flight["departure_date"],
+                            flight["return_date"],
+                            marker=settings.TRAVELPAYOUTS_MARKER or None,
+                        ),
                     })
                     if key:
                         keys_to_store.append(key)

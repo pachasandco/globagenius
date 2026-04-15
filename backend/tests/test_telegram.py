@@ -176,16 +176,22 @@ def test_format_grouped_flight_alerts_multiple_months():
     assert "Sept" in msg and "Oct" in msg and "Nov" in msg
 
 
-def test_format_grouped_flight_alerts_same_month_concat():
+def test_format_grouped_flight_alerts_same_month_two_separate_lines():
     from app.notifications.telegram import format_grouped_flight_alerts
     offers = [
         {"departure_date": "2026-09-01", "return_date": "2026-09-10", "price": 89, "discount_pct": 55},
         {"departure_date": "2026-09-15", "return_date": "2026-09-22", "price": 112, "discount_pct": 48},
     ]
     msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers, tier="premium")
-    assert msg.count("📅 Sept") == 1  # single line
-    assert "89€" in msg and "112€" in msg
-    assert "·" in msg  # separator
+    # Single month header with count
+    assert msg.count("📅 Septembre 2026 (2)") == 1
+    # Both offers on separate lines under the same header
+    lines = msg.split("\n")
+    header_idx = next(i for i, line in enumerate(lines) if "📅 Septembre 2026 (2)" in line)
+    # The two offer lines follow the header (contiguously, in some order)
+    following = "\n".join(lines[header_idx + 1:header_idx + 3])
+    assert "89€" in following
+    assert "112€" in following
 
 
 def test_format_grouped_flight_alerts_caps_at_10():
@@ -250,3 +256,93 @@ async def test_send_grouped_flight_alerts_calls_bot():
     assert chat_id_sent == 123
     assert "LISBONNE" in text_sent
     assert "89€" in text_sent
+
+
+# ---------- Phase D2 — Aviasales URL builder ----------
+
+def test_build_aviasales_url_format():
+    from app.notifications.aviasales import build_aviasales_url
+    url = build_aviasales_url("CDG", "LIS", "2026-06-01", "2026-06-10")
+    assert "CDG0106LIS10061" in url
+    assert url.startswith("https://www.aviasales.com/search/")
+
+
+def test_build_aviasales_url_with_marker():
+    from app.notifications.aviasales import build_aviasales_url
+    url = build_aviasales_url("CDG", "LIS", "2026-06-01", "2026-06-10", marker="XYZ123")
+    assert "marker=XYZ123" in url
+
+
+def test_build_aviasales_url_without_marker():
+    from app.notifications.aviasales import build_aviasales_url
+    url = build_aviasales_url("CDG", "LIS", "2026-06-01", "2026-06-10", marker=None)
+    assert "marker" not in url
+
+
+def test_build_aviasales_url_invalid_date_fallback():
+    from app.notifications.aviasales import build_aviasales_url
+    url = build_aviasales_url("CDG", "LIS", "invalid-date", "2026-06-10")
+    assert "aviasales.com/search?origin=" in url
+
+
+# ---------- Phase D2 — format_grouped_flight_alerts enrichments ----------
+
+def test_format_grouped_flight_alerts_includes_airline_per_line():
+    from app.notifications.telegram import format_grouped_flight_alerts
+    offers = [{
+        "departure_date": "2026-06-01",
+        "return_date": "2026-06-10",
+        "price": 89,
+        "discount_pct": 55,
+        "airline": "Ryanair",
+    }]
+    msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers, tier="premium")
+    assert "· Ryanair" in msg
+
+
+def test_format_grouped_flight_alerts_includes_booking_url_per_line():
+    from app.notifications.telegram import format_grouped_flight_alerts
+    offers = [{
+        "departure_date": "2026-06-01",
+        "return_date": "2026-06-10",
+        "price": 89,
+        "discount_pct": 55,
+        "booking_url": "https://www.aviasales.com/search/CDG0106LIS10061",
+    }]
+    msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers, tier="premium")
+    assert "👉 https://www.aviasales.com/search/CDG0106LIS10061" in msg
+
+
+def test_format_grouped_flight_alerts_month_header_with_long_name_and_year():
+    from app.notifications.telegram import format_grouped_flight_alerts
+    offers = [
+        {"departure_date": "2026-06-01", "return_date": "2026-06-10", "price": 89, "discount_pct": 55},
+        {"departure_date": "2026-06-15", "return_date": "2026-06-22", "price": 95, "discount_pct": 50},
+    ]
+    msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers, tier="premium")
+    assert "📅 Juin 2026 (2)" in msg
+
+
+def test_format_grouped_flight_alerts_duration_days_in_line():
+    from app.notifications.telegram import format_grouped_flight_alerts
+    offers = [{
+        "departure_date": "2026-09-01",
+        "return_date": "2026-09-10",
+        "price": 89,
+        "discount_pct": 55,
+    }]
+    msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers, tier="premium")
+    assert "9j" in msg
+
+
+def test_format_grouped_flight_alerts_sort_within_month_by_price():
+    from app.notifications.telegram import format_grouped_flight_alerts
+    offers = [
+        {"departure_date": "2026-06-01", "return_date": "2026-06-10", "price": 150, "discount_pct": 55},
+        {"departure_date": "2026-06-02", "return_date": "2026-06-11", "price": 80, "discount_pct": 55},
+    ]
+    msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers, tier="premium")
+    idx_80 = msg.find("80€")
+    idx_150 = msg.find("150€")
+    assert idx_80 > 0 and idx_150 > 0
+    assert idx_80 < idx_150

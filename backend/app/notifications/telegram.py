@@ -8,6 +8,9 @@ logger = logging.getLogger(__name__)
 _FR_MONTHS_SHORT = ["", "janv", "févr", "mars", "avr", "mai", "juin",
                     "juil", "août", "sept", "oct", "nov", "déc"]
 
+_FR_MONTHS_LONG = ["", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+                   "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
+
 
 def _get_bot() -> Bot | None:
     if not settings.TELEGRAM_BOT_TOKEN:
@@ -169,21 +172,26 @@ def format_grouped_flight_alerts(
 ) -> str:
     """Format a grouped Telegram alert for multiple flight offers to one destination.
 
-    offers: list of dicts with keys departure_date (YYYY-MM-DD), price, discount_pct,
-            optionally score. Caps display to 10 best offers (by discount_pct),
-            shows total count in header.
+    offers: list of dicts with keys:
+      - departure_date (YYYY-MM-DD, required)
+      - return_date (YYYY-MM-DD, required)
+      - price (required)
+      - discount_pct (required)
+      - score (optional, default 0)
+      - airline (optional, default empty string)
+      - booking_url (optional, default empty string → no 👉 line)
     """
     from app.config import settings
 
     total = len(offers)
-    sorted_offers = sorted(offers, key=lambda o: o.get("discount_pct", 0), reverse=True)
-    shown = sorted_offers[:10]
+    sorted_by_discount = sorted(offers, key=lambda o: o.get("discount_pct", 0), reverse=True)
+    shown = sorted_by_discount[:10]
     remaining = total - len(shown)
 
     max_discount = max(o.get("discount_pct", 0) for o in shown)
     if max_discount >= 60:
         badge = "🔴"
-    elif max_discount >= 40:
+    elif max_discount >= 30:
         badge = "🟠"
     else:
         badge = "🟡"
@@ -192,23 +200,36 @@ def format_grouped_flight_alerts(
     header = f"{badge} {dest_city.upper()} — {total} {noun} à saisir"
     route = f"✈️ {origin_city} → {dest_city}"
 
-    # Group shown offers by month (chronological)
-    by_month: dict[int, list[dict]] = {}
+    # Group by (year, month) chronologically
+    by_month: dict[tuple[int, int], list[dict]] = {}
     for o in shown:
-        m = int(o["departure_date"][5:7])
-        by_month.setdefault(m, []).append(o)
+        d = datetime.strptime(o["departure_date"], "%Y-%m-%d")
+        key = (d.year, d.month)
+        by_month.setdefault(key, []).append(o)
 
-    lines = []
-    for month in sorted(by_month.keys()):
-        month_offers = by_month[month]
-        parts = [
-            f"{int(round(o['price']))}€ (-{int(round(o.get('discount_pct', 0)))}%)"
-            for o in month_offers
-        ]
-        lines.append(f"📅 {_FR_MONTHS_SHORT[month].capitalize()}: {' · '.join(parts)}")
+    lines: list[str] = []
+    for (year, month) in sorted(by_month.keys()):
+        month_offers = sorted(by_month[(year, month)], key=lambda o: o.get("price", 0))
+        lines.append("")
+        lines.append(f"📅 {_FR_MONTHS_LONG[month]} {year} ({len(month_offers)})")
+        for o in month_offers:
+            dep = datetime.strptime(o["departure_date"], "%Y-%m-%d")
+            ret = datetime.strptime(o["return_date"], "%Y-%m-%d")
+            duration = (ret - dep).days
+            dep_str = f"{dep.day:02d} {_FR_MONTHS_SHORT[dep.month]}"
+            ret_str = f"{ret.day:02d} {_FR_MONTHS_SHORT[ret.month]}"
+            price = int(round(o["price"]))
+            disc = int(round(o.get("discount_pct", 0)))
+            airline = o.get("airline", "").strip()
+            airline_suffix = f" · {airline}" if airline else ""
+            lines.append(f"{dep_str} - {ret_str} · {duration}j · {price}€ (-{disc}%){airline_suffix}")
+            booking_url = o.get("booking_url", "").strip()
+            if booking_url:
+                lines.append(f"👉 {booking_url}")
 
-    msg_parts = [header, "", route, ""] + lines
+    msg_parts = [header, "", route] + lines
     if remaining > 0:
+        msg_parts.append("")
         msg_parts.append(f"+ {remaining} autres")
 
     scores = [o.get("score", 0) for o in shown if o.get("score")]
@@ -216,7 +237,7 @@ def format_grouped_flight_alerts(
         max_score = int(round(max(scores)))
         msg_parts += ["", f"🎯 Score max : {max_score}/100"]
 
-    link = f"👉 Voir toutes les offres : {settings.FRONTEND_URL}/home?dest={destination_iata}"
+    link = f"👉 Toutes les offres : {settings.FRONTEND_URL}/home?dest={destination_iata}"
     msg_parts += ["", link]
 
     msg = "\n".join(msg_parts)
@@ -226,7 +247,6 @@ def format_grouped_flight_alerts(
             "\n\n💎 Réservation directe réservée aux abonnés premium. "
             "Créez un compte premium pour débloquer les meilleurs deals."
         )
-
     return msg
 
 
