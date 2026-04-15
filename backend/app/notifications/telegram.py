@@ -182,6 +182,7 @@ def format_grouped_flight_alerts(
       - booking_url (optional, default empty string → no 👉 line)
     """
     from app.config import settings
+    from app.notifications.booking import build_booking_url
 
     total = len(offers)
     sorted_by_discount = sorted(offers, key=lambda o: o.get("discount_pct", 0), reverse=True)
@@ -225,7 +226,15 @@ def format_grouped_flight_alerts(
             lines.append(f"{dep_str} - {ret_str} · {duration}j · {price}€ (-{disc}%){airline_suffix}")
             booking_url = o.get("booking_url", "").strip()
             if booking_url:
-                lines.append(f"👉 {booking_url}")
+                lines.append(f"✈️ Vol : {booking_url}")
+            if disc >= 50:
+                hotel_url = build_booking_url(
+                    dest_city,
+                    o["departure_date"],
+                    o["return_date"],
+                    marker=settings.TRAVELPAYOUTS_MARKER or None,
+                )
+                lines.append(f"🏨 Hôtels {dest_city} : {hotel_url}")
 
     msg_parts = [header, "", route] + lines
     if remaining > 0:

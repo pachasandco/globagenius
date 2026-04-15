@@ -185,13 +185,12 @@ def test_format_grouped_flight_alerts_same_month_two_separate_lines():
     msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers, tier="premium")
     # Single month header with count
     assert msg.count("📅 Septembre 2026 (2)") == 1
-    # Both offers on separate lines under the same header
-    lines = msg.split("\n")
-    header_idx = next(i for i, line in enumerate(lines) if "📅 Septembre 2026 (2)" in line)
-    # The two offer lines follow the header (contiguously, in some order)
-    following = "\n".join(lines[header_idx + 1:header_idx + 3])
-    assert "89€" in following
-    assert "112€" in following
+    # Both offers present in the message (each on its own line)
+    assert "89€" in msg
+    assert "112€" in msg
+    # Each offer line contains its own date range
+    assert "01 sept - 10 sept" in msg
+    assert "15 sept - 22 sept" in msg
 
 
 def test_format_grouped_flight_alerts_caps_at_10():
@@ -310,7 +309,72 @@ def test_format_grouped_flight_alerts_includes_booking_url_per_line():
         "booking_url": "https://www.aviasales.com/search/CDG0106LIS10061",
     }]
     msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers, tier="premium")
-    assert "👉 https://www.aviasales.com/search/CDG0106LIS10061" in msg
+    assert "✈️ Vol : https://www.aviasales.com/search/CDG0106LIS10061" in msg
+
+
+def test_build_booking_url_format():
+    from app.notifications.booking import build_booking_url
+    url = build_booking_url("Lisbonne", "2026-06-01", "2026-06-10")
+    assert "booking.com/searchresults.html" in url
+    assert "ss=Lisbonne" in url
+    assert "checkin=2026-06-01" in url
+    assert "checkout=2026-06-10" in url
+
+
+def test_build_booking_url_with_marker():
+    from app.notifications.booking import build_booking_url
+    url = build_booking_url("Lisbonne", "2026-06-01", "2026-06-10", marker="649153")
+    assert "aid=649153" in url
+
+
+def test_build_booking_url_without_marker():
+    from app.notifications.booking import build_booking_url
+    url = build_booking_url("Lisbonne", "2026-06-01", "2026-06-10", marker=None)
+    assert "aid=" not in url
+
+
+def test_build_booking_url_encodes_city_with_spaces():
+    from app.notifications.booking import build_booking_url
+    url = build_booking_url("New York", "2026-06-01", "2026-06-10")
+    assert "ss=New+York" in url
+
+
+def test_format_grouped_flight_alerts_adds_hotel_link_when_discount_50():
+    from app.notifications.telegram import format_grouped_flight_alerts
+    offers = [{
+        "departure_date": "2026-06-01",
+        "return_date": "2026-06-10",
+        "price": 80,
+        "discount_pct": 55,
+    }]
+    msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers, tier="premium")
+    assert "🏨 Hôtels Lisbonne" in msg
+    assert "booking.com/searchresults.html" in msg
+    assert "checkin=2026-06-01" in msg
+    assert "checkout=2026-06-10" in msg
+
+
+def test_format_grouped_flight_alerts_no_hotel_link_when_discount_below_50():
+    from app.notifications.telegram import format_grouped_flight_alerts
+    offers = [{
+        "departure_date": "2026-06-01",
+        "return_date": "2026-06-10",
+        "price": 120,
+        "discount_pct": 45,
+    }]
+    msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers, tier="premium")
+    assert "🏨 Hôtels" not in msg
+
+
+def test_format_grouped_flight_alerts_hotel_link_per_offer_with_correct_dates():
+    from app.notifications.telegram import format_grouped_flight_alerts
+    offers = [
+        {"departure_date": "2026-06-01", "return_date": "2026-06-10", "price": 80, "discount_pct": 55},
+        {"departure_date": "2026-06-15", "return_date": "2026-06-22", "price": 70, "discount_pct": 60},
+    ]
+    msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers, tier="premium")
+    assert "checkin=2026-06-01" in msg and "checkout=2026-06-10" in msg
+    assert "checkin=2026-06-15" in msg and "checkout=2026-06-22" in msg
 
 
 def test_format_grouped_flight_alerts_month_header_with_long_name_and_year():
