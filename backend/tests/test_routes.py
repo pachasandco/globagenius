@@ -555,3 +555,206 @@ def test_get_user_tier_fallback_stripe_customer_id():
     )
     with patch.object(routes, "db", db_mock):
         assert routes._get_user_tier("u1") == "premium"
+
+
+# ---------- Phase D3 — Admin console API ----------
+
+def test_admin_list_users_requires_key(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.api import routes
+    monkeypatch.setattr(routes.settings, "ADMIN_API_KEY", "secret-key")
+    client = TestClient(app)
+    r = client.get("/api/admin/users")
+    assert r.status_code == 403
+
+
+def test_admin_list_users_returns_items_with_tier(monkeypatch):
+    from unittest.mock import patch, MagicMock
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.api import routes
+    monkeypatch.setattr(routes.settings, "ADMIN_API_KEY", "secret-key")
+    monkeypatch.setattr(routes.settings, "ADMIN_EMAILS", ["admin@example.com"])
+
+    users_table = MagicMock()
+    users_table.select.return_value.limit.return_value.execute.return_value = MagicMock(
+        data=[
+            {"id": "u1", "email": "admin@example.com", "created_at": "2026-01-01T00:00:00Z"},
+            {"id": "u2", "email": "bob@example.com", "created_at": "2026-02-01T00:00:00Z"},
+        ]
+    )
+    prefs_table = MagicMock()
+    prefs_table.select.return_value.in_.return_value.execute.return_value = MagicMock(
+        data=[
+            {"user_id": "u1", "min_discount": 20, "stripe_customer_id": None, "telegram_connected": True, "telegram_chat_id": 111},
+            {"user_id": "u2", "min_discount": 30, "stripe_customer_id": "cus_123", "telegram_connected": False, "telegram_chat_id": None},
+        ]
+    )
+    grants_table_list = MagicMock()
+    grants_table_list.select.return_value.in_.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+    # For _get_user_tier's own queries (one per user)
+    grants_table_tier = MagicMock()
+    grants_table_tier.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(data=[])
+    prefs_table_tier = MagicMock()
+    prefs_table_tier.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[{"stripe_customer_id": None}])
+
+    call_count = {"premium_grants": 0, "user_preferences": 0}
+
+    def table_router(name):
+        if name == "users":
+            return users_table
+        elif name == "premium_grants":
+            call_count["premium_grants"] += 1
+            # First call = list bulk fetch; subsequent = _get_user_tier individual fetches
+            if call_count["premium_grants"] == 1:
+                return grants_table_list
+            return grants_table_tier
+        elif name == "user_preferences":
+            call_count["user_preferences"] += 1
+            if call_count["user_preferences"] == 1:
+                return prefs_table
+            return prefs_table_tier
+        return MagicMock()
+
+    db_mock = MagicMock()
+    db_mock.table.side_effect = table_router
+
+    with patch.object(routes, "db", db_mock):
+        client = TestClient(app)
+        r = client.get("/api/admin/users", headers={"X-Admin-Key": "secret-key"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["count"] == 2
+    emails = {it["email"] for it in body["items"]}
+    assert emails == {"admin@example.com", "bob@example.com"}
+    admin_item = next(it for it in body["items"] if it["email"] == "admin@example.com")
+    assert admin_item["is_admin"] is True
+    bob_item = next(it for it in body["items"] if it["email"] == "bob@example.com")
+    assert bob_item["is_admin"] is False
+
+
+def test_admin_grant_premium_upserts_row(monkeypatch):
+    from unittest.mock import patch, MagicMock
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.api import routes
+    monkeypatch.setattr(routes.settings, "ADMIN_API_KEY", "secret-key")
+
+    upsert_spy = MagicMock(return_value=MagicMock(execute=MagicMock(return_value=MagicMock(data=[{"user_id": "u1", "revoked": False}]))))
+    grants_table = MagicMock()
+    grants_table.upsert = upsert_spy
+
+    db_mock = MagicMock()
+    db_mock.table.return_value = grants_table
+
+    with patch.object(routes, "db", db_mock):
+        client = TestClient(app)
+        r = client.put(
+            "/api/admin/users/u1/premium",
+            headers={"X-Admin-Key": "secret-key"},
+            json={"reason": "beta tester"},
+        )
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+    # Verify upsert was called with the right row
+    args, kwargs = upsert_spy.call_args
+    row = args[0]
+    assert row["user_id"] == "u1"
+    assert row["revoked"] is False
+    assert row["reason"] == "beta tester"
+    assert kwargs.get("on_conflict") == "user_id"
+
+
+def test_admin_grant_premium_with_expires_at(monkeypatch):
+    from unittest.mock import patch, MagicMock
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.api import routes
+    monkeypatch.setattr(routes.settings, "ADMIN_API_KEY", "secret-key")
+
+    upsert_spy = MagicMock(return_value=MagicMock(execute=MagicMock(return_value=MagicMock(data=[]))))
+    grants_table = MagicMock()
+    grants_table.upsert = upsert_spy
+    db_mock = MagicMock()
+    db_mock.table.return_value = grants_table
+
+    with patch.object(routes, "db", db_mock):
+        client = TestClient(app)
+        r = client.put(
+            "/api/admin/users/u1/premium",
+            headers={"X-Admin-Key": "secret-key"},
+            json={"expires_at": "2027-01-01T00:00:00Z", "reason": "trial"},
+        )
+    assert r.status_code == 200
+    row = upsert_spy.call_args[0][0]
+    assert row["expires_at"] == "2027-01-01T00:00:00Z"
+
+
+def test_admin_revoke_premium_sets_revoked_true(monkeypatch):
+    from unittest.mock import patch, MagicMock
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.api import routes
+    monkeypatch.setattr(routes.settings, "ADMIN_API_KEY", "secret-key")
+
+    update_spy = MagicMock(return_value=MagicMock(eq=MagicMock(return_value=MagicMock(execute=MagicMock(return_value=MagicMock(data=[{"id": "g1"}]))))))
+    grants_table = MagicMock()
+    grants_table.update = update_spy
+    db_mock = MagicMock()
+    db_mock.table.return_value = grants_table
+
+    with patch.object(routes, "db", db_mock):
+        client = TestClient(app)
+        r = client.delete("/api/admin/users/u1/premium", headers={"X-Admin-Key": "secret-key"})
+    assert r.status_code == 200
+    update_args = update_spy.call_args[0][0]
+    assert update_args["revoked"] is True
+    assert "revoked_at" in update_args
+
+
+def test_admin_update_min_discount_bypasses_cap(monkeypatch):
+    from unittest.mock import patch, MagicMock
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.api import routes
+    monkeypatch.setattr(routes.settings, "ADMIN_API_KEY", "secret-key")
+
+    update_spy = MagicMock(return_value=MagicMock(eq=MagicMock(return_value=MagicMock(execute=MagicMock(return_value=MagicMock(data=[{"user_id": "u1", "min_discount": 50}]))))))
+    prefs_table = MagicMock()
+    prefs_table.update = update_spy
+    db_mock = MagicMock()
+    db_mock.table.return_value = prefs_table
+
+    with patch.object(routes, "db", db_mock):
+        client = TestClient(app)
+        r = client.put(
+            "/api/admin/users/u1/min_discount",
+            headers={"X-Admin-Key": "secret-key"},
+            json={"value": 50},
+        )
+    assert r.status_code == 200
+    assert r.json()["min_discount"] == 50
+    update_spy.assert_called_with({"min_discount": 50})
+
+
+def test_admin_reset_prefs_resets_to_defaults(monkeypatch):
+    from unittest.mock import patch, MagicMock
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.api import routes
+    monkeypatch.setattr(routes.settings, "ADMIN_API_KEY", "secret-key")
+
+    update_spy = MagicMock(return_value=MagicMock(eq=MagicMock(return_value=MagicMock(execute=MagicMock(return_value=MagicMock(data=[{"user_id": "u1"}]))))))
+    prefs_table = MagicMock()
+    prefs_table.update = update_spy
+    db_mock = MagicMock()
+    db_mock.table.return_value = prefs_table
+
+    with patch.object(routes, "db", db_mock):
+        client = TestClient(app)
+        r = client.post("/api/admin/users/u1/reset_prefs", headers={"X-Admin-Key": "secret-key"})
+    assert r.status_code == 200
+    update_args = update_spy.call_args[0][0]
+    assert update_args["min_discount"] == 20
+    assert update_args["airport_codes"] == ["CDG"]

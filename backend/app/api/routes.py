@@ -869,3 +869,155 @@ async def subscription_status(user: dict = Depends(get_current_user)):
     prefs = db.table("user_preferences").select("is_premium").eq("user_id", user_id).execute()
 
     return {"is_premium": prefs.data[0].get("is_premium", False) if prefs.data else False}
+
+
+# ─── ADMIN CONSOLE ───
+
+class AdminGrantPremiumRequest(BaseModel):
+    expires_at: str | None = None
+    reason: str | None = None
+
+
+class AdminMinDiscountRequest(BaseModel):
+    value: int
+
+    @field_validator("value")
+    @classmethod
+    def validate_value(cls, v: int) -> int:
+        if v not in {20, 30, 40, 50, 60}:
+            raise ValueError("value must be one of 20,30,40,50,60")
+        return v
+
+
+@router.get("/api/admin/users")
+def admin_list_users(request: Request, limit: int = 100):
+    _require_admin(request)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    users_resp = db.table("users").select("id,email,created_at").limit(limit).execute()
+    users = users_resp.data or []
+    user_ids = [u["id"] for u in users]
+    prefs_by_user = {}
+    grants_by_user = {}
+    if user_ids:
+        prefs_resp = (
+            db.table("user_preferences")
+            .select("user_id,min_discount,stripe_customer_id,telegram_connected,telegram_chat_id")
+            .in_("user_id", user_ids)
+            .execute()
+        )
+        prefs_by_user = {p["user_id"]: p for p in (prefs_resp.data or [])}
+        try:
+            grants_resp = (
+                db.table("premium_grants")
+                .select("user_id,expires_at,revoked,granted_at,reason")
+                .in_("user_id", user_ids)
+                .eq("revoked", False)
+                .execute()
+            )
+            grants_by_user = {g["user_id"]: g for g in (grants_resp.data or [])}
+        except Exception:
+            grants_by_user = {}
+    items = []
+    for u in users:
+        uid = u["id"]
+        prefs = prefs_by_user.get(uid, {})
+        grant = grants_by_user.get(uid)
+        tier = _get_user_tier(uid)
+        items.append({
+            "id": uid,
+            "email": u["email"],
+            "created_at": u["created_at"],
+            "tier": tier,
+            "min_discount": prefs.get("min_discount", 20),
+            "stripe_customer_id": prefs.get("stripe_customer_id"),
+            "telegram_connected": prefs.get("telegram_connected", False),
+            "has_grant": bool(grant),
+            "grant_expires_at": grant.get("expires_at") if grant else None,
+            "is_admin": u["email"] in settings.ADMIN_EMAILS,
+        })
+    return {"items": items, "count": len(items)}
+
+
+@router.get("/api/admin/users/{user_id}")
+def admin_get_user(user_id: str, request: Request):
+    _require_admin(request)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    user_resp = db.table("users").select("*").eq("id", user_id).execute()
+    if not user_resp.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    prefs_resp = db.table("user_preferences").select("*").eq("user_id", user_id).execute()
+    grants = []
+    try:
+        g_resp = db.table("premium_grants").select("*").eq("user_id", user_id).execute()
+        grants = g_resp.data or []
+    except Exception:
+        pass
+    return {
+        "user": user_resp.data[0],
+        "preferences": prefs_resp.data[0] if prefs_resp.data else None,
+        "grants": grants,
+        "tier": _get_user_tier(user_id),
+    }
+
+
+@router.put("/api/admin/users/{user_id}/premium")
+def admin_grant_premium(user_id: str, req: AdminGrantPremiumRequest, request: Request):
+    _require_admin(request)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    row = {
+        "user_id": user_id,
+        "granted_by": "admin",
+        "expires_at": req.expires_at,
+        "reason": req.reason,
+        "revoked": False,
+        "revoked_at": None,
+    }
+    resp = db.table("premium_grants").upsert(row, on_conflict="user_id").execute()
+    return {"ok": True, "grant": (resp.data[0] if resp.data else row)}
+
+
+@router.delete("/api/admin/users/{user_id}/premium")
+def admin_revoke_premium(user_id: str, request: Request):
+    _require_admin(request)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    resp = (
+        db.table("premium_grants")
+        .update({
+            "revoked": True,
+            "revoked_at": datetime.now(timezone.utc).isoformat(),
+        })
+        .eq("user_id", user_id)
+        .execute()
+    )
+    return {"ok": True, "revoked_count": len(resp.data or [])}
+
+
+@router.put("/api/admin/users/{user_id}/min_discount")
+def admin_update_min_discount(user_id: str, req: AdminMinDiscountRequest, request: Request):
+    _require_admin(request)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    resp = db.table("user_preferences").update({"min_discount": req.value}).eq("user_id", user_id).execute()
+    if not resp.data:
+        raise HTTPException(status_code=404, detail="User preferences not found")
+    return {"ok": True, "min_discount": req.value}
+
+
+@router.post("/api/admin/users/{user_id}/reset_prefs")
+def admin_reset_prefs(user_id: str, request: Request):
+    _require_admin(request)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    defaults = {
+        "airport_codes": ["CDG"],
+        "offer_types": ["package", "flight", "accommodation"],
+        "min_discount": 20,
+        "max_budget": None,
+        "preferred_destinations": [],
+    }
+    resp = db.table("user_preferences").update(defaults).eq("user_id", user_id).execute()
+    return {"ok": True, "reset": bool(resp.data)}
