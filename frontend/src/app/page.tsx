@@ -375,6 +375,7 @@ export default function Landing() {
           <div className="hidden md:flex items-center gap-6 text-sm text-gray-500">
             <a href="#deals" className="hover:text-gray-900 transition-colors">Deals</a>
             <a href="#how" className="hover:text-gray-900 transition-colors">Comment ça marche</a>
+            <Link href="/articles" className="hover:text-gray-900 transition-colors">Guides</Link>
             <a href="#destinations" className="hover:text-gray-900 transition-colors">Destinations</a>
             <a href="#faq" className="hover:text-gray-900 transition-colors">FAQ</a>
           </div>
