@@ -57,65 +57,81 @@ function FlightDealCard({ deal }: { deal: FlightDeal }) {
     : null;
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
-      <div className={`px-4 py-3 flex items-center justify-between ${isPremium ? "bg-gray-900" : "bg-gray-700"}`}>
-        <div>
-          <div className="text-white text-sm font-semibold">{deal.origin} → {deal.destination}</div>
-          <div className="text-gray-400 text-xs">
-            {dep} – {ret} · {days} jour{days > 1 ? "s" : ""} · {stopsLabel}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {isPremium && <span className="bg-amber-400 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full">PREMIUM</span>}
-          <div className={`text-white text-xs font-bold px-2.5 py-1 rounded-full ${isPremium ? "bg-red-500" : "bg-orange-500"}`}>
-            -{discount}%
-          </div>
-        </div>
+    <div className="relative bg-[#FFFEF9] rounded-2xl border border-[#F0E6D8] hover:border-[#FF6B47] shadow-[0_4px_16px_rgba(10,31,61,0.04)] hover:shadow-[0_12px_32px_rgba(255,107,71,0.12)] transition-all duration-300 overflow-visible p-5 pt-7">
+      {/* Savings sticker coral */}
+      <div
+        className="absolute -top-3 -right-3 w-14 h-14 rounded-full bg-[#FF6B47] text-white flex items-center justify-center font-bold text-sm shadow-[0_8px_20px_rgba(255,107,71,0.35)] z-10"
+        style={{ transform: "rotate(-8deg)" }}
+      >
+        -{discount}%
       </div>
-      <div className="p-4">
-        <div className="flex items-end justify-between mb-3">
-          <div>
-            <div className="text-xs text-gray-400 mb-0.5">
-              Vol aller-retour{deal.airline ? ` · ${deal.airline}` : ""}
-            </div>
-            {locked ? (
-              <div className="flex items-baseline gap-2 select-none">
-                <span className="text-2xl font-bold blur-sm text-gray-400">••• €</span>
-                <span className="text-sm text-gray-300 line-through blur-sm">••• €</span>
-              </div>
-            ) : (
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-bold">{Math.round(deal.price as number)} €</span>
-                <span className="text-sm text-gray-300 line-through">{Math.round(deal.baseline_price as number)} €</span>
-              </div>
-            )}
-            {saving !== null && (
-              <div className="text-xs text-emerald-600 mt-0.5">Économie de {saving} €</div>
-            )}
-            {locked && (
-              <div className="text-xs text-gray-400 mt-0.5">Tarif réservé aux abonnés</div>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5 bg-cyan-50 rounded-lg px-2.5 py-1">
-            <div className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
-            <span className="text-xs font-semibold text-cyan-700">Score {deal.score}</span>
-          </div>
-        </div>
-        {locked ? (
-          <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-xs text-amber-800">
-            💎 {isPremium ? "Réservé aux abonnés Premium" : "Connectez-vous pour voir le prix"}
-          </div>
-        ) : deal.source_url ? (
-          <a
-            href={deal.source_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block w-full text-center bg-[#FF6B47] hover:bg-[#E55A38] text-white text-sm font-semibold py-2.5 rounded-xl transition-all"
-          >
-            Voir l&apos;offre
-          </a>
-        ) : null}
+
+      {/* Premium badge if applicable */}
+      {isPremium && (
+        <span className="inline-block bg-[#FFC940] text-[#0A1F3D] text-[10px] font-bold px-2 py-0.5 rounded-full mb-2">
+          PREMIUM
+        </span>
+      )}
+
+      {/* Route in DM Serif */}
+      <div className="font-[family-name:var(--font-dm-serif)] text-xl md:text-2xl text-[#0A1F3D] mb-1 pr-12">
+        {deal.origin} → {deal.destination}
       </div>
+
+      {/* Dates + days */}
+      <div className="text-sm text-[#0A1F3D]/60 mb-3">
+        {dep} – {ret} · {days} jour{days > 1 ? "s" : ""}
+      </div>
+
+      {/* Chips row : airline + stops + score */}
+      <div className="flex flex-wrap items-center gap-1.5 mb-4">
+        {deal.airline && (
+          <span className="bg-[#F0E6D8]/60 text-[#0A1F3D] text-xs px-2.5 py-1 rounded-full">
+            ✈️ {deal.airline}
+          </span>
+        )}
+        <span className="bg-[#F0E6D8]/60 text-[#0A1F3D] text-xs px-2.5 py-1 rounded-full">
+          {stopsLabel}
+        </span>
+        <span className="ml-auto bg-[#06B6D4]/10 text-[#06B6D4] text-xs font-semibold px-2.5 py-1 rounded-full">
+          Score {deal.score}
+        </span>
+      </div>
+
+      {/* Price hierarchy */}
+      {locked ? (
+        <div className="flex items-baseline gap-2 select-none mb-3">
+          <span className="text-3xl font-bold blur-sm text-[#0A1F3D]/30">••• €</span>
+          <span className="text-sm text-[#0A1F3D]/30 line-through blur-sm">••• €</span>
+        </div>
+      ) : (
+        <div className="flex items-baseline gap-2 mb-1">
+          <span className="text-3xl font-bold text-[#0A1F3D]">{Math.round(deal.price as number)} €</span>
+          <span className="text-sm text-[#0A1F3D]/40 line-through">{Math.round(deal.baseline_price as number)} €</span>
+        </div>
+      )}
+
+      {saving !== null && (
+        <div className="text-xs text-[#16A34A] font-semibold mb-3">
+          ✨ Économie de {saving} €
+        </div>
+      )}
+
+      {/* CTA footer */}
+      {locked ? (
+        <div className="bg-[#FFF1EC] border border-[#FF6B47]/30 rounded-xl px-3 py-2.5 text-xs text-[#E55A38] font-medium text-center">
+          💎 {isPremium ? "Réservé aux abonnés Premium" : "Connectez-vous pour voir le prix"}
+        </div>
+      ) : deal.source_url ? (
+        <a
+          href={deal.source_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block w-full text-center bg-[#FF6B47] hover:bg-[#E55A38] text-white text-sm font-semibold py-3 rounded-full transition-all shadow-[0_4px_12px_rgba(255,107,71,0.2)] hover:shadow-[0_8px_20px_rgba(255,107,71,0.3)]"
+        >
+          Voir l&apos;offre →
+        </a>
+      ) : null}
     </div>
   );
 }

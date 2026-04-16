@@ -93,43 +93,67 @@ function LandingDealCard({ deal, i }: { deal: FlightDeal; i: number }) {
       transition={{ duration: 0.4, delay: i * 0.06 }}
       className="group cursor-pointer"
     >
-      <div className="relative aspect-[4/3] rounded-2xl overflow-hidden mb-3">
-        <img src={meta.img} alt={meta.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-        <div className="absolute top-3 left-3 flex items-center gap-1.5">
-          <div className={`text-white text-xs font-bold px-2.5 py-1 rounded-full ${isPremium ? "bg-red-500" : "bg-orange-500"}`}>
+      <div className="relative bg-[#FFFEF9] rounded-2xl border border-[#F0E6D8] group-hover:border-[#FF6B47] shadow-[0_4px_16px_rgba(10,31,61,0.04)] group-hover:shadow-[0_12px_32px_rgba(255,107,71,0.12)] transition-all duration-300 overflow-hidden">
+        {/* Image header with photo overlay (preserved black gradient for image legibility) */}
+        <div className="relative aspect-[4/3] overflow-hidden">
+          <img
+            src={meta.img}
+            alt={meta.name}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+
+          {/* Savings sticker coral, top-right, rotated */}
+          <div
+            className="absolute top-3 right-3 w-12 h-12 rounded-full bg-[#FF6B47] text-white flex items-center justify-center font-bold text-xs shadow-[0_6px_16px_rgba(255,107,71,0.4)]"
+            style={{ transform: "rotate(-8deg)" }}
+          >
             -{discount}%
           </div>
+
+          {/* Premium badge top-left */}
           {isPremium && (
-            <div className="bg-amber-400 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full">PREMIUM</div>
+            <div className="absolute top-3 left-3 bg-[#FFC940] text-[#0A1F3D] text-[10px] font-bold px-2 py-0.5 rounded-full">
+              PREMIUM
+            </div>
+          )}
+
+          {/* Relative time bottom-right (on the image) */}
+          <div className="absolute bottom-3 right-3 bg-[#FFFEF9]/90 backdrop-blur-sm text-[10px] font-semibold px-2 py-1 rounded-full text-[#0A1F3D]/70">
+            {relativeTime(deal.created_at)}
+          </div>
+
+          {/* Route label bottom-left (on the image) */}
+          <div className="absolute bottom-3 left-3 right-16">
+            <div className="text-white font-semibold text-base drop-shadow-lg">
+              {meta.flag} {deal.origin} → {deal.destination}
+            </div>
+            <div className="text-white/80 text-xs">
+              {dep} – {ret} · {days} jour{days > 1 ? "s" : ""}
+            </div>
+          </div>
+        </div>
+
+        {/* Body under image */}
+        <div className="p-4">
+          <div className="flex items-center gap-2 text-xs text-[#0A1F3D]/60 mb-2">
+            <span>✈️ {deal.airline || "Compagnie"}</span>
+            <span>·</span>
+            <span>{stopsLabel}</span>
+          </div>
+          {locked ? (
+            <div className="flex items-baseline gap-2 select-none">
+              <span className="text-xl font-bold blur-sm text-[#0A1F3D]/30">••• €</span>
+              <span className="text-xs text-[#0A1F3D]/40 ml-auto">Connectez-vous</span>
+            </div>
+          ) : (
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-bold text-[#0A1F3D]">{Math.round(deal.price as number)} €</span>
+              <span className="text-sm text-[#0A1F3D]/40 line-through">{Math.round(deal.baseline_price as number)} €</span>
+              <span className="text-[10px] text-[#0A1F3D]/40 ml-auto">aller-retour</span>
+            </div>
           )}
         </div>
-        <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm text-[10px] font-semibold px-2 py-1 rounded-full text-gray-700">
-          {relativeTime(deal.created_at)}
-        </div>
-        <div className="absolute bottom-3 left-3 right-3">
-          <div className="text-white font-semibold text-lg drop-shadow-lg">{meta.flag} {deal.origin} → {deal.destination}</div>
-          <div className="text-white/80 text-xs">{dep} – {ret} · {days} jour{days > 1 ? "s" : ""}</div>
-        </div>
-      </div>
-      <div className="px-1">
-        <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
-          <span>✈️ {deal.airline || "Compagnie"}</span>
-          <span>·</span>
-          <span>{stopsLabel}</span>
-        </div>
-        {locked ? (
-          <div className="flex items-baseline gap-2 select-none">
-            <span className="text-xl font-bold blur-sm text-gray-400">••• €</span>
-            <span className="text-xs text-gray-400 ml-auto">Connectez-vous</span>
-          </div>
-        ) : (
-          <div className="flex items-baseline gap-2">
-            <span className="text-xl font-bold">{Math.round(deal.price as number)} €</span>
-            <span className="text-sm text-gray-400 line-through">{Math.round(deal.baseline_price as number)} €</span>
-            <span className="text-xs text-gray-400 ml-auto">vol aller-retour</span>
-          </div>
-        )}
       </div>
     </motion.div>
   );
