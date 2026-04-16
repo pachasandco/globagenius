@@ -368,8 +368,8 @@ export default function Landing() {
       {/* ── NAV ── */}
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
         <div className="max-w-6xl mx-auto px-4 md:px-5 h-[64px] flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
-            <img src="/globe1.png" alt="Globe Genius" className="w-8 h-8 shrink-0 object-contain" />
+          <Link href="/" className="flex items-end gap-2">
+            <img src="/globe1.png" alt="Globe Genius" className="w-10 h-10 shrink-0 object-contain" />
             <span className="font-[family-name:var(--font-dm-serif)] text-[19px] leading-none">Globe Genius</span>
           </Link>
           <div className="hidden md:flex items-center gap-6 text-sm text-gray-500">
@@ -741,8 +741,8 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto px-4 md:px-5">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div>
-              <div className="flex items-center gap-2 mb-2">
-                <img src="/globe1.png" alt="Globe Genius" className="w-7 h-7 shrink-0 object-contain" />
+              <div className="flex items-end gap-2 mb-2">
+                <img src="/globe1.png" alt="Globe Genius" className="w-9 h-9 shrink-0 object-contain" />
                 <span className="font-[family-name:var(--font-dm-serif)] text-[15px] leading-none">Globe Genius</span>
               </div>
               <p className="text-xs text-gray-400 max-w-xs">

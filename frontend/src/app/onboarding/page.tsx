@@ -151,8 +151,8 @@ export default function OnboardingPage() {
     <div className="min-h-screen bg-[#FFF8F0] flex items-start md:items-center justify-center px-4 md:px-5 py-8 md:py-0">
       <div className="w-full max-w-lg">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2 justify-center mb-8">
-          <img src="/globe1.png" alt="Globe Genius" className="w-9 h-9 shrink-0 object-contain" />
+        <Link href="/" className="flex items-end gap-2 justify-center mb-8">
+          <img src="/globe1.png" alt="Globe Genius" className="w-11 h-11 shrink-0 object-contain" />
           <span className="font-[family-name:var(--font-dm-serif)] text-xl leading-none">Globe Genius</span>
         </Link>
 
