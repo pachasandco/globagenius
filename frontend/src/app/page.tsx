@@ -177,6 +177,102 @@ function FAQItem({ q, a, i }: { q: string; a: string; i: number }) {
   );
 }
 
+/* ─── TELEGRAM HERO MOCKUP ─── */
+const FALLBACK_DEALS_HERO = [
+  { origin: "CDG", destination: "LIS", destCity: "LISBONNE", departure_date: "2026-09-01", return_date: "2026-09-10", price: 89, baseline_price: 210, discount_pct: 58 },
+  { origin: "CDG", destination: "BCN", destCity: "BARCELONE", departure_date: "2026-10-15", return_date: "2026-10-22", price: 95, baseline_price: 180, discount_pct: 47 },
+  { origin: "CDG", destination: "RAK", destCity: "MARRAKECH", departure_date: "2026-11-05", return_date: "2026-11-12", price: 98, baseline_price: 240, discount_pct: 59 },
+];
+
+function formatShortDateFr(iso: string): string {
+  return new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+}
+
+function computeHeroDays(dep: string, ret: string): number {
+  return Math.round((new Date(ret).getTime() - new Date(dep).getTime()) / 86400000);
+}
+
+function TelegramHeroMockup({ deals }: { deals: FlightDeal[] }) {
+  const items = deals && deals.length >= 3
+    ? deals.slice(0, 3).map(d => ({
+        origin: d.origin,
+        destination: d.destination,
+        destCity: (destinationMeta(d.destination).name || d.destination).toUpperCase(),
+        departure_date: d.departure_date,
+        return_date: d.return_date,
+        price: d.price ?? 0,
+        baseline_price: d.baseline_price ?? 0,
+        discount_pct: d.discount_pct,
+      }))
+    : FALLBACK_DEALS_HERO;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.6, delay: 0.2 }}
+      className="relative"
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.8 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ delay: 1.8, type: "spring", stiffness: 200 }}
+        className="absolute -top-3 -right-3 bg-[#FFC940] text-[#0A1F3D] text-xs font-bold px-3 py-1.5 rounded-full shadow-[0_8px_20px_rgba(255,201,64,0.4)] z-10"
+      >
+        ⚡ Temps réel
+      </motion.div>
+
+      <div className="bg-[#FFFEF9] rounded-3xl border border-[#F0E6D8] shadow-[0_24px_48px_rgba(10,31,61,0.08)] overflow-hidden">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-[#F0E6D8] bg-[#FFF8F0]">
+          <div className="w-10 h-10 rounded-full bg-[#FF6B47] flex items-center justify-center">
+            <img src="/globe1.png" alt="" className="w-6 h-6 object-contain" />
+          </div>
+          <div className="flex-1">
+            <div className="font-semibold text-[14px] text-[#0A1F3D] leading-none mb-1">Globe Genius Bot</div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#16A34A]" />
+              <span className="text-[11px] text-[#16A34A]">en ligne</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4 space-y-3 max-h-[460px] overflow-hidden">
+          {items.map((deal, i) => {
+            const badge = deal.discount_pct >= 60 ? "🔴" : deal.discount_pct >= 30 ? "🟠" : "🟡";
+            return (
+              <motion.div
+                key={`hero-${deal.destination}-${i}`}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.6 + i * 0.6 }}
+                className="bg-[#FFF8F0] rounded-2xl p-3 border border-[#F0E6D8] max-w-[94%]"
+              >
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-sm">{badge}</span>
+                  <span className="font-bold text-[13px] text-[#0A1F3D] uppercase tracking-tight">{deal.destCity}</span>
+                </div>
+                <div className="text-[11px] text-[#0A1F3D]/60 mb-1">✈️ {deal.origin} → {deal.destination}</div>
+                <div className="text-[11px] text-[#0A1F3D]/60 mb-2">
+                  📅 {formatShortDateFr(deal.departure_date)} - {formatShortDateFr(deal.return_date)} · {computeHeroDays(deal.departure_date, deal.return_date)}j
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-base font-bold text-[#FF6B47]">{deal.price ? `${Math.round(deal.price)}€` : "•••€"}</span>
+                  {deal.baseline_price > 0 && (
+                    <span className="text-[11px] text-[#0A1F3D]/40 line-through">{Math.round(deal.baseline_price)}€</span>
+                  )}
+                  <span className="ml-auto text-[11px] font-bold text-[#FF6B47] bg-[#FFF1EC] px-2 py-0.5 rounded-full">
+                    -{Math.round(deal.discount_pct)}%
+                  </span>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 /* ─── STRUCTURED DATA (static constants, no user input — safe for JSON-LD) ─── */
 const organizationSchema = {
   "@context": "https://schema.org",
@@ -294,55 +390,51 @@ export default function Landing() {
       </nav>
 
       {/* ── HERO ── */}
-      <section className="relative overflow-hidden">
-        {/* Background image */}
-        <div className="absolute inset-0">
-          <img
-            src="https://images.unsplash.com/photo-1488085061387-422e29b40080?w=1920&q=80"
-            alt="Travel"
-            className="w-full h-full object-cover"
-          />
-          <div className="absolute inset-0 bg-[#FFF8F0]/85" />
-        </div>
+      <section className="bg-[#FFF8F0]">
+        <div className="max-w-6xl mx-auto px-4 md:px-5 py-16 md:py-24 lg:py-28">
+          <div className="grid md:grid-cols-[1.3fr_1fr] gap-10 md:gap-12 lg:gap-16 items-center">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+            >
+              <div className="inline-flex items-center gap-2 bg-[#FFFEF9] border border-[#F0E6D8] rounded-full px-3.5 py-1.5 mb-6">
+                <span className="w-2 h-2 rounded-full bg-[#16A34A] animate-pulse" />
+                <span className="text-xs font-semibold text-[#0A1F3D]">
+                  Pipeline actif · 2 340+ vols analysés aujourd&apos;hui
+                </span>
+              </div>
 
-        <div className="relative max-w-6xl mx-auto px-4 md:px-5 py-12 md:py-32 lg:py-40">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="max-w-xl"
-          >
-            <div className="inline-flex items-center gap-2 bg-cyan-50 border border-cyan-100 rounded-full px-3.5 py-1.5 mb-6">
-              <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
-              <span className="text-xs font-semibold text-cyan-700">Pipeline actif · 2 340+ vols analysés aujourd'hui</span>
-            </div>
+              <h1 className="font-[family-name:var(--font-dm-serif)] text-[40px] md:text-[56px] lg:text-[72px] leading-[1.02] tracking-tight mb-5 text-[#0A1F3D]">
+                Des vols<br />à prix cassés.
+              </h1>
 
-            <h1 className="font-[family-name:var(--font-dm-serif)] text-[40px] md:text-[56px] lg:text-[72px] leading-[1.08] tracking-tight mb-4 md:mb-5">
-              Des vols
-              <br />
-              à prix cassés.
-            </h1>
-            <p className="text-gray-600 text-base md:text-lg leading-relaxed mb-6 md:mb-8">
-              Lisbonne à 89€, Marrakech à 98€, Athènes à 156€. Des
-              <strong className="text-gray-900"> prix anormalement bas</strong>, vérifiés,
-              qui apparaissent parfois quelques heures avant de disparaître.
-              On les détecte avant tout le monde, et on vous envoie un ping Telegram.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <Link
-                href="/signup"
-                className="bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold px-6 py-3.5 md:px-8 md:py-4 rounded-full transition-all text-[15px] shadow-[0_8px_24px_rgba(255,107,71,0.25)] hover:shadow-[0_12px_32px_rgba(255,107,71,0.35)] text-center"
-              >
-                Découvrir les deals →
-              </Link>
-              <a
-                href="#how"
-                className="text-gray-600 font-medium px-5 py-3.5 md:px-6 md:py-4 rounded-full border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all text-[15px] text-center"
-              >
-                Comment ça marche
-              </a>
-            </div>
-          </motion.div>
+              <p className="text-[#0A1F3D]/70 text-base md:text-lg leading-relaxed mb-8 max-w-lg">
+                Lisbonne à <span className="bg-[#FFF1EC] text-[#FF6B47] font-semibold px-1.5 rounded">89€</span>,
+                Marrakech à <span className="bg-[#FFF1EC] text-[#FF6B47] font-semibold px-1.5 rounded">98€</span>,
+                Athènes à <span className="bg-[#FFF1EC] text-[#FF6B47] font-semibold px-1.5 rounded">156€</span>.
+                Des <strong className="text-[#0A1F3D]">prix anormalement bas</strong>, vérifiés,
+                qui apparaissent parfois quelques heures avant de disparaître.
+              </p>
+
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Link
+                  href="/signup"
+                  className="bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold px-8 py-4 rounded-full transition-all text-[15px] shadow-[0_8px_24px_rgba(255,107,71,0.25)] hover:shadow-[0_12px_32px_rgba(255,107,71,0.35)] text-center"
+                >
+                  Découvrir les deals →
+                </Link>
+                <a
+                  href="#how"
+                  className="text-[#0A1F3D] font-medium px-6 py-4 rounded-full border-2 border-[#0A1F3D]/10 hover:border-[#0A1F3D]/20 hover:bg-[#FFFEF9] transition-all text-[15px] text-center"
+                >
+                  Comment ça marche
+                </a>
+              </div>
+            </motion.div>
+
+            <TelegramHeroMockup deals={recentDeals} />
+          </div>
         </div>
       </section>
 
