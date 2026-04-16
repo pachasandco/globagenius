@@ -88,20 +88,13 @@ async def get_optional_user(
 
 
 def _is_premium_user(user: dict | None) -> bool:
-    """Check if a user dict (from get_optional_user/get_current_user) maps to
-    a premium subscription. Returns False for anonymous or non-premium users."""
-    if not user or not db:
+    """Check if a user dict maps to a premium subscription.
+    Delegates to _get_user_tier which checks premium_grants first,
+    then stripe_customer_id — single source of truth."""
+    if not user:
         return False
     user_id = user.get("user_id") or user.get("sub")
-    if not user_id:
-        return False
-    try:
-        prefs = db.table("user_preferences").select("is_premium").eq("user_id", user_id).execute()
-        if prefs.data and prefs.data[0].get("is_premium"):
-            return True
-    except Exception:
-        pass
-    return False
+    return _get_user_tier(user_id) == "premium"
 
 
 def _get_user_tier(user_id: str | None) -> str:
@@ -861,14 +854,11 @@ async def create_portal(user: dict = Depends(get_current_user)):
 
 @router.get("/api/stripe/status")
 async def subscription_status(user: dict = Depends(get_current_user)):
-    """Check if current user has premium subscription."""
-    if not db:
-        return {"is_premium": False}
-
-    user_id = user["sub"]
-    prefs = db.table("user_preferences").select("is_premium").eq("user_id", user_id).execute()
-
-    return {"is_premium": prefs.data[0].get("is_premium", False) if prefs.data else False}
+    """Check if current user has premium subscription.
+    Uses _get_user_tier as single source of truth (checks premium_grants
+    first, then stripe_customer_id)."""
+    user_id = user.get("sub") or user.get("user_id")
+    return {"is_premium": _get_user_tier(user_id) == "premium"}
 
 
 # ─── ADMIN CONSOLE ───
