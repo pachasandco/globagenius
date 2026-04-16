@@ -10,31 +10,114 @@ import { getFlightDeals, type FlightDeal } from "@/lib/api";
    Mapped by IATA code so that live deals fetched from /api/packages can
    pick a relevant cover photo without depending on the backend. */
 const DESTINATION_IMAGES: Record<string, { img: string; flag: string; name: string }> = {
+  // Portugal
   LIS: { img: "https://images.unsplash.com/photo-1585208798174-6cedd86e019a?w=800&q=80", flag: "🇵🇹", name: "Lisbonne" },
-  BCN: { img: "https://images.unsplash.com/photo-1583422409516-2895a77efded?w=800&q=80", flag: "🇪🇸", name: "Barcelone" },
-  MAD: { img: "https://images.unsplash.com/photo-1583422409516-2895a77efded?w=800&q=80", flag: "🇪🇸", name: "Madrid" },
-  ATH: { img: "https://images.unsplash.com/photo-1555993539-1732b0258235?w=800&q=80", flag: "🇬🇷", name: "Athènes" },
-  PRG: { img: "https://images.unsplash.com/photo-1519677100203-a0e668c92439?w=800&q=80", flag: "🇨🇿", name: "Prague" },
-  RAK: { img: "https://images.unsplash.com/photo-1597212618440-806262de4f6b?w=800&q=80", flag: "🇲🇦", name: "Marrakech" },
-  CMN: { img: "https://images.unsplash.com/photo-1597212618440-806262de4f6b?w=800&q=80", flag: "🇲🇦", name: "Casablanca" },
-  AMS: { img: "https://images.unsplash.com/photo-1534351590666-13e3e96b5017?w=800&q=80", flag: "🇳🇱", name: "Amsterdam" },
-  FCO: { img: "https://images.unsplash.com/photo-1552832230-c0197dd311b5?w=800&q=80", flag: "🇮🇹", name: "Rome" },
-  IST: { img: "https://images.unsplash.com/photo-1524231757912-21f4fe3a7200?w=800&q=80", flag: "🇹🇷", name: "Istanbul" },
-  TUN: { img: "https://images.unsplash.com/photo-1605000797499-95a51c5269ae?w=800&q=80", flag: "🇹🇳", name: "Tunis" },
-  BUD: { img: "https://images.unsplash.com/photo-1551867633-194f125bddfa?w=800&q=80", flag: "🇭🇺", name: "Budapest" },
   OPO: { img: "https://images.unsplash.com/photo-1555881400-74d7acaacd8b?w=800&q=80", flag: "🇵🇹", name: "Porto" },
+  FAO: { img: "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800&q=80", flag: "🇵🇹", name: "Faro" },
+  FNC: { img: "https://images.unsplash.com/photo-1590077428593-a55bb07c4665?w=800&q=80", flag: "🇵🇹", name: "Madère" },
+  PDL: { img: "https://images.unsplash.com/photo-1555881400-74d7acaacd8b?w=800&q=80", flag: "🇵🇹", name: "Açores" },
+  // Espagne
+  BCN: { img: "https://images.unsplash.com/photo-1583422409516-2895a77efded?w=800&q=80", flag: "🇪🇸", name: "Barcelone" },
+  MAD: { img: "https://images.unsplash.com/photo-1539037116277-4db20889f2d4?w=800&q=80", flag: "🇪🇸", name: "Madrid" },
+  AGP: { img: "https://images.unsplash.com/photo-1592820685916-2c1a50e5cf28?w=800&q=80", flag: "🇪🇸", name: "Malaga" },
+  PMI: { img: "https://images.unsplash.com/photo-1575375082828-8d1e2c5d7b06?w=800&q=80", flag: "🇪🇸", name: "Majorque" },
+  IBZ: { img: "https://images.unsplash.com/photo-1534258936925-c58bed479fcb?w=800&q=80", flag: "🇪🇸", name: "Ibiza" },
+  VLC: { img: "https://images.unsplash.com/photo-1599486761929-c5cd9f9b3a9f?w=800&q=80", flag: "🇪🇸", name: "Valence" },
+  SVQ: { img: "https://images.unsplash.com/photo-1515443961218-a51367888e4b?w=800&q=80", flag: "🇪🇸", name: "Séville" },
+  ALC: { img: "https://images.unsplash.com/photo-1592820685916-2c1a50e5cf28?w=800&q=80", flag: "🇪🇸", name: "Alicante" },
+  // Italie
+  FCO: { img: "https://images.unsplash.com/photo-1552832230-c0197dd311b5?w=800&q=80", flag: "🇮🇹", name: "Rome" },
   NAP: { img: "https://images.unsplash.com/photo-1547595628-c61a29f496f0?w=800&q=80", flag: "🇮🇹", name: "Naples" },
+  VCE: { img: "https://images.unsplash.com/photo-1534113416831-ed75ddca41c0?w=800&q=80", flag: "🇮🇹", name: "Venise" },
+  MXP: { img: "https://images.unsplash.com/photo-1520440229-6469a149ac59?w=800&q=80", flag: "🇮🇹", name: "Milan" },
+  BLQ: { img: "https://images.unsplash.com/photo-1564420228450-d5b02e590fb8?w=800&q=80", flag: "🇮🇹", name: "Bologne" },
+  CTA: { img: "https://images.unsplash.com/photo-1523531294919-4bcd7c65ef41?w=800&q=80", flag: "🇮🇹", name: "Catane" },
+  CAG: { img: "https://images.unsplash.com/photo-1523531294919-4bcd7c65ef41?w=800&q=80", flag: "🇮🇹", name: "Cagliari" },
+  OLB: { img: "https://images.unsplash.com/photo-1523531294919-4bcd7c65ef41?w=800&q=80", flag: "🇮🇹", name: "Olbia" },
+  BRI: { img: "https://images.unsplash.com/photo-1523531294919-4bcd7c65ef41?w=800&q=80", flag: "🇮🇹", name: "Bari" },
+  // Grèce
+  ATH: { img: "https://images.unsplash.com/photo-1555993539-1732b0258235?w=800&q=80", flag: "🇬🇷", name: "Athènes" },
+  HER: { img: "https://images.unsplash.com/photo-1570077188670-e3a8d69ac5ff?w=800&q=80", flag: "🇬🇷", name: "Crète" },
+  JTR: { img: "https://images.unsplash.com/photo-1570077188670-e3a8d69ac5ff?w=800&q=80", flag: "🇬🇷", name: "Santorin" },
+  JMK: { img: "https://images.unsplash.com/photo-1570077188670-e3a8d69ac5ff?w=800&q=80", flag: "🇬🇷", name: "Mykonos" },
+  RHO: { img: "https://images.unsplash.com/photo-1570077188670-e3a8d69ac5ff?w=800&q=80", flag: "🇬🇷", name: "Rhodes" },
+  CFU: { img: "https://images.unsplash.com/photo-1570077188670-e3a8d69ac5ff?w=800&q=80", flag: "🇬🇷", name: "Corfou" },
+  SKG: { img: "https://images.unsplash.com/photo-1555993539-1732b0258235?w=800&q=80", flag: "🇬🇷", name: "Thessalonique" },
+  // Europe centrale
+  PRG: { img: "https://images.unsplash.com/photo-1519677100203-a0e668c92439?w=800&q=80", flag: "🇨🇿", name: "Prague" },
+  BUD: { img: "https://images.unsplash.com/photo-1551867633-194f125bddfa?w=800&q=80", flag: "🇭🇺", name: "Budapest" },
+  VIE: { img: "https://images.unsplash.com/photo-1516550893923-42d28e5677af?w=800&q=80", flag: "🇦🇹", name: "Vienne" },
+  KRK: { img: "https://images.unsplash.com/photo-1519197924294-4ba991a11128?w=800&q=80", flag: "🇵🇱", name: "Cracovie" },
+  WAW: { img: "https://images.unsplash.com/photo-1519197924294-4ba991a11128?w=800&q=80", flag: "🇵🇱", name: "Varsovie" },
+  SOF: { img: "https://images.unsplash.com/photo-1520939817895-060bdaf4fe1b?w=800&q=80", flag: "🇧🇬", name: "Sofia" },
+  ZAG: { img: "https://images.unsplash.com/photo-1555990793-da11153b2473?w=800&q=80", flag: "🇭🇷", name: "Zagreb" },
+  // Europe du Nord & Ouest
+  AMS: { img: "https://images.unsplash.com/photo-1534351590666-13e3e96b5017?w=800&q=80", flag: "🇳🇱", name: "Amsterdam" },
   BER: { img: "https://images.unsplash.com/photo-1587330979470-3016b6702d89?w=800&q=80", flag: "🇩🇪", name: "Berlin" },
   EDI: { img: "https://images.unsplash.com/photo-1506377585622-bedcbb027afc?w=800&q=80", flag: "🇬🇧", name: "Édimbourg" },
   DUB: { img: "https://images.unsplash.com/photo-1518005020951-eccb494ad742?w=800&q=80", flag: "🇮🇪", name: "Dublin" },
-  VCE: { img: "https://images.unsplash.com/photo-1534113416831-ed75ddca41c0?w=800&q=80", flag: "🇮🇹", name: "Venise" },
-  JFK: { img: "https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?w=800&q=80", flag: "🇺🇸", name: "New York" },
-  BKK: { img: "https://images.unsplash.com/photo-1508009603885-50cf7c579365?w=800&q=80", flag: "🇹🇭", name: "Bangkok" },
+  CPH: { img: "https://images.unsplash.com/photo-1513622470522-26c3c8a854bc?w=800&q=80", flag: "🇩🇰", name: "Copenhague" },
+  HEL: { img: "https://images.unsplash.com/photo-1538332576228-eb5b4c4de6f5?w=800&q=80", flag: "🇫🇮", name: "Helsinki" },
+  OSL: { img: "https://images.unsplash.com/photo-1502781252888-9143f38c5269?w=800&q=80", flag: "🇳🇴", name: "Oslo" },
+  ARN: { img: "https://images.unsplash.com/photo-1509356843151-3e7d96241e11?w=800&q=80", flag: "🇸🇪", name: "Stockholm" },
+  BRU: { img: "https://images.unsplash.com/photo-1559113202-c916b8e44373?w=800&q=80", flag: "🇧🇪", name: "Bruxelles" },
+  GVA: { img: "https://images.unsplash.com/photo-1504194921103-f8b80cadd5e4?w=800&q=80", flag: "🇨🇭", name: "Genève" },
+  ZRH: { img: "https://images.unsplash.com/photo-1504194921103-f8b80cadd5e4?w=800&q=80", flag: "🇨🇭", name: "Zurich" },
+  // Baltes
+  TLL: { img: "https://images.unsplash.com/photo-1560969184-10fe8719e047?w=800&q=80", flag: "🇪🇪", name: "Tallinn" },
+  RIX: { img: "https://images.unsplash.com/photo-1560969184-10fe8719e047?w=800&q=80", flag: "🇱🇻", name: "Riga" },
+  VNO: { img: "https://images.unsplash.com/photo-1560969184-10fe8719e047?w=800&q=80", flag: "🇱🇹", name: "Vilnius" },
+  // Turquie & Balkans
+  IST: { img: "https://images.unsplash.com/photo-1524231757912-21f4fe3a7200?w=800&q=80", flag: "🇹🇷", name: "Istanbul" },
+  SAW: { img: "https://images.unsplash.com/photo-1524231757912-21f4fe3a7200?w=800&q=80", flag: "🇹🇷", name: "Istanbul" },
+  DBV: { img: "https://images.unsplash.com/photo-1555990793-da11153b2473?w=800&q=80", flag: "🇭🇷", name: "Dubrovnik" },
+  SPU: { img: "https://images.unsplash.com/photo-1555990793-da11153b2473?w=800&q=80", flag: "🇭🇷", name: "Split" },
+  TIV: { img: "https://images.unsplash.com/photo-1555990793-da11153b2473?w=800&q=80", flag: "🇲🇪", name: "Tivat" },
+  // Maghreb & Moyen-Orient
+  RAK: { img: "https://images.unsplash.com/photo-1597212618440-806262de4f6b?w=800&q=80", flag: "🇲🇦", name: "Marrakech" },
+  CMN: { img: "https://images.unsplash.com/photo-1597212618440-806262de4f6b?w=800&q=80", flag: "🇲🇦", name: "Casablanca" },
+  TUN: { img: "https://images.unsplash.com/photo-1605000797499-95a51c5269ae?w=800&q=80", flag: "🇹🇳", name: "Tunis" },
+  CAI: { img: "https://images.unsplash.com/photo-1572252009286-268acec5ca0a?w=800&q=80", flag: "🇪🇬", name: "Le Caire" },
+  SSH: { img: "https://images.unsplash.com/photo-1539768942893-daf53e736b68?w=800&q=80", flag: "🇪🇬", name: "Charm el-Cheikh" },
+  HRG: { img: "https://images.unsplash.com/photo-1539768942893-daf53e736b68?w=800&q=80", flag: "🇪🇬", name: "Hurghada" },
+  TLV: { img: "https://images.unsplash.com/photo-1544967082-d9d25d867d66?w=800&q=80", flag: "🇮🇱", name: "Tel Aviv" },
   DXB: { img: "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=800&q=80", flag: "🇦🇪", name: "Dubaï" },
+  // Canaries
+  TFS: { img: "https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800&q=80", flag: "🇪🇸", name: "Tenerife" },
+  LPA: { img: "https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800&q=80", flag: "🇪🇸", name: "Las Palmas" },
+  FUE: { img: "https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800&q=80", flag: "🇪🇸", name: "Fuerteventura" },
+  ACE: { img: "https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800&q=80", flag: "🇪🇸", name: "Lanzarote" },
+  // Long-courrier
+  JFK: { img: "https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?w=800&q=80", flag: "🇺🇸", name: "New York" },
+  MIA: { img: "https://images.unsplash.com/photo-1506966953602-c20cc11f75e3?w=800&q=80", flag: "🇺🇸", name: "Miami" },
+  LAX: { img: "https://images.unsplash.com/photo-1534190760961-74e8c1c5c3da?w=800&q=80", flag: "🇺🇸", name: "Los Angeles" },
+  YUL: { img: "https://images.unsplash.com/photo-1519178614-68673b201f36?w=800&q=80", flag: "🇨🇦", name: "Montréal" },
+  BKK: { img: "https://images.unsplash.com/photo-1508009603885-50cf7c579365?w=800&q=80", flag: "🇹🇭", name: "Bangkok" },
   NRT: { img: "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=800&q=80", flag: "🇯🇵", name: "Tokyo" },
+  HND: { img: "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=800&q=80", flag: "🇯🇵", name: "Tokyo" },
+  ICN: { img: "https://images.unsplash.com/photo-1517154421773-0529f29ea451?w=800&q=80", flag: "🇰🇷", name: "Séoul" },
+  HKG: { img: "https://images.unsplash.com/photo-1536599018102-9f803c140fc1?w=800&q=80", flag: "🇭🇰", name: "Hong Kong" },
+  SIN: { img: "https://images.unsplash.com/photo-1525625293386-3f8f99389edd?w=800&q=80", flag: "🇸🇬", name: "Singapour" },
+  KUL: { img: "https://images.unsplash.com/photo-1596422846543-75c6fc197f07?w=800&q=80", flag: "🇲🇾", name: "Kuala Lumpur" },
+  DEL: { img: "https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=800&q=80", flag: "🇮🇳", name: "Delhi" },
+  BOM: { img: "https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=800&q=80", flag: "🇮🇳", name: "Mumbai" },
+  SYD: { img: "https://images.unsplash.com/photo-1506973035872-a4ec16b8e8d9?w=800&q=80", flag: "🇦🇺", name: "Sydney" },
+  GIG: { img: "https://images.unsplash.com/photo-1483729558449-99ef09a8c325?w=800&q=80", flag: "🇧🇷", name: "Rio" },
+  EZE: { img: "https://images.unsplash.com/photo-1589909202802-8f4aadce1849?w=800&q=80", flag: "🇦🇷", name: "Buenos Aires" },
+  BOG: { img: "https://images.unsplash.com/photo-1568635773674-08e1e25f3e86?w=800&q=80", flag: "🇨🇴", name: "Bogota" },
+  LIM: { img: "https://images.unsplash.com/photo-1526392060635-9d6019884377?w=800&q=80", flag: "🇵🇪", name: "Lima" },
+  CUN: { img: "https://images.unsplash.com/photo-1510097467424-192d713fd8b2?w=800&q=80", flag: "🇲🇽", name: "Cancun" },
+  PUJ: { img: "https://images.unsplash.com/photo-1510097467424-192d713fd8b2?w=800&q=80", flag: "🇩🇴", name: "Punta Cana" },
+  CPT: { img: "https://images.unsplash.com/photo-1580060839134-75a5edca2e99?w=800&q=80", flag: "🇿🇦", name: "Le Cap" },
+  JNB: { img: "https://images.unsplash.com/photo-1580060839134-75a5edca2e99?w=800&q=80", flag: "🇿🇦", name: "Johannesburg" },
+  ZNZ: { img: "https://images.unsplash.com/photo-1547471080-7cc2caa01a7e?w=800&q=80", flag: "🇹🇿", name: "Zanzibar" },
+  MLE: { img: "https://images.unsplash.com/photo-1514282401047-d79a71a590e8?w=800&q=80", flag: "🇲🇻", name: "Maldives" },
+  MRU: { img: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80", flag: "🇲🇺", name: "Maurice" },
+  RUN: { img: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80", flag: "🇷🇪", name: "La Réunion" },
 };
 
-const DEFAULT_DESTINATION_IMAGE = "https://images.unsplash.com/photo-1488085061387-422e29b40080?w=800&q=80";
+// Fallback = generic aerial travel photo (not champagne!)
+const DEFAULT_DESTINATION_IMAGE = "https://images.unsplash.com/photo-1436491865332-7a61a109db05?w=800&q=80";
 
 function destinationMeta(code: string) {
   return DESTINATION_IMAGES[code] || { img: DEFAULT_DESTINATION_IMAGE, flag: "✈️", name: code };
@@ -322,6 +405,10 @@ const faqSchema = {
 export default function Landing() {
   const router = useRouter();
   const [recentDeals, setRecentDeals] = useState<FlightDeal[]>([]);
+  const [destFilter, setDestFilter] = useState<string>("all");
+
+  const availableDests = Array.from(new Set(recentDeals.map(d => d.destination)));
+  const filteredDeals = destFilter === "all" ? recentDeals : recentDeals.filter(d => d.destination === destFilter);
   const [dealsUpdatedAt, setDealsUpdatedAt] = useState<string | null>(null);
 
   useEffect(() => {
@@ -541,7 +628,7 @@ export default function Landing() {
       {recentDeals.length > 0 && (
         <section id="deals" className="py-12 md:py-24">
           <div className="max-w-6xl mx-auto px-4 md:px-5">
-            <div className="flex items-end justify-between mb-10">
+            <div className="flex items-end justify-between mb-6">
               <div>
                 <motion.div
                   initial={{ opacity: 0 }}
@@ -563,8 +650,40 @@ export default function Landing() {
               </Link>
             </div>
 
+            {/* Destination filter pills */}
+            <div className="flex gap-2 mb-8 overflow-x-auto pb-2 scrollbar-hide">
+              <button
+                onClick={() => setDestFilter("all")}
+                className="shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all border-2"
+                style={{
+                  borderColor: destFilter === "all" ? "#FF6B47" : "#F0E6D8",
+                  background: destFilter === "all" ? "#FF6B47" : "#FFFEF9",
+                  color: destFilter === "all" ? "#fff" : "#0A1F3D",
+                }}
+              >
+                Toutes
+              </button>
+              {availableDests.map((code) => {
+                const meta = destinationMeta(code);
+                return (
+                  <button
+                    key={code}
+                    onClick={() => setDestFilter(code)}
+                    className="shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all border-2"
+                    style={{
+                      borderColor: destFilter === code ? "#FF6B47" : "#F0E6D8",
+                      background: destFilter === code ? "#FF6B47" : "#FFFEF9",
+                      color: destFilter === code ? "#fff" : "#0A1F3D",
+                    }}
+                  >
+                    {meta.flag} {meta.name}
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-7">
-              {recentDeals.map((d, i) => (
+              {filteredDeals.map((d, i) => (
                 <LandingDealCard key={d.id} deal={d} i={i} />
               ))}
             </div>
