@@ -771,7 +771,6 @@ async def create_checkout(user: dict = Depends(get_current_user)):
             discounts=[{"coupon": settings.STRIPE_COUPON_ID}] if settings.STRIPE_COUPON_ID else [],
             success_url="https://globegenius.app/home?payment=success",
             cancel_url="https://globegenius.app/home?payment=cancel",
-            allow_promotion_codes=True,
         )
 
         return {"checkout_url": session.url, "session_id": session.id}
