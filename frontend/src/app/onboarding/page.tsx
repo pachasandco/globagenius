@@ -347,8 +347,8 @@ export default function OnboardingPage() {
               </div>
               {showUpsellBanner && !isPremium && (
                 <div className="mt-3 bg-[#FFF1EC] border border-[#FF6B47] rounded-xl p-3 text-sm text-[#0A1F3D]/70">
-                  💎 Les seuils 40% et plus sont réservés aux abonnés Premium.{" "}
-                  <a href="/home" className="underline font-semibold">Passer en Premium</a>
+                  💎 Les deals -30% et plus sont réservés Premium. 29€/an, remboursé dès le 1er voyage.{" "}
+                  <a href="/home" className="underline font-semibold">Débloquer Premium →</a>
                 </div>
               )}
             </div>

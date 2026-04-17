@@ -199,7 +199,7 @@ export default function Dashboard() {
           <div className="bg-[#FFFEF9] border border-[#FF6B47] rounded-xl p-4 mb-6 flex items-center justify-between">
             <div>
               <div className="font-semibold text-sm text-[#0A1F3D]">Deals Premium — vols à -40% et plus</div>
-              <div className="text-xs text-[#0A1F3D]/70 mt-0.5">Les plus grosses anomalies de prix détectées. Réservation directe. Abonnement à 2,99€/mois.</div>
+              <div className="text-xs text-[#0A1F3D]/70 mt-0.5">Les plus grosses anomalies de prix détectées. Réservation directe. 29€/an — remboursé dès le 1er voyage.</div>
             </div>
             <span className="bg-amber-400 text-amber-900 text-xs font-bold px-3 py-1.5 rounded-full shrink-0">PREMIUM</span>
           </div>
@@ -208,7 +208,7 @@ export default function Dashboard() {
         {activeTab === "free" && (
           <div className="bg-cyan-50 border border-cyan-100 rounded-xl p-4 mb-6">
             <div className="font-semibold text-sm text-cyan-900">Deals Gratuits — vols à -20% à -39%</div>
-            <div className="text-xs text-cyan-700 mt-0.5">De bonnes affaires visibles ici sans engagement. Passez en Premium pour débloquer les -40% et plus et les alertes Telegram.</div>
+            <div className="text-xs text-cyan-700 mt-0.5">Deals jusqu'à -29% visibles gratuitement. Passez en Premium (29€/an) pour débloquer les -30% et plus.</div>
           </div>
         )}
 

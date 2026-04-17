@@ -120,7 +120,7 @@ function FlightDealCard({ deal }: { deal: FlightDeal }) {
       {/* CTA footer */}
       {locked ? (
         <div className="bg-[#FFF1EC] border border-[#FF6B47]/30 rounded-xl px-3 py-2.5 text-xs text-[#E55A38] font-medium text-center">
-          💎 {isPremium ? "Réservé aux abonnés Premium" : "Connectez-vous pour voir le prix"}
+          💎 {isPremium ? "Réservé aux abonnés Premium" : "Connectez-vous pour débloquer ce deal"}
         </div>
       ) : deal.source_url ? (
         <a
@@ -300,12 +300,13 @@ export default function HomePage() {
           <div className="mb-6 bg-[#FFFEF9] border border-[#FF6B47] rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-lg">⭐</span>
-                <h3 className="font-semibold">Passez en Premium</h3>
+                <span className="text-xs font-bold bg-[#FF6B47] text-white px-2.5 py-0.5 rounded-full">🌸 Offre printemps -41%</span>
               </div>
+              <h3 className="font-semibold mb-1">Un seul deal suffit à rembourser votre année</h3>
               <p className="text-sm text-[#0A1F3D]/70">
-                Accédez aux deals à -40% et plus (erreurs de prix, flash sales), alertes Telegram temps réel,
-                et packages vol+hôtel dès qu'un hôtel matche vos dates.
+                Tous les deals -30% et plus, erreurs de prix incluses. Alertes Telegram instantanées.
+                <span className="font-semibold"> 29€/an</span> <span className="line-through text-[#0A1F3D]/40">59€</span> — soit 2,42€/mois.
+                <span className="block mt-1 text-xs text-[#16A34A]">✅ Satisfait ou remboursé 14 jours</span>
               </p>
             </div>
             <button
@@ -324,7 +325,7 @@ export default function HomePage() {
               }}
               className="bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold px-6 py-3 rounded-xl text-sm shrink-0 transition-all"
             >
-              Passer en Premium — 2,99€/mois
+              Essayer Premium — 29€/an
             </button>
           </div>
         )}
@@ -363,14 +364,14 @@ export default function HomePage() {
                 onClick={() => setActiveTab("premium")}
                 className={`px-3 py-2 rounded-lg text-xs md:text-sm font-semibold transition-all ${activeTab === "premium" ? "bg-[#FF6B47] text-white shadow-sm" : "text-[#0A1F3D]/60 hover:text-[#0A1F3D]"}`}
               >
-                ⭐ Premium -{">"}40%
+                ⭐ Premium ≥30%
                 {premiumDeals.length > 0 && <span className="ml-1 bg-amber-100 text-amber-700 text-[10px] md:text-xs px-1.5 py-0.5 rounded-full">{premiumDeals.length}</span>}
               </button>
               <button
                 onClick={() => setActiveTab("free")}
                 className={`px-3 py-2 rounded-lg text-xs md:text-sm font-semibold transition-all ${activeTab === "free" ? "bg-[#FF6B47] text-white shadow-sm" : "text-[#0A1F3D]/60 hover:text-[#0A1F3D]"}`}
               >
-                🆓 Gratuit -20 à -39%
+                🆓 Gratuit -20 à -29%
                 {freeDeals.length > 0 && <span className="ml-1 bg-gray-200 text-gray-600 text-[10px] md:text-xs px-1.5 py-0.5 rounded-full">{freeDeals.length}</span>}
               </button>
             </div>
@@ -385,7 +386,7 @@ export default function HomePage() {
                   key={val}
                   type="button"
                   onClick={() => {
-                    if (!isPremium && val >= 40) {
+                    if (!isPremium && val >= 30) {
                       setShowUpsellBanner(true);
                       return;
                     }
@@ -416,7 +417,7 @@ export default function HomePage() {
             </div>
             {showUpsellBanner && !isPremium && (
               <div className="mt-3 bg-[#FFF1EC] border border-[#FF6B47] rounded-xl p-3 text-sm text-[#0A1F3D]/70">
-                💎 Les seuils 40% et plus sont réservés aux abonnés Premium. Passez en Premium pour débloquer les erreurs de prix.
+                💎 Les deals -30% et plus sont réservés Premium. <span className="font-semibold">29€/an, remboursé dès le 1er voyage.</span>
               </div>
             )}
           </div>
