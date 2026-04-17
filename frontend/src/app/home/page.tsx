@@ -251,6 +251,11 @@ export default function HomePage() {
   async function handleCheckout() {
     try {
       const token = localStorage.getItem("gg_token");
+      if (!token) {
+        alert("Session expirée. Veuillez vous reconnecter.");
+        router.push("/login");
+        return;
+      }
       const res = await fetch(`${API_URL}/api/stripe/create-checkout`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -258,8 +263,14 @@ export default function HomePage() {
       const data = await res.json();
       if (data.checkout_url) {
         window.location.href = data.checkout_url;
+      } else {
+        console.error("Stripe checkout error:", data);
+        alert(data.detail || "Erreur lors de la création du paiement. Réessayez.");
       }
-    } catch { /* ignore */ }
+    } catch (e) {
+      console.error("Checkout failed:", e);
+      alert("Erreur de connexion au serveur. Réessayez.");
+    }
   }
 
   function handleLogout() {
@@ -313,19 +324,7 @@ export default function HomePage() {
               </p>
             </div>
             <button
-              onClick={async () => {
-                try {
-                  const token = localStorage.getItem("gg_token");
-                  const res = await fetch(`${API_URL}/api/stripe/create-checkout`, {
-                    method: "POST",
-                    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-                  });
-                  const data = await res.json();
-                  if (data.checkout_url) {
-                    window.location.href = data.checkout_url;
-                  }
-                } catch { /* ignore */ }
-              }}
+              onClick={handleCheckout}
               className="bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold px-6 py-3 rounded-xl text-sm shrink-0 transition-all"
             >
               Essayer Premium — 29€/an
