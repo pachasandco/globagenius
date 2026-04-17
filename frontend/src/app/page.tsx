@@ -224,11 +224,8 @@ export default function Landing() {
 
       {/* ── NAVBAR ── */}
       <nav className="sticky top-0 z-50 flex items-center justify-between px-6 sm:px-12 py-4 bg-[var(--color-cream)]/95 backdrop-blur-sm border-b border-[var(--color-sand)]">
-        <Link href="/" className="flex items-end gap-2">
-          <img src="/globe1.png" alt="Globe Genius" className="w-9 h-9 shrink-0 object-contain" />
-          <span className="font-[family-name:var(--font-dm-serif)] text-lg leading-none">
-            Globe<span className="text-[var(--color-coral)]">Genius</span>
-          </span>
+        <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-lg leading-none">
+          Globe<span className="text-[var(--color-coral)]">Genius</span>
         </Link>
         <div className="flex items-center gap-6 text-sm">
           <a href="#comment-ca-marche" className="hidden sm:inline text-[var(--color-ink)] hover:text-[var(--color-coral)] transition-colors">Comment ça marche</a>
@@ -302,7 +299,7 @@ export default function Landing() {
       {/* ── DEALS PASSÉS ── */}
       <section className="py-16 px-6 sm:px-12 bg-[var(--color-cream)] border-t border-[var(--color-sand)]">
         <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-[var(--color-ink)] text-center mb-2">
-          Des deals comme ceux-là, on en trouve tous les jours
+          Ne cherchez plus, c&apos;est nous qui trouvons
         </h2>
         <p className="text-center text-gray-400 text-sm mb-10">
           Exemples de vrais deals détectés par Globe Genius ces dernières semaines.
