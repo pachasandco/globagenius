@@ -19,22 +19,22 @@ const DESTINATION_IMAGES: Record<string, { img: string; flag: string; name: stri
   // Espagne
   BCN: { img: "https://images.unsplash.com/photo-1583422409516-2895a77efded?w=800&q=80", flag: "🇪🇸", name: "Barcelone" },
   MAD: { img: "https://images.unsplash.com/photo-1539037116277-4db20889f2d4?w=800&q=80", flag: "🇪🇸", name: "Madrid" },
-  AGP: { img: "https://images.unsplash.com/photo-1592820685916-2c1a50e5cf28?w=800&q=80", flag: "🇪🇸", name: "Malaga" },
-  PMI: { img: "https://images.unsplash.com/photo-1575375082828-8d1e2c5d7b06?w=800&q=80", flag: "🇪🇸", name: "Majorque" },
+  AGP: { img: "https://images.unsplash.com/photo-1509840841025-9088ba78a826?w=800&q=80", flag: "🇪🇸", name: "Malaga" },
+  PMI: { img: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80", flag: "🇪🇸", name: "Majorque" },
   IBZ: { img: "https://images.unsplash.com/photo-1534258936925-c58bed479fcb?w=800&q=80", flag: "🇪🇸", name: "Ibiza" },
-  VLC: { img: "https://images.unsplash.com/photo-1599486761929-c5cd9f9b3a9f?w=800&q=80", flag: "🇪🇸", name: "Valence" },
+  VLC: { img: "https://images.unsplash.com/photo-1544531586-fde5298cdd40?w=800&q=80", flag: "🇪🇸", name: "Valence" },
   SVQ: { img: "https://images.unsplash.com/photo-1515443961218-a51367888e4b?w=800&q=80", flag: "🇪🇸", name: "Séville" },
-  ALC: { img: "https://images.unsplash.com/photo-1592820685916-2c1a50e5cf28?w=800&q=80", flag: "🇪🇸", name: "Alicante" },
+  ALC: { img: "https://images.unsplash.com/photo-1509840841025-9088ba78a826?w=800&q=80", flag: "🇪🇸", name: "Alicante" },
   // Italie
   FCO: { img: "https://images.unsplash.com/photo-1552832230-c0197dd311b5?w=800&q=80", flag: "🇮🇹", name: "Rome" },
   NAP: { img: "https://images.unsplash.com/photo-1547595628-c61a29f496f0?w=800&q=80", flag: "🇮🇹", name: "Naples" },
-  VCE: { img: "https://images.unsplash.com/photo-1534113416831-ed75ddca41c0?w=800&q=80", flag: "🇮🇹", name: "Venise" },
+  VCE: { img: "https://images.unsplash.com/photo-1514890547357-a9ee288728e0?w=800&q=80", flag: "🇮🇹", name: "Venise" },
   MXP: { img: "https://images.unsplash.com/photo-1520440229-6469a149ac59?w=800&q=80", flag: "🇮🇹", name: "Milan" },
-  BLQ: { img: "https://images.unsplash.com/photo-1564420228450-d5b02e590fb8?w=800&q=80", flag: "🇮🇹", name: "Bologne" },
-  CTA: { img: "https://images.unsplash.com/photo-1523531294919-4bcd7c65ef41?w=800&q=80", flag: "🇮🇹", name: "Catane" },
-  CAG: { img: "https://images.unsplash.com/photo-1523531294919-4bcd7c65ef41?w=800&q=80", flag: "🇮🇹", name: "Cagliari" },
-  OLB: { img: "https://images.unsplash.com/photo-1523531294919-4bcd7c65ef41?w=800&q=80", flag: "🇮🇹", name: "Olbia" },
-  BRI: { img: "https://images.unsplash.com/photo-1523531294919-4bcd7c65ef41?w=800&q=80", flag: "🇮🇹", name: "Bari" },
+  BLQ: { img: "https://images.unsplash.com/photo-1598135753163-6167c1a1ad65?w=800&q=80", flag: "🇮🇹", name: "Bologne" },
+  CTA: { img: "https://images.unsplash.com/photo-1533105079780-92b9be482077?w=800&q=80", flag: "🇮🇹", name: "Catane" },
+  CAG: { img: "https://images.unsplash.com/photo-1533105079780-92b9be482077?w=800&q=80", flag: "🇮🇹", name: "Cagliari" },
+  OLB: { img: "https://images.unsplash.com/photo-1533105079780-92b9be482077?w=800&q=80", flag: "🇮🇹", name: "Olbia" },
+  BRI: { img: "https://images.unsplash.com/photo-1533105079780-92b9be482077?w=800&q=80", flag: "🇮🇹", name: "Bari" },
   // Grèce
   ATH: { img: "https://images.unsplash.com/photo-1555993539-1732b0258235?w=800&q=80", flag: "🇬🇷", name: "Athènes" },
   HER: { img: "https://images.unsplash.com/photo-1570077188670-e3a8d69ac5ff?w=800&q=80", flag: "🇬🇷", name: "Crète" },
@@ -53,12 +53,12 @@ const DESTINATION_IMAGES: Record<string, { img: string; flag: string; name: stri
   ZAG: { img: "https://images.unsplash.com/photo-1555990793-da11153b2473?w=800&q=80", flag: "🇭🇷", name: "Zagreb" },
   // Europe du Nord & Ouest
   AMS: { img: "https://images.unsplash.com/photo-1534351590666-13e3e96b5017?w=800&q=80", flag: "🇳🇱", name: "Amsterdam" },
-  BER: { img: "https://images.unsplash.com/photo-1587330979470-3016b6702d89?w=800&q=80", flag: "🇩🇪", name: "Berlin" },
+  BER: { img: "https://images.unsplash.com/photo-1560969184-10fe8719e047?w=800&q=80", flag: "🇩🇪", name: "Berlin" },
   EDI: { img: "https://images.unsplash.com/photo-1506377585622-bedcbb027afc?w=800&q=80", flag: "🇬🇧", name: "Édimbourg" },
   DUB: { img: "https://images.unsplash.com/photo-1518005020951-eccb494ad742?w=800&q=80", flag: "🇮🇪", name: "Dublin" },
   CPH: { img: "https://images.unsplash.com/photo-1513622470522-26c3c8a854bc?w=800&q=80", flag: "🇩🇰", name: "Copenhague" },
   HEL: { img: "https://images.unsplash.com/photo-1538332576228-eb5b4c4de6f5?w=800&q=80", flag: "🇫🇮", name: "Helsinki" },
-  OSL: { img: "https://images.unsplash.com/photo-1502781252888-9143f38c5269?w=800&q=80", flag: "🇳🇴", name: "Oslo" },
+  OSL: { img: "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=800&q=80", flag: "🇳🇴", name: "Oslo" },
   ARN: { img: "https://images.unsplash.com/photo-1509356843151-3e7d96241e11?w=800&q=80", flag: "🇸🇪", name: "Stockholm" },
   BRU: { img: "https://images.unsplash.com/photo-1559113202-c916b8e44373?w=800&q=80", flag: "🇧🇪", name: "Bruxelles" },
   GVA: { img: "https://images.unsplash.com/photo-1504194921103-f8b80cadd5e4?w=800&q=80", flag: "🇨🇭", name: "Genève" },
@@ -78,8 +78,8 @@ const DESTINATION_IMAGES: Record<string, { img: string; flag: string; name: stri
   CMN: { img: "https://images.unsplash.com/photo-1597212618440-806262de4f6b?w=800&q=80", flag: "🇲🇦", name: "Casablanca" },
   TUN: { img: "https://images.unsplash.com/photo-1605000797499-95a51c5269ae?w=800&q=80", flag: "🇹🇳", name: "Tunis" },
   CAI: { img: "https://images.unsplash.com/photo-1572252009286-268acec5ca0a?w=800&q=80", flag: "🇪🇬", name: "Le Caire" },
-  SSH: { img: "https://images.unsplash.com/photo-1539768942893-daf53e736b68?w=800&q=80", flag: "🇪🇬", name: "Charm el-Cheikh" },
-  HRG: { img: "https://images.unsplash.com/photo-1539768942893-daf53e736b68?w=800&q=80", flag: "🇪🇬", name: "Hurghada" },
+  SSH: { img: "https://images.unsplash.com/photo-1519046904884-53103b34b206?w=800&q=80", flag: "🇪🇬", name: "Charm el-Cheikh" },
+  HRG: { img: "https://images.unsplash.com/photo-1519046904884-53103b34b206?w=800&q=80", flag: "🇪🇬", name: "Hurghada" },
   TLV: { img: "https://images.unsplash.com/photo-1544967082-d9d25d867d66?w=800&q=80", flag: "🇮🇱", name: "Tel Aviv" },
   DXB: { img: "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=800&q=80", flag: "🇦🇪", name: "Dubaï" },
   // Canaries
@@ -104,7 +104,7 @@ const DESTINATION_IMAGES: Record<string, { img: string; flag: string; name: stri
   SYD: { img: "https://images.unsplash.com/photo-1506973035872-a4ec16b8e8d9?w=800&q=80", flag: "🇦🇺", name: "Sydney" },
   GIG: { img: "https://images.unsplash.com/photo-1483729558449-99ef09a8c325?w=800&q=80", flag: "🇧🇷", name: "Rio" },
   EZE: { img: "https://images.unsplash.com/photo-1589909202802-8f4aadce1849?w=800&q=80", flag: "🇦🇷", name: "Buenos Aires" },
-  BOG: { img: "https://images.unsplash.com/photo-1568635773674-08e1e25f3e86?w=800&q=80", flag: "🇨🇴", name: "Bogota" },
+  BOG: { img: "https://images.unsplash.com/photo-1518638150340-f706e86654de?w=800&q=80", flag: "🇨🇴", name: "Bogota" },
   LIM: { img: "https://images.unsplash.com/photo-1526392060635-9d6019884377?w=800&q=80", flag: "🇵🇪", name: "Lima" },
   CUN: { img: "https://images.unsplash.com/photo-1510097467424-192d713fd8b2?w=800&q=80", flag: "🇲🇽", name: "Cancun" },
   PUJ: { img: "https://images.unsplash.com/photo-1510097467424-192d713fd8b2?w=800&q=80", flag: "🇩🇴", name: "Punta Cana" },
@@ -117,7 +117,7 @@ const DESTINATION_IMAGES: Record<string, { img: string; flag: string; name: stri
 };
 
 // Fallback = generic aerial travel photo (not champagne!)
-const DEFAULT_DESTINATION_IMAGE = "https://images.unsplash.com/photo-1436491865332-7a61a109db05?w=800&q=80";
+const DEFAULT_DESTINATION_IMAGE = "https://images.unsplash.com/photo-1500835556837-99ac94a94552?w=800&q=80";
 
 function destinationMeta(code: string) {
   return DESTINATION_IMAGES[code] || { img: DEFAULT_DESTINATION_IMAGE, flag: "✈️", name: code };
@@ -833,7 +833,7 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto px-4 md:px-5">
           <div className="relative rounded-3xl overflow-hidden">
             <img
-              src="https://images.unsplash.com/photo-1488085061387-422e29b40080?w=1920&q=80"
+              src="https://images.unsplash.com/photo-1500835556837-99ac94a94552?w=1920&q=80"
               alt="Travel"
               className="absolute inset-0 w-full h-full object-cover"
             />
