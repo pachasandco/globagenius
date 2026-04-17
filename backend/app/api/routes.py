@@ -372,7 +372,7 @@ def list_packages(
     else:
         query = query.gte("discount_pct", effective_floor).lt("discount_pct", discount_filter[2])
 
-    qi_resp = query.order("score", desc=True).limit(limit).execute()
+    qi_resp = query.order("score", desc=True).limit(limit * 3).execute()
     qualified = qi_resp.data or []
 
     if not qualified:
@@ -394,9 +394,16 @@ def list_packages(
     is_authenticated = user is not None
     is_premium = _is_premium_user(user)
 
+    # Dedup: same flight (origin+dest+dates) can appear multiple times
+    # across scrape runs. Keep the highest-score entry per route+dates.
+    seen_flights: set[str] = set()
     items = []
     for qi in qualified:
         flight = flights_by_id.get(qi.get("item_id")) or {}
+        dedup_key = f"{flight.get('origin','')}-{flight.get('destination','')}-{flight.get('departure_date','')}-{flight.get('return_date','')}"
+        if dedup_key in seen_flights:
+            continue
+        seen_flights.add(dedup_key)
         tier = qi.get("tier", "free")
 
         # Decide whether sensitive fields are visible for this deal
@@ -429,7 +436,7 @@ def list_packages(
             "locked": not unlocked,
         })
 
-    return {"items": items, "plan": plan}
+    return {"items": items[:limit], "plan": plan}
 
 
 @router.get("/api/packages/{package_id}")
