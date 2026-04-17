@@ -359,16 +359,8 @@ export default function HomePage() {
 
         {/* Deals section */}
         <div className="mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <div className="mb-4">
             <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl">Vos deals</h2>
-            {!isPremium && (
-              <button
-                onClick={handleCheckout}
-                className="bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold px-5 py-2.5 rounded-full text-sm transition-all self-start sm:self-auto"
-              >
-                Essayer Premium — 29€/an
-              </button>
-            )}
           </div>
 
           {loading && <div className="text-center py-12 text-gray-400">Chargement...</div>}
