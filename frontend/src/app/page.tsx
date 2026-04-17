@@ -491,9 +491,9 @@ export default function Landing() {
               </h1>
 
               <p className="text-[#0A1F3D]/70 text-base md:text-lg leading-relaxed mb-8 max-w-lg">
-                Lisbonne à <span className="bg-[#FFF1EC] text-[#FF6B47] font-semibold px-1.5 rounded">89€</span>,
-                Marrakech à <span className="bg-[#FFF1EC] text-[#FF6B47] font-semibold px-1.5 rounded">98€</span>,
-                Athènes à <span className="bg-[#FFF1EC] text-[#FF6B47] font-semibold px-1.5 rounded">156€</span>.
+                Lisbonne à <span className="bg-[#FFF1EC] text-[#FF6B47] font-semibold px-1.5 rounded">135€</span>,
+                Naples à <span className="bg-[#FFF1EC] text-[#FF6B47] font-semibold px-1.5 rounded">89€</span>,
+                Barcelone à <span className="bg-[#FFF1EC] text-[#FF6B47] font-semibold px-1.5 rounded">72€</span>.
                 Des <strong className="text-[#0A1F3D]">prix anormalement bas</strong>, vérifiés,
                 qui apparaissent parfois quelques heures avant de disparaître.
               </p>
@@ -593,7 +593,7 @@ export default function Landing() {
               {/* Message bubble */}
               <div className="p-5">
                 <div className="bg-[#2b3a4d] rounded-2xl rounded-tl-sm p-4 text-[13px] leading-relaxed">
-                  <div className="text-orange-400 font-bold mb-3">🟠 PROMO FLASH</div>
+                  <div className="text-orange-400 font-bold mb-3">🟡 BON DEAL</div>
                   <div className="text-gray-100 space-y-1.5">
                     <div>🌍 <span className="text-white">Paris → Lisbonne</span></div>
                     <div>📅 12 mai – 19 mai</div>
@@ -602,8 +602,8 @@ export default function Landing() {
                   </div>
                   <div className="mt-3 pt-3 border-t border-white/10">
                     <div className="text-white font-semibold">
-                      💰 89€ <span className="text-gray-400 font-normal">au lieu de ~181€</span>
-                      <span className="text-orange-400 ml-2">· 🔥 -51%</span>
+                      💰 135€ <span className="text-gray-400 font-normal">au lieu de ~190€</span>
+                      <span className="text-orange-400 ml-2">· 🔥 -29%</span>
                     </div>
                   </div>
                   <div className="mt-3 pt-3 border-t border-white/10">
