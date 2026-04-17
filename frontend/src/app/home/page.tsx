@@ -145,6 +145,8 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [isPremium, setIsPremium] = useState(false);
   const [activeTab, setActiveTab] = useState<"premium" | "free">("premium");
+  const [showAllDeals, setShowAllDeals] = useState(false);
+  const [destFilter, setDestFilter] = useState<string>("all");
   const [minDiscount, setMinDiscount] = useState<number>(20);
   const [userPrefs, setUserPrefs] = useState<UserPreferences | null>(null);
   const [showUpsellBanner, setShowUpsellBanner] = useState(false);
@@ -263,7 +265,12 @@ export default function HomePage() {
     router.push("/");
   }
 
-  const deals = activeTab === "premium" ? premiumDeals : freeDeals;
+  const allDeals = activeTab === "premium" ? premiumDeals : freeDeals;
+  const filteredByDest = destFilter === "all" ? allDeals : allDeals.filter(d => d.destination === destFilter);
+  const INITIAL_DEALS_COUNT = 6;
+  const deals = showAllDeals ? filteredByDest : filteredByDest.slice(0, INITIAL_DEALS_COUNT);
+  const hasMoreDeals = filteredByDest.length > INITIAL_DEALS_COUNT;
+  const availableDestinations = Array.from(new Set(allDeals.map(d => d.destination)));
 
   return (
     <div className="min-h-screen bg-[#FFF8F0]">
@@ -276,7 +283,7 @@ export default function HomePage() {
           </Link>
           <div className="hidden md:flex items-center gap-5 text-sm text-gray-500">
             <Link href="/home" className="text-gray-900 font-medium">Deals</Link>
-            <Link href="/articles" className="hover:text-gray-900 transition-colors">Articles</Link>
+            <a href="#guides" className="hover:text-gray-900 transition-colors">Guides</a>
           </div>
           <div className="flex items-center gap-2 md:gap-3">
             <span className="text-sm text-gray-400 hidden md:block">{email}</span>
@@ -430,26 +437,79 @@ export default function HomePage() {
             </div>
           )}
 
-          {!loading && deals.length > 0 && (
+          {!loading && deals.length > 0 && (<>
+            {/* Destination filter pills */}
+            {availableDestinations.length > 1 && (
+              <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
+                <button
+                  onClick={() => { setDestFilter("all"); setShowAllDeals(false); }}
+                  className="shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all border-2"
+                  style={{
+                    borderColor: destFilter === "all" ? "#FF6B47" : "#F0E6D8",
+                    background: destFilter === "all" ? "#FF6B47" : "#FFFEF9",
+                    color: destFilter === "all" ? "#fff" : "#0A1F3D",
+                  }}
+                >
+                  Toutes
+                </button>
+                {availableDestinations.map((code) => (
+                  <button
+                    key={code}
+                    onClick={() => { setDestFilter(code); setShowAllDeals(false); }}
+                    className="shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all border-2"
+                    style={{
+                      borderColor: destFilter === code ? "#FF6B47" : "#F0E6D8",
+                      background: destFilter === code ? "#FF6B47" : "#FFFEF9",
+                      color: destFilter === code ? "#fff" : "#0A1F3D",
+                    }}
+                  >
+                    {code}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
               {deals.map((deal) => (
                 <FlightDealCard key={deal.id} deal={deal} />
               ))}
             </div>
-          )}
+
+            {/* Show more button */}
+            {!showAllDeals && hasMoreDeals && (
+              <div className="text-center mt-8">
+                <button
+                  onClick={() => setShowAllDeals(true)}
+                  className="px-8 py-3 rounded-full border-2 border-[#FF6B47] text-[#FF6B47] font-semibold text-sm hover:bg-[#FF6B47] hover:text-white transition-all"
+                >
+                  Voir plus de deals ({filteredByDest.length - INITIAL_DEALS_COUNT} restants)
+                </button>
+              </div>
+            )}
+            {showAllDeals && hasMoreDeals && (
+              <div className="text-center mt-8">
+                <button
+                  onClick={() => setShowAllDeals(false)}
+                  className="px-6 py-2 rounded-full text-sm text-[#0A1F3D]/50 hover:text-[#0A1F3D] transition-colors"
+                >
+                  Voir moins
+                </button>
+              </div>
+            )}
+          </>)}
         </div>
 
-        {/* Articles section */}
+        {/* Guides section */}
         {articles.length > 0 && (
-          <div className="mb-8">
+          <div id="guides" className="mb-8">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl">Guides de voyage</h2>
-              <Link href="/articles" className="text-sm font-semibold text-cyan-600 hover:underline">
-                Tout voir →
-              </Link>
+              <span className="text-sm text-[#0A1F3D]/40">
+                {articles.length} guide{articles.length > 1 ? "s" : ""}
+              </span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {articles.slice(0, 4).map((article) => (
+              {articles.map((article) => (
                 <Link key={article.slug} href={`/articles/${article.slug}`} className="group">
                   <div className="relative aspect-[4/3] rounded-xl overflow-hidden mb-2">
                     <img src={article.cover_photo} alt={article.destination} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
@@ -564,11 +624,11 @@ export default function HomePage() {
 
         {/* Quick links */}
         <div className="grid sm:grid-cols-2 gap-4">
-          <Link href="/articles" className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md transition-shadow group">
+          <a href="#guides" className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md transition-shadow group">
             <div className="text-xl mb-1">✍️</div>
             <h3 className="font-semibold text-sm group-hover:text-cyan-600 transition-colors">Guides de destinations</h3>
             <p className="text-xs text-gray-400">Guides complets pour préparer votre voyage.</p>
-          </Link>
+          </a>
           <Link href="/onboarding" className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md transition-shadow group">
             <div className="text-xl mb-1">⚙️</div>
             <h3 className="font-semibold text-sm group-hover:text-cyan-600 transition-colors">Mes préférences</h3>

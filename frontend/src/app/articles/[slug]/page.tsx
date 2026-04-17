@@ -186,7 +186,7 @@ export default async function ArticlePage({
           </Link>
           <div className="flex items-center gap-2 md:gap-3">
             <Link
-              href="/articles"
+              href="/home#guides"
               className="text-sm text-gray-500 hover:text-gray-900"
             >
               ← Articles
