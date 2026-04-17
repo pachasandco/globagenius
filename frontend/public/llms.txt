@@ -16,13 +16,13 @@
 
 ## Pages principales
 
-- https://www.globegenius.app/ — Page d'accueil avec deals en temps réel
-- https://www.globegenius.app/articles — Guides de destinations
-- https://www.globegenius.app/articles/marrakech — Guide Marrakech
-- https://www.globegenius.app/articles/lisbonne — Guide Lisbonne
-- https://www.globegenius.app/articles/barcelone — Guide Barcelone
-- https://www.globegenius.app/articles/rome — Guide Rome
-- https://www.globegenius.app/signup — Inscription
+- https://globegenius.app/ — Page d'accueil avec deals en temps réel
+- https://globegenius.app/articles — Guides de destinations
+- https://globegenius.app/articles/marrakech — Guide Marrakech
+- https://globegenius.app/articles/lisbonne — Guide Lisbonne
+- https://globegenius.app/articles/barcelone — Guide Barcelone
+- https://globegenius.app/articles/rome — Guide Rome
+- https://globegenius.app/signup — Inscription
 
 ## Aéroports couverts
 
@@ -34,5 +34,5 @@ Lisbonne, Barcelone, Marrakech, Rome, Athènes, Prague, Budapest, Porto, Naples,
 
 ## Contact
 
-Site : https://www.globegenius.app
+Site : https://globegenius.app
 Telegram : Globe Genius Bot

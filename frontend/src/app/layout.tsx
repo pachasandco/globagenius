@@ -29,17 +29,17 @@ export const metadata: Metadata = {
     "vol pas cher Paris",
     "détecter deal vol",
   ],
-  metadataBase: new URL("https://www.globegenius.app"),
+  metadataBase: new URL("https://globegenius.app"),
   alternates: {},
   openGraph: {
     title: "Globe Genius — Vols à Prix Cassés | Alertes Telegram temps réel",
     description:
       "Détection des vols aller-retour à prix anormalement bas sur 8 aéroports français. Alertes Telegram dès qu'un deal est confirmé.",
-    url: "https://www.globegenius.app",
+    url: "https://globegenius.app",
     siteName: "Globe Genius",
     images: [
       {
-        url: "https://www.globegenius.app/og-image.png",
+        url: "https://globegenius.app/og-image.png",
         width: 1200,
         height: 630,
         alt: "Globe Genius — Vols à Prix Cassés",
@@ -53,7 +53,7 @@ export const metadata: Metadata = {
     title: "Globe Genius — Vols à Prix Cassés",
     description:
       "Détection de vols aller-retour à prix anormalement bas. Alertes Telegram temps réel. 8 aéroports français.",
-    images: ["https://www.globegenius.app/og-image.png"],
+    images: ["https://globegenius.app/og-image.png"],
     creator: "@globegenius",
   },
   robots: {

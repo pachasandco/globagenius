@@ -1,67 +1,67 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://www.globegenius.app/</loc>
+    <loc>https://globegenius.app/</loc>
     <lastmod>2026-04-10</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://www.globegenius.app/signup</loc>
+    <loc>https://globegenius.app/signup</loc>
     <lastmod>2026-04-10</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://www.globegenius.app/login</loc>
+    <loc>https://globegenius.app/login</loc>
     <lastmod>2026-04-10</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://www.globegenius.app/articles/marrakech</loc>
+    <loc>https://globegenius.app/articles/marrakech</loc>
     <lastmod>2026-04-10</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.globegenius.app/articles/lisbonne</loc>
+    <loc>https://globegenius.app/articles/lisbonne</loc>
     <lastmod>2026-04-10</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.globegenius.app/articles/barcelone</loc>
+    <loc>https://globegenius.app/articles/barcelone</loc>
     <lastmod>2026-04-10</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.globegenius.app/articles/rome</loc>
+    <loc>https://globegenius.app/articles/rome</loc>
     <lastmod>2026-04-10</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.globegenius.app/home</loc>
+    <loc>https://globegenius.app/home</loc>
     <lastmod>2026-04-10</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://www.globegenius.app/conditions</loc>
+    <loc>https://globegenius.app/conditions</loc>
     <lastmod>2026-04-17</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>
   <url>
-    <loc>https://www.globegenius.app/confidentialite</loc>
+    <loc>https://globegenius.app/confidentialite</loc>
     <lastmod>2026-04-17</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>
   <url>
-    <loc>https://www.globegenius.app/mentions-legales</loc>
+    <loc>https://globegenius.app/mentions-legales</loc>
     <lastmod>2026-04-17</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>

@@ -80,12 +80,12 @@ export async function generateMetadata({
     title,
     description,
     alternates: {
-      canonical: `https://www.globegenius.app/articles/${slug}`,
+      canonical: `https://globegenius.app/articles/${slug}`,
     },
     openGraph: {
       title,
       description,
-      url: `https://www.globegenius.app/articles/${slug}`,
+      url: `https://globegenius.app/articles/${slug}`,
       siteName: "Globe Genius",
       images: article.cover_photo
         ? [{ url: article.cover_photo, width: 1200, height: 630, alt: article.title }]
@@ -121,19 +121,19 @@ export default async function ArticlePage({
     headline: article.title,
     description: article.subtitle,
     image: article.cover_photo,
-    url: `https://www.globegenius.app/articles/${slug}`,
+    url: `https://globegenius.app/articles/${slug}`,
     datePublished: "2026-04-10",
     author: {
       "@type": "Organization",
       name: "Globe Genius",
-      url: "https://www.globegenius.app",
+      url: "https://globegenius.app",
     },
     publisher: {
       "@type": "Organization",
       name: "Globe Genius",
       logo: {
         "@type": "ImageObject",
-        url: "https://www.globegenius.app/globe1.png",
+        url: "https://globegenius.app/globe1.png",
       },
     },
     inLanguage: "fr-FR",
@@ -148,19 +148,19 @@ export default async function ArticlePage({
         "@type": "ListItem",
         position: 1,
         name: "Accueil",
-        item: "https://www.globegenius.app",
+        item: "https://globegenius.app",
       },
       {
         "@type": "ListItem",
         position: 2,
         name: "Articles",
-        item: "https://www.globegenius.app/articles",
+        item: "https://globegenius.app/articles",
       },
       {
         "@type": "ListItem",
         position: 3,
         name: article.title,
-        item: `https://www.globegenius.app/articles/${slug}`,
+        item: `https://globegenius.app/articles/${slug}`,
       },
     ],
   });

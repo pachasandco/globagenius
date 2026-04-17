@@ -360,12 +360,12 @@ function TelegramHeroMockup({ deals }: { deals: FlightDeal[] }) {
 const organizationSchema = {
   "@context": "https://schema.org",
   "@type": "Organization",
-  "@id": "https://www.globegenius.app/#organization",
+  "@id": "https://globegenius.app/#organization",
   name: "Globe Genius",
-  url: "https://www.globegenius.app",
+  url: "https://globegenius.app",
   logo: {
     "@type": "ImageObject",
-    url: "https://www.globegenius.app/globe1.png",
+    url: "https://globegenius.app/globe1.png",
     width: 512,
     height: 512,
   },
@@ -382,13 +382,13 @@ const organizationSchema = {
 const websiteSchema = {
   "@context": "https://schema.org",
   "@type": "WebSite",
-  "@id": "https://www.globegenius.app/#website",
+  "@id": "https://globegenius.app/#website",
   name: "Globe Genius",
-  url: "https://www.globegenius.app",
+  url: "https://globegenius.app",
   description:
     "Deals vols à prix cassés. Vols aller-retour avec anomalies de prix confirmées, alertes Telegram.",
   inLanguage: "fr-FR",
-  publisher: { "@id": "https://www.globegenius.app/#organization" },
+  publisher: { "@id": "https://globegenius.app/#organization" },
 };
 
 const faqSchema = {

@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Mentions légales — Globe Genius",
   description: "Mentions légales et conditions générales d'utilisation du service Globe Genius.",
-  alternates: { canonical: "https://www.globegenius.app/mentions-legales" },
+  alternates: { canonical: "https://globegenius.app/mentions-legales" },
 };
 
 export default function MentionsLegales() {

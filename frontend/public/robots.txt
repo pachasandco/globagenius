@@ -13,4 +13,4 @@ User-agent: ClaudeBot
 Allow: /
 Allow: /articles/
 
-Sitemap: https://www.globegenius.app/sitemap.xml
+Sitemap: https://globegenius.app/sitemap.xml

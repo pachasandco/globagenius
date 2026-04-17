@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Conditions Générales de Vente — Globe Genius",
   description: "Conditions générales de vente et d'utilisation du service Globe Genius Premium.",
-  alternates: { canonical: "https://www.globegenius.app/conditions" },
+  alternates: { canonical: "https://globegenius.app/conditions" },
 };
 
 export default function Conditions() {
