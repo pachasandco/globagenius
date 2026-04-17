@@ -16,7 +16,7 @@ class Settings:
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
     TRAVELPAYOUTS_TOKEN: str = os.getenv("TRAVELPAYOUT_API_KEY", "")
     STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
-    STRIPE_PRICE_ID: str = os.getenv("STRIPE_PRICE_ID", "price_1TKhmOD7eB0iNRMdzxmxjRJa")
+    STRIPE_PRICE_ID: str = os.getenv("STRIPE_PRICE_ID", "price_1TN6eFDBicGh3pGqHpuZO6Ym")
     STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
     STRIPE_COUPON_ID: str = os.getenv("STRIPE_COUPON_ID", "")
     APP_ENV: str = os.getenv("APP_ENV", "development")
