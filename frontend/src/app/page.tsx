@@ -132,7 +132,7 @@ const PAST_DEALS = [
 ];
 
 const faqs = [
-  { q: "Comment fonctionne Globe Genius ?", a: "On surveille en permanence les prix des vols au départ de 8 aéroports français. Dès qu\u2019on détecte une baisse de prix significative, on vous envoie une alerte sur Telegram avec tous les détails pour réserver." },
+  { q: "Comment fonctionne Globe Genius ?", a: "On surveille en permanence les prix des vols au départ de 9 aéroports français. Dès qu\u2019on détecte une baisse de prix significative, on vous envoie une alerte sur Telegram avec tous les détails pour réserver." },
   { q: "Quelle est la différence entre Gratuit et Premium ?", a: "En Gratuit, vous recevez les deals avec des réductions jusqu\u2019à -29%. En Premium, vous accédez à tous les deals (jusqu\u2019à -70%+), y compris les erreurs de prix des compagnies, avec des alertes prioritaires." },
   { q: "Comment fonctionne la garantie 14 jours ?", a: "Si Premium ne vous convient pas, contactez-nous dans les 14 jours suivant votre achat et on vous rembourse intégralement, sans question." },
   { q: "Les prix incluent-ils les bagages ?", a: "Les prix affichés sont ceux des compagnies aériennes. Les bagages en soute sont parfois inclus selon la compagnie et le tarif. On le précise dans chaque alerte quand l\u2019information est disponible." },
@@ -172,7 +172,7 @@ const organizationSchema = {
     height: 512,
   },
   description:
-    "Globe Genius détecte les vols aller-retour à prix anormalement bas sur les 8 aéroports français. Alertes Telegram dès qu\u2019une anomalie est confirmée.",
+    "Globe Genius détecte les vols aller-retour à prix anormalement bas sur les 9 aéroports français. Alertes Telegram dès qu\u2019une anomalie est confirmée.",
   sameAs: ["https://t.me/Globegenius_bot"],
   contactPoint: {
     "@type": "ContactPoint",
@@ -287,7 +287,7 @@ export default function Landing() {
           { value: "2 340+", label: "vols détectés" },
           { value: "-70%", label: "meilleur deal" },
           { value: "47", label: "deals en cours" },
-          { value: "8", label: "aéroports de départ" },
+          { value: "9", label: "aéroports de départ" },
         ].map((s) => (
           <div key={s.label} className="text-center">
             <div className="text-2xl font-extrabold text-[var(--color-ink)]">{s.value}</div>
@@ -354,7 +354,7 @@ export default function Landing() {
             {
               num: "1",
               title: "On surveille tous les vols au départ de la France",
-              desc: "Depuis 8 aéroports français, vers le monde entier. En continu, 24h/24.",
+              desc: "Depuis 9 aéroports français, vers le monde entier. En continu, 24h/24.",
             },
             {
               num: "2",
@@ -401,7 +401,7 @@ export default function Landing() {
             <div className="text-3xl font-extrabold text-[var(--color-ink)] mb-5">0€</div>
             <div className="text-sm text-gray-500 leading-loose mb-6">
               ✓ Deals jusqu&apos;à -29%<br />
-              ✓ 8 aéroports de départ<br />
+              ✓ 9 aéroports de départ<br />
               ✓ Alertes Telegram<br />
               <span className="text-gray-300">✗ Deals au-delà de -30%</span><br />
               <span className="text-gray-300">✗ Alertes prioritaires</span><br />
@@ -429,7 +429,7 @@ export default function Landing() {
             <div className="text-sm text-gray-400 leading-loose mb-6">
               ✓ <span className="text-white">Tous les deals, jusqu&apos;à -70%</span><br />
               ✓ <span className="text-white">Erreurs de prix des compagnies</span><br />
-              ✓ <span className="text-white">8 aéroports de départ</span><br />
+              ✓ <span className="text-white">9 aéroports de départ</span><br />
               ✓ <span className="text-white">Alertes Telegram prioritaires</span><br />
               ✓ <span className="text-white">Garantie satisfait 14 jours</span><br />
               <span className="text-[var(--color-forest)]">= 2,42€/mois</span>

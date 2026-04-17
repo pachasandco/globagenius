@@ -36,7 +36,7 @@ class Settings:
     MIN_SCORE_DIGEST: int = int(os.getenv("MIN_SCORE_DIGEST", "30"))
     DATA_FRESHNESS_HOURS: int = int(os.getenv("DATA_FRESHNESS_HOURS", "2"))
     MVP_AIRPORTS: list = field(default_factory=lambda: os.getenv(
-        "MVP_AIRPORTS", "CDG,ORY,LYS,MRS,NCE,BOD,NTE,TLS"
+        "MVP_AIRPORTS", "CDG,ORY,LYS,MRS,NCE,BOD,NTE,TLS,BVA"
     ).split(","))
     ADMIN_EMAILS: list = field(default_factory=lambda: [
         e.strip() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()

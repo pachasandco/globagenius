@@ -72,6 +72,13 @@ def _normalize_priced_entry(entry: dict) -> dict | None:
     if trip_duration_days < 1 or trip_duration_days > 12:
         return None
 
+    # Only keep flights departing between 1 and 8 months from now
+    now = datetime.now(timezone.utc)
+    min_departure = now + timedelta(days=30)
+    max_departure = now + timedelta(days=240)
+    if dep < min_departure or dep > max_departure:
+        return None
+
     origin = entry.get("origin_airport") or ""
     destination = entry.get("destination_airport") or ""
     if not origin or not destination:
