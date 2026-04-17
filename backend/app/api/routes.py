@@ -845,7 +845,7 @@ async def create_portal(user: dict = Depends(get_current_user)):
     try:
         session = stripe.billing_portal.Session.create(
             customer=customer_id,
-            return_url="https://www.globegenius.app/home",
+            return_url="https://globegenius.app/home",
         )
         return {"portal_url": session.url}
     except stripe.StripeError as e:
