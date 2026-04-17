@@ -828,6 +828,77 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* ── PRICING ── */}
+      <section className="py-16 md:py-24">
+        <div className="max-w-4xl mx-auto px-4 md:px-5">
+          <div className="text-center mb-10 md:mb-14">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+            >
+              <span className="inline-block bg-[#FF6B47] text-white text-xs font-bold px-3 py-1 rounded-full mb-4">🌸 Offre printemps -41%</span>
+              <h2 className="font-[family-name:var(--font-dm-serif)] text-[32px] md:text-[48px] text-[#0A1F3D] leading-tight">
+                Un seul vol rembourse votre année
+              </h2>
+              <p className="text-[#0A1F3D]/60 mt-3 max-w-lg mx-auto">
+                Les meilleurs deals disparaissent en quelques heures. Premium vous alerte avant tout le monde.
+              </p>
+            </motion.div>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-5 max-w-3xl mx-auto">
+            {/* Free */}
+            <div className="bg-[#FFFEF9] border border-[#F0E6D8] rounded-3xl p-8">
+              <h3 className="font-semibold text-[#0A1F3D] mb-1">Gratuit</h3>
+              <div className="text-3xl font-bold text-[#0A1F3D] mb-4">0€</div>
+              <ul className="space-y-2.5 text-sm text-[#0A1F3D]/70 mb-6">
+                <li className="flex gap-2"><span className="text-[#06B6D4]">✓</span> Deals -20% à -29%</li>
+                <li className="flex gap-2"><span className="text-[#06B6D4]">✓</span> Consultables sur le site</li>
+                <li className="flex gap-2"><span className="text-[#06B6D4]">✓</span> Sans engagement</li>
+                <li className="flex gap-2 text-[#0A1F3D]/30"><span>✗</span> Alertes Telegram</li>
+                <li className="flex gap-2 text-[#0A1F3D]/30"><span>✗</span> Erreurs de prix (-30% et plus)</li>
+                <li className="flex gap-2 text-[#0A1F3D]/30"><span>✗</span> Liens Booking.com</li>
+              </ul>
+              <Link
+                href="/signup"
+                className="block text-center border-2 border-[#F0E6D8] text-[#0A1F3D] font-semibold py-3 rounded-full hover:border-[#0A1F3D]/20 transition-all text-sm"
+              >
+                Créer un compte gratuit
+              </Link>
+            </div>
+
+            {/* Premium */}
+            <div className="bg-[#FFFEF9] border-2 border-[#FF6B47] rounded-3xl p-8 relative">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#FF6B47] text-white text-xs font-bold px-4 py-1 rounded-full">
+                Le plus populaire
+              </div>
+              <h3 className="font-semibold text-[#0A1F3D] mb-1">Premium</h3>
+              <div className="flex items-baseline gap-2 mb-1">
+                <span className="text-3xl font-bold text-[#FF6B47]">29€</span>
+                <span className="text-sm text-[#0A1F3D]/40">/an</span>
+                <span className="text-sm text-[#0A1F3D]/40 line-through ml-1">59€</span>
+              </div>
+              <p className="text-xs text-[#0A1F3D]/40 mb-4">soit 2,42€/mois · <span className="line-through">4,90€/mois</span></p>
+              <ul className="space-y-2.5 text-sm text-[#0A1F3D]/70 mb-6">
+                <li className="flex gap-2"><span className="text-[#FF6B47]">✓</span> <strong>Tous les deals</strong> (-30% et plus)</li>
+                <li className="flex gap-2"><span className="text-[#FF6B47]">✓</span> Erreurs de prix et promos flash</li>
+                <li className="flex gap-2"><span className="text-[#FF6B47]">✓</span> Alertes Telegram instantanées</li>
+                <li className="flex gap-2"><span className="text-[#FF6B47]">✓</span> Liens Aviasales + Booking.com</li>
+                <li className="flex gap-2"><span className="text-[#FF6B47]">✓</span> Satisfait ou remboursé 14 jours</li>
+              </ul>
+              <Link
+                href="/signup"
+                className="block text-center bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold py-3 rounded-full transition-all text-sm shadow-[0_8px_24px_rgba(255,107,71,0.25)]"
+              >
+                Essayer Premium — 29€/an
+              </Link>
+              <p className="text-center text-xs text-[#16A34A] mt-3">💰 Remboursé dès le premier vol trouvé</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ── CTA ── */}
       <section className="py-12 md:py-24">
         <div className="max-w-6xl mx-auto px-4 md:px-5">
@@ -878,9 +949,10 @@ export default function Landing() {
               </div>
               <div className="flex flex-col gap-2">
                 <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Légal</span>
-                <span className="hover:text-gray-600 cursor-pointer">Conditions</span>
-                <span className="hover:text-gray-600 cursor-pointer">Confidentialité</span>
-                <span className="hover:text-gray-600 cursor-pointer">Contact</span>
+                <Link href="/conditions" className="hover:text-gray-600">CGV</Link>
+                <Link href="/confidentialite" className="hover:text-gray-600">Confidentialité</Link>
+                <Link href="/mentions-legales" className="hover:text-gray-600">Mentions légales</Link>
+                <a href="mailto:contact@globegenius.app" className="hover:text-gray-600">Contact</a>
               </div>
             </div>
           </div>
