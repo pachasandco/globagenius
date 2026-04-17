@@ -128,15 +128,20 @@ def _get_user_tier(user_id: str | None) -> str:
                 pass
     except Exception:
         pass
-    # Priority 2: stripe customer id
+    # Priority 2: stripe subscription (customer_id alone is not enough —
+    # a user may have started checkout without completing payment)
     try:
         row = (
             db.table("user_preferences")
-            .select("stripe_customer_id")
+            .select("stripe_customer_id,stripe_subscription_id")
             .eq("user_id", user_id)
             .execute()
         )
-        if row.data and row.data[0].get("stripe_customer_id"):
+        if (
+            row.data
+            and row.data[0].get("stripe_customer_id")
+            and row.data[0].get("stripe_subscription_id")
+        ):
             return "premium"
     except Exception:
         pass

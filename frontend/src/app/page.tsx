@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getFlightDeals, type FlightDeal } from "@/lib/api";
 
 /* ─── DESTINATION IMAGES ───
    Mapped by IATA code so that live deals fetched from /api/packages can
@@ -122,6 +121,16 @@ function destinationMeta(code: string) {
   return DESTINATION_IMAGES[code] || { img: DEFAULT_DESTINATION_IMAGE, flag: "✈️", name: code };
 }
 
+/* Past deals — hardcoded examples that show the value of the service */
+const PAST_DEALS = [
+  { origin: "CDG", destination: "JFK", city: "New York", flag: "🇺🇸", price: 198, usual: 580, discount: 66, img: "https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?w=800&q=80" },
+  { origin: "CDG", destination: "BKK", city: "Bangkok", flag: "🇹🇭", price: 312, usual: 750, discount: 58, img: "https://images.unsplash.com/photo-1508009603885-50cf7c579365?w=800&q=80" },
+  { origin: "ORY", destination: "RAK", city: "Marrakech", flag: "🇲🇦", price: 34, usual: 120, discount: 72, img: "https://images.unsplash.com/photo-1597212618440-806262de4f6b?w=800&q=80" },
+  { origin: "LYS", destination: "LIS", city: "Lisbonne", flag: "🇵🇹", price: 48, usual: 180, discount: 73, img: "https://images.unsplash.com/photo-1585208798174-6cedd86e019a?w=800&q=80" },
+  { origin: "CDG", destination: "NRT", city: "Tokyo", flag: "🇯🇵", price: 389, usual: 900, discount: 57, img: "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=800&q=80" },
+  { origin: "MRS", destination: "BCN", city: "Barcelone", flag: "🇪🇸", price: 19, usual: 85, discount: 78, img: "https://images.unsplash.com/photo-1583422409516-2895a77efded?w=800&q=80" },
+];
+
 const faqs = [
   { q: "Comment fonctionne Globe Genius ?", a: "On surveille en permanence les prix des vols au départ de 8 aéroports français. Dès qu\u2019on détecte une baisse de prix significative, on vous envoie une alerte sur Telegram avec tous les détails pour réserver." },
   { q: "Quelle est la différence entre Gratuit et Premium ?", a: "En Gratuit, vous recevez les deals avec des réductions jusqu\u2019à -29%. En Premium, vous accédez à tous les deals (jusqu\u2019à -70%+), y compris les erreurs de prix des compagnies, avec des alertes prioritaires." },
@@ -197,8 +206,6 @@ const faqSchema = {
 /* ─── PAGE ─── */
 export default function Landing() {
   const router = useRouter();
-  const [recentDeals, setRecentDeals] = useState<FlightDeal[]>([]);
-
   useEffect(() => {
     const userId = localStorage.getItem("gg_user_id");
     const token = localStorage.getItem("gg_token");
@@ -206,21 +213,6 @@ export default function Landing() {
       router.replace("/home");
     }
   }, [router]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const freeRes = await getFlightDeals("free", 6);
-        const items = freeRes.items || [];
-        if (!cancelled && items.length > 0) {
-          setRecentDeals(items.slice(0, 6));
-        }
-      } catch { /* keep empty, deals section will show fallback */ }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, []);
 
   return (
     <div className="min-h-screen bg-[var(--color-cream)]">
@@ -307,103 +299,50 @@ export default function Landing() {
         ))}
       </section>
 
-      {/* ── DEALS RÉCENTS ── */}
+      {/* ── DEALS PASSÉS ── */}
       <section className="py-16 px-6 sm:px-12 bg-[var(--color-cream)] border-t border-[var(--color-sand)]">
         <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-[var(--color-ink)] text-center mb-2">
-          Deals détectés récemment
+          Des deals comme ceux-là, on en trouve tous les jours
         </h2>
         <p className="text-center text-gray-400 text-sm mb-10">
-          Mis à jour en temps réel — les prix changent vite, ne tardez pas.
+          Exemples de vrais deals détectés par Globe Genius ces dernières semaines.
         </p>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
-          {(recentDeals.length > 0 ? recentDeals.slice(0, 2) : []).map((deal, i) => {
-            const meta = destinationMeta(deal.destination);
-            return (
-              <motion.div
-                key={deal.id ?? i}
-                initial={{ opacity: 0, y: 12 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.1, duration: 0.4 }}
-                className="bg-white rounded-2xl overflow-hidden border border-[var(--color-sand)]"
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 max-w-5xl mx-auto">
+          {PAST_DEALS.map((deal, i) => (
+            <motion.div
+              key={deal.destination}
+              initial={{ opacity: 0, y: 12 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.08, duration: 0.4 }}
+              className="bg-white rounded-2xl overflow-hidden border border-[var(--color-sand)]"
+            >
+              <div
+                className="h-28 sm:h-36 bg-cover bg-center relative"
+                style={{ backgroundImage: `url(${deal.img})` }}
               >
-                <div
-                  className="h-36 bg-cover bg-center relative"
-                  style={{ backgroundImage: `url(${meta.img})` }}
-                >
-                  <span className="absolute top-3 right-3 bg-[var(--color-coral)] text-white text-xs font-bold px-2.5 py-1 rounded-lg">
-                    -{Math.round(deal.discount_pct)}%
-                  </span>
+                <span className="absolute top-3 right-3 bg-[var(--color-coral)] text-white text-xs font-bold px-2.5 py-1 rounded-lg">
+                  -{deal.discount}%
+                </span>
+              </div>
+              <div className="p-3 sm:p-4">
+                <div className="font-bold text-[var(--color-ink)] text-sm mb-1">
+                  {deal.origin} → {deal.city} {deal.flag}
                 </div>
-                <div className="p-4">
-                  <div className="font-bold text-[var(--color-ink)] text-sm mb-1">
-                    {deal.origin} → {meta.name} {meta.flag}
-                  </div>
-                  <div className="text-xs text-gray-400 mb-3">A/R</div>
-                  <div className="flex items-baseline gap-2">
-                    {deal.price != null ? (
-                      <>
-                        <span className="text-xl font-extrabold text-[var(--color-coral)]">{Math.round(deal.price)}€</span>
-                        {deal.baseline_price != null && (
-                          <span className="text-sm text-gray-300 line-through">{Math.round(deal.baseline_price)}€</span>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-xl font-extrabold text-gray-200 blur-sm select-none">•••€</span>
-                    )}
-                  </div>
+                <div className="text-xs text-gray-400 mb-2">A/R</div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-lg sm:text-xl font-extrabold text-[var(--color-coral)]">{deal.price}€</span>
+                  <span className="text-sm text-gray-300 line-through">{deal.usual}€</span>
                 </div>
-              </motion.div>
-            );
-          })}
-
-          {/* Locked premium deal teaser */}
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.2, duration: 0.4 }}
-            className="bg-white rounded-2xl overflow-hidden border border-[var(--color-sand)]"
-          >
-            {(() => {
-              const premiumDeal = recentDeals[2];
-              const meta = premiumDeal
-                ? destinationMeta(premiumDeal.destination)
-                : { img: "https://images.unsplash.com/photo-1558642452-9d2a7deb7f62?w=400&q=80", name: "Barcelone", flag: "🇪🇸" };
-              return (
-                <>
-                  <div
-                    className="h-36 bg-cover bg-center relative brightness-75"
-                    style={{ backgroundImage: `url(${meta.img})` }}
-                  >
-                    <span className="absolute top-3 right-3 bg-[var(--color-ink)] text-white text-xs font-bold px-2.5 py-1 rounded-lg">
-                      🔒 Premium
-                    </span>
-                  </div>
-                  <div className="p-4">
-                    <div className="font-bold text-[var(--color-ink)] text-sm mb-1">
-                      {premiumDeal ? `${premiumDeal.origin} → ${meta.name} ${meta.flag}` : "LYS → Barcelone 🇪🇸"}
-                    </div>
-                    <div className="text-xs text-gray-400 mb-3">A/R</div>
-                    <div className="text-center">
-                      <div className="text-xl font-extrabold text-gray-200 blur-sm select-none mb-1">
-                        {premiumDeal ? `${Math.round(premiumDeal.price ?? 72)}€` : "72€"}
-                      </div>
-                      <Link href="/signup" className="text-[var(--color-coral)] text-sm font-semibold hover:underline">
-                        🔓 Débloquer avec Premium →
-                      </Link>
-                    </div>
-                  </div>
-                </>
-              );
-            })()}
-          </motion.div>
+              </div>
+            </motion.div>
+          ))}
         </div>
 
         <div className="text-center mt-8">
           <Link href="/signup" className="text-[var(--color-coral)] font-bold text-sm hover:underline">
-            Voir tous les deals en cours →
+            S&apos;inscrire pour ne rien rater →
           </Link>
         </div>
       </section>
