@@ -19,17 +19,14 @@ interface ScrapeLog {
 
 interface DebugData {
   flights_sample: Array<{ origin: string; destination: string; departure_date: string; price: number }>;
-  accommodations_sample: Array<{ city: string; name: string; total_price: number; check_in: string }>;
   baselines_sample: Array<{ route_key: string; avg_price: number; std_dev: number; sample_count: number }>;
   price_diagnosis: Array<{ route: string; price: number; baseline_avg: number; discount_pct: number; z_score: number; would_qualify: boolean }>;
-  flight_date_keys: string[];
-  accommodation_date_keys: string[];
 }
 
 export default function AdminPage() {
   const [adminKey, setAdminKey] = useState("");
   const [authenticated, setAuthenticated] = useState(false);
-  const [status, setStatus] = useState<{ active_baselines: number; active_packages: number; recent_scrapes: ScrapeLog[] } | null>(null);
+  const [status, setStatus] = useState<{ active_baselines: number; recent_scrapes: ScrapeLog[] } | null>(null);
   const [debug, setDebug] = useState<DebugData | null>(null);
   const [loading, setLoading] = useState(false);
   const [triggerResult, setTriggerResult] = useState("");
@@ -119,10 +116,6 @@ export default function AdminPage() {
         {status && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-white rounded-xl border border-gray-100 p-4">
-              <div className="text-3xl font-bold">{status.active_packages}</div>
-              <div className="text-xs text-gray-400">Packages actifs</div>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-100 p-4">
               <div className="text-3xl font-bold">{status.active_baselines}</div>
               <div className="text-xs text-gray-400">Baselines</div>
             </div>
@@ -142,7 +135,6 @@ export default function AdminPage() {
           <h2 className="font-semibold mb-3">Trigger manuels</h2>
           <div className="flex flex-wrap gap-2">
             <button onClick={() => triggerJob("scrape_flights")} className="bg-cyan-500 text-white text-sm px-4 py-2 rounded-lg hover:bg-cyan-600">Scrape Vols</button>
-            <button onClick={() => triggerJob("scrape_accommodations")} className="bg-cyan-500 text-white text-sm px-4 py-2 rounded-lg hover:bg-cyan-600">Scrape Hotels</button>
             <button onClick={() => triggerJob("recalculate_baselines")} className="bg-amber-500 text-white text-sm px-4 py-2 rounded-lg hover:bg-amber-600">Recalc Baselines</button>
             <button onClick={() => triggerJob("expire_stale_data")} className="bg-gray-500 text-white text-sm px-4 py-2 rounded-lg hover:bg-gray-600">Expire Data</button>
           </div>
@@ -223,19 +215,6 @@ export default function AdminPage() {
             </div>
 
             {/* Date matching */}
-            <div className="bg-white rounded-xl border border-gray-100 p-4 mb-6">
-              <h2 className="font-semibold mb-3">Matching dates</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <div className="text-xs font-bold text-gray-400 mb-1">Vols</div>
-                  {debug.flight_date_keys.map(k => <div key={k} className="text-sm text-gray-600">{k}</div>)}
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-gray-400 mb-1">Hotels</div>
-                  {debug.accommodation_date_keys.map(k => <div key={k} className="text-sm text-gray-600">{k}</div>)}
-                </div>
-              </div>
-            </div>
           </>
         )}
 
