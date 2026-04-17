@@ -444,17 +444,6 @@ def list_packages(
     return {"items": items[:limit], "plan": plan}
 
 
-@router.get("/api/packages/{package_id}")
-def get_package(package_id: str):
-    if not db:
-        raise HTTPException(status_code=503, detail="Database not configured")
-
-    resp = db.table("packages").select("*").eq("id", package_id).execute()
-    if not resp.data:
-        raise HTTPException(status_code=404, detail="Package not found")
-    return resp.data[0]
-
-
 @router.get("/api/qualified-items")
 def list_qualified_items(type_filter: str = "", limit: int = 20):
     if not db:
@@ -472,7 +461,6 @@ async def trigger_job(job_name: str, request: Request):
     _require_admin(request)
     from app.scheduler.jobs import (
         job_scrape_flights,
-        job_scrape_accommodations,
         job_recalculate_baselines,
         job_expire_stale_data,
         job_travelpayouts_enrichment,
@@ -480,7 +468,6 @@ async def trigger_job(job_name: str, request: Request):
 
     jobs = {
         "scrape_flights": job_scrape_flights,
-        "scrape_accommodations": job_scrape_accommodations,
         "recalculate_baselines": job_recalculate_baselines,
         "expire_stale_data": job_expire_stale_data,
         "travelpayouts_enrichment": job_travelpayouts_enrichment,

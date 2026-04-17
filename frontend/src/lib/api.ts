@@ -115,34 +115,6 @@ export interface FlightDeal {
   locked: boolean;
 }
 
-/**
- * A vol+hotel package (legacy path, still used by GET /api/packages/{id}).
- * Not currently produced by the free/premium list endpoints — those return
- * FlightDeal only. Kept for backwards compatibility with the detail view.
- */
-export interface Package {
-  id: string;
-  flight_id: string;
-  origin: string;
-  destination: string;
-  departure_date: string;
-  return_date: string;
-  flight_price: number;
-  accommodation_id: string;
-  accommodation_price: number;
-  total_price: number;
-  baseline_total: number;
-  discount_pct: number;
-  score: number;
-  status: string;
-  created_at: string;
-  expires_at: string;
-  ai_description?: string;
-  ai_reason?: string;
-  ai_tip?: string;
-  ai_tags?: string[];
-}
-
 export interface PipelineStatus {
   status: string;
   recent_scrapes: Array<{
@@ -154,7 +126,6 @@ export interface PipelineStatus {
     status: string;
     started_at: string;
   }>;
-  active_packages: number;
   active_baselines: number;
 }
 
@@ -167,10 +138,6 @@ export function getFlightDeals(
   return fetchAPI<{ items: FlightDeal[]; plan: string }>(
     `/api/packages?min_score=${minScore}&limit=${limit}&plan=${plan}&min_discount=${minDiscount}`
   );
-}
-
-export function getPackage(id: string) {
-  return fetchAPI<Package>(`/api/packages/${id}`);
 }
 
 export function getPipelineStatus() {

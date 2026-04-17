@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 from app.config import settings, IATA_TO_CITY
 from app.db import db
 from app.scraper.travelpayouts_flights import scrape_all_flights
-from app.scraper.accommodations import scrape_accommodations_for_destinations
 from app.analysis.baselines import compute_baseline, compute_baselines_by_bucket, MIN_SAMPLE_COUNT
 from app.scraper.travelpayouts import get_prices_for_dates
 from app.scraper.travelpayouts_flights import _normalize_priced_entry
@@ -14,7 +13,6 @@ from app.analysis.anomaly_detector import detect_anomaly
 from app.analysis.scorer import compute_score
 from app.analysis.buckets import bucket_for_duration, stops_allowed
 from app.scraper.reverify import reverify_flight_price
-from app.composer.package_builder import build_packages
 from app.notifications.aviasales import build_aviasales_url
 from app.notifications.dedup import compute_alert_key
 from app.notifications.telegram import (
@@ -41,13 +39,6 @@ def get_scheduler_jobs() -> list[dict]:
             "trigger": "cron",
             "hour": h,
         } for h in [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22]],
-        # ── HOTELS : 1x/jour a 3h ──
-        {
-            "id": "scrape_accommodations_03",
-            "func": job_scrape_accommodations,
-            "trigger": "cron",
-            "hour": 3,
-        },
         # ── TRAVELPAYOUTS ENRICHMENT : 1x/jour a 4h ──
         {
             "id": "travelpayouts_enrichment",
@@ -254,8 +245,6 @@ async def _analyze_new_flights(flights: list[dict]):
             flight["score"] = score
             qualified_flights.append((flight, anomaly, tier))
 
-        await _compose_packages_for_flight(flight, baseline)
-
     logger.info(f"Analyze pipeline counters: {counters}")
 
     await _dispatch_grouped_flight_alerts(qualified_flights)
@@ -442,278 +431,6 @@ async def _dispatch_grouped_flight_alerts(
         await asyncio.sleep(0)
 
 
-async def _compose_packages_for_flight(flight: dict, flight_baseline: dict):
-    if not db:
-        return
-
-    from app.config import IATA_TO_CITY
-    city = IATA_TO_CITY.get(flight["destination"])
-    if not city:
-        return
-
-    acc_resp = (
-        db.table("raw_accommodations")
-        .select("*")
-        .eq("city", city)
-        .eq("check_in", flight["departure_date"])
-        .eq("check_out", flight["return_date"])
-        .gte("rating", 4.0)
-        .gte("expires_at", datetime.now(timezone.utc).isoformat())
-        .execute()
-    )
-
-    if not acc_resp.data:
-        return
-
-    acc_baselines = {}
-    for acc in acc_resp.data:
-        bl_key = f"{acc['city'].lower()}-{acc['source']}"
-        if bl_key not in acc_baselines:
-            bl_resp = db.table("price_baselines").select("*").eq("route_key", bl_key).eq("type", "accommodation").execute()
-            if bl_resp.data:
-                acc_baselines[bl_key] = bl_resp.data[0]
-
-    packages = build_packages(
-        flight=flight,
-        accommodations=acc_resp.data,
-        flight_baseline=flight_baseline,
-        accommodation_baselines=acc_baselines,
-    )
-
-    for pkg in packages:
-        acc_for_pkg = next((a for a in acc_resp.data if a["id"] == pkg["accommodation_id"]), None)
-
-        # Step 1: AI curation — validate the deal before publishing
-        try:
-            from app.agents.curator import curate_deal
-            curation = curate_deal(pkg, flight_data=flight, accommodation_data=acc_for_pkg)
-            if curation and not curation.get("valid", True):
-                logger.info(f"Deal rejected by curator: {pkg['origin']}→{pkg['destination']} — {curation.get('reason')}")
-                continue  # Skip this deal
-            if curation:
-                pkg["ai_curated"] = True
-                pkg["ai_is_error_fare"] = curation.get("is_error_fare", False)
-                pkg["ai_urgency"] = curation.get("urgency", "medium")
-        except Exception as e:
-            logger.warning(f"AI curation failed, approving by default: {e}")
-
-        # Step 2: AI enrichment — generate description
-        try:
-            from app.agents.enricher import enrich_package
-            enrichment = enrich_package(pkg, flight=flight, accommodation=acc_for_pkg)
-            if enrichment:
-                pkg.update(enrichment)
-        except Exception as e:
-            logger.warning(f"AI enrichment failed, saving without: {e}")
-
-        db.table("packages").insert(pkg).execute()
-
-        if pkg["score"] >= settings.MIN_SCORE_ALERT:
-            subscribers = (
-                db.table("telegram_subscribers")
-                .select("chat_id,user_id")
-                .eq("airport_code", pkg["origin"])
-                .lte("min_score", pkg["score"])
-                .execute()
-            )
-            flight_data = db.table("raw_flights").select("source_url,airline").eq("id", pkg["flight_id"]).execute()
-            acc_data = db.table("raw_accommodations").select("name,rating,source_url").eq("id", pkg["accommodation_id"]).execute()
-
-            if flight_data.data and acc_data.data and subscribers.data:
-                pkg_tier = "premium" if pkg.get("discount_pct", 0) >= 30 else "free"
-                pkg_discount = pkg.get("discount_pct", 0) or 0
-
-                # Fetch each subscriber's min_discount preference. Fall back to
-                # default 20 for users without a preferences row, and fail-open
-                # (default for all) if the query errors out.
-                prefs_by_user: dict[str, int] = {}
-                user_ids = [s["user_id"] for s in subscribers.data if s.get("user_id")]
-                if user_ids:
-                    try:
-                        prefs_resp = (
-                            db.table("user_preferences")
-                            .select("user_id,min_discount")
-                            .in_("user_id", user_ids)
-                            .execute()
-                        )
-                        prefs_by_user = {
-                            p["user_id"]: p.get("min_discount", 20)
-                            for p in (prefs_resp.data or [])
-                        }
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to fetch user preferences for filtering: {e}"
-                        )
-
-                for sub in subscribers.data:
-                    user_id = sub.get("user_id")
-                    user_min = prefs_by_user.get(user_id, 20)
-                    if pkg_discount < user_min:
-                        continue
-
-                    # Deal-level dedup for packages: skip if this alert_key was
-                    # already sent to this user in a prior run. Fail-open on
-                    # query error (still dispatch rather than lose the alert).
-                    key: str | None = None
-                    if user_id:
-                        try:
-                            key = compute_alert_key(
-                                user_id,
-                                pkg["origin"],
-                                pkg["destination"],
-                                pkg["departure_date"],
-                                pkg["return_date"],
-                                pkg.get("total_price", 0),
-                            )
-                            existing = (
-                                db.table("sent_alerts")
-                                .select("id")
-                                .eq("user_id", user_id)
-                                .eq("alert_key", key)
-                                .limit(1)
-                                .execute()
-                            )
-                            if existing.data:
-                                continue
-                        except Exception as e:
-                            logger.warning(f"Package dedup check failed: {e}")
-
-                    success = await send_deal_alert(
-                        sub["chat_id"], pkg, flight_data.data[0], acc_data.data[0],
-                        tier=pkg_tier,
-                    )
-
-                    if success and user_id and key:
-                        try:
-                            db.table("sent_alerts").upsert({
-                                "user_id": user_id,
-                                "chat_id": sub["chat_id"],
-                                "alert_key": key,
-                                "destination": pkg["destination"],
-                                "alert_type": "package",
-                            }, on_conflict="user_id,alert_key").execute()
-                        except Exception as e:
-                            logger.warning(
-                                f"sent_alerts upsert (package) failed: {e}"
-                            )
-
-
-async def job_scrape_accommodations():
-    logger.info("Starting accommodation scraping job")
-    if not db:
-        return
-
-    # Only scrape hotels for destinations where flights have 30%+ discount
-    # This saves API costs and targets the right destinations
-    qualified_flights = (
-        db.table("qualified_items")
-        .select("item_id, discount_pct")
-        .eq("type", "flight")
-        .eq("status", "active")
-        .gte("discount_pct", 30)
-        .execute()
-    )
-
-    if not qualified_flights.data:
-        # Fallback: check raw flights vs baselines for 30%+ discounts
-        flights_resp = (
-            db.table("raw_flights")
-            .select("id, origin, destination, departure_date, return_date, price")
-            .gte("expires_at", datetime.now(timezone.utc).isoformat())
-            .execute()
-        )
-
-        if not flights_resp.data:
-            logger.info("No active flights, skipping accommodation scrape")
-            return
-
-        # Find flights with 30%+ discount vs baseline
-        route_dates = set()
-        from app.scraper.travelpayouts_flights import _window_label
-        for f in flights_resp.data:
-            try:
-                dep = datetime.strptime(f["departure_date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                days_ahead = max((dep - datetime.now(timezone.utc)).days, 15)
-            except (ValueError, TypeError):
-                days_ahead = 30
-
-            window = _window_label(days_ahead)
-            route_key = f"{f['origin']}-{f['destination']}-{window}"
-
-            bl = db.table("price_baselines").select("avg_price").eq("route_key", route_key).execute()
-            if not bl.data:
-                continue
-
-            avg = bl.data[0]["avg_price"]
-            if avg > 0:
-                discount = (avg - f["price"]) / avg * 100
-                if discount >= 30:
-                    route_dates.add((f["destination"], f["departure_date"], f["return_date"]))
-                    logger.info(f"  Flight deal: {f['origin']}→{f['destination']} {f['price']}€ vs {avg}€ (-{discount:.0f}%)")
-    else:
-        # Get flight details for qualified items
-        route_dates = set()
-        for qi in qualified_flights.data:
-            flight = db.table("raw_flights").select("destination, departure_date, return_date").eq("id", qi["item_id"]).execute()
-            if flight.data:
-                f = flight.data[0]
-                route_dates.add((f["destination"], f["departure_date"], f["return_date"]))
-
-    if not route_dates:
-        logger.info("No flights with 30%+ discount, skipping hotel scrape")
-        return
-
-    destinations = {rd[0] for rd in route_dates}
-    logger.info(f"Scraping hotels for {len(destinations)} destinations with 30%+ flight discounts ({len(route_dates)} date combos)")
-
-    started_at = datetime.now(timezone.utc)
-
-    # Scrape accommodations for exact flight dates (not generic sample dates)
-    from app.scraper.accommodations import scrape_accommodations_for_city
-    all_accommodations = []
-    errors = 0
-    for dest_code, dep_date, ret_date in route_dates:
-        city = IATA_TO_CITY.get(dest_code)
-        if not city:
-            continue
-        try:
-            items = await scrape_accommodations_for_city(city, dep_date, ret_date)
-            all_accommodations.extend(items)
-            if items:
-                logger.info(f"  {city} {dep_date}→{ret_date}: {len(items)} hotels")
-        except Exception as e:
-            errors += 1
-            logger.warning(f"Failed to scrape hotels in {city}: {e}")
-    accommodations = all_accommodations
-
-    inserted = 0
-    for acc in accommodations:
-        try:
-            db.table("raw_accommodations").upsert(acc, on_conflict="hash").execute()
-            inserted += 1
-        except Exception as e:
-            logger.warning(f"Failed to insert accommodation: {e}")
-            errors += 1
-
-    completed_at = datetime.now(timezone.utc)
-    duration_ms = int((completed_at - started_at).total_seconds() * 1000)
-
-    status = "success" if errors == 0 else ("partial" if inserted > 0 else "failed")
-    db.table("scrape_logs").insert({
-        "actor_id": "accommodations",
-        "source": "booking",
-        "type": "accommodations",
-        "items_count": inserted,
-        "errors_count": errors,
-        "duration_ms": duration_ms,
-        "status": status,
-        "started_at": started_at.isoformat(),
-        "completed_at": completed_at.isoformat(),
-    }).execute()
-
-    logger.info(f"Accommodation scraping complete: {inserted} inserted, {errors} errors")
-
-
 async def job_recalculate_baselines():
     logger.info("Starting baseline recalculation")
     if not db:
@@ -765,59 +482,40 @@ async def job_recalculate_baselines():
 
     logger.info(f"Recalculated {flight_baselines_published} flight bucket baselines from {len(routes)} routes")
 
-    acc_resp = (
-        db.table("raw_accommodations")
-        .select("city, source, total_price, scraped_at")
-        .gte("scraped_at", thirty_days_ago)
-        .execute()
-    )
-
-    acc_routes: dict[str, list] = {}
-    for a in (acc_resp.data or []):
-        key = f"{a['city'].lower()}-{a['source']}"
-        acc_routes.setdefault(key, []).append({"price": a["total_price"], "scraped_at": a["scraped_at"]})
-
-    for route_key, observations in acc_routes.items():
-        baseline = compute_baseline(route_key, "accommodation", observations)
-        if baseline:
-            db.table("price_baselines").upsert(baseline, on_conflict="route_key").execute()
-
-    logger.info(f"Baselines recalculated: {flight_baselines_published} flight bucket baselines, {len(acc_routes)} accommodation routes")
-
 
 async def job_expire_stale_data():
     if not db:
         return
     now = datetime.now(timezone.utc).isoformat()
 
-    db.table("packages").update({"status": "expired"}).eq("status", "active").lt("expires_at", now).execute()
     # Expire qualified items older than 24h (they don't have expires_at)
     yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
     db.table("qualified_items").update({"status": "expired"}).eq("status", "active").lt("created_at", yesterday).execute()
 
-    logger.info("Expired stale packages and qualified items")
+    logger.info("Expired stale qualified items")
 
 
 async def job_daily_digest():
     if not db:
         return
 
-    packages_resp = (
-        db.table("packages")
+    deals_resp = (
+        db.table("qualified_items")
         .select("*")
         .eq("status", "active")
+        .eq("type", "flight")
         .gte("score", settings.MIN_SCORE_DIGEST)
         .order("score", desc=True)
         .limit(5)
         .execute()
     )
 
-    if not packages_resp.data:
+    if not deals_resp.data:
         return
 
     subscribers = db.table("telegram_subscribers").select("chat_id").execute()
     for sub in (subscribers.data or []):
-        await send_digest(sub["chat_id"], packages_resp.data)
+        await send_digest(sub["chat_id"], deals_resp.data)
 
 
 async def job_daily_admin_report():

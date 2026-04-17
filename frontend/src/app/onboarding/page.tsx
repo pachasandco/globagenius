@@ -19,9 +19,7 @@ const AIRPORTS = [
 ];
 
 const OFFER_TYPES = [
-  { id: "package", label: "Packages vol + hotel", desc: "Les meilleures offres combinees", icon: "✈️🏨" },
-  { id: "flight", label: "Vols seuls", desc: "Billets d'avion a prix casses", icon: "✈️" },
-  { id: "accommodation", label: "Hebergements seuls", desc: "Hotels et logements en promo", icon: "🏨" },
+  { id: "flight", label: "Vols à prix cassés", desc: "Billets d'avion aller-retour en promo", icon: "✈️" },
 ];
 
 const DESTINATIONS_EUROPE = [
@@ -57,7 +55,7 @@ const DESTINATIONS_LONG_COURRIER = [
 export default function OnboardingPage() {
   const [step, setStep] = useState(1);
   const [airports, setAirports] = useState<string[]>(["CDG"]);
-  const [offerTypes, setOfferTypes] = useState<string[]>(["package", "flight", "accommodation"]);
+  const [offerTypes, setOfferTypes] = useState<string[]>(["flight"]);
   const [destinations, setDestinations] = useState<string[]>([]);
   const [minDiscount, setMinDiscount] = useState<number>(20);
   const [isPremium, setIsPremium] = useState(false);
@@ -122,7 +120,7 @@ export default function OnboardingPage() {
     try {
       await updatePreferences(userId, {
         airport_codes: airports.length > 0 ? airports : ["CDG"],
-        offer_types: offerTypes.length > 0 ? offerTypes : ["package"],
+        offer_types: offerTypes.length > 0 ? offerTypes : ["flight"],
         preferred_destinations: destinations.length > 0 ? destinations : null,
         min_discount: minDiscount,
       });
