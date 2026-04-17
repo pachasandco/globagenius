@@ -262,9 +262,9 @@ function FAQItem({ q, a, i }: { q: string; a: string; i: number }) {
 
 /* ─── TELEGRAM HERO MOCKUP ─── */
 const FALLBACK_DEALS_HERO = [
-  { origin: "CDG", destination: "LIS", destCity: "LISBONNE", departure_date: "2026-09-01", return_date: "2026-09-10", price: 89, baseline_price: 210, discount_pct: 58 },
-  { origin: "CDG", destination: "BCN", destCity: "BARCELONE", departure_date: "2026-10-15", return_date: "2026-10-22", price: 95, baseline_price: 180, discount_pct: 47 },
-  { origin: "CDG", destination: "RAK", destCity: "MARRAKECH", departure_date: "2026-11-05", return_date: "2026-11-12", price: 98, baseline_price: 240, discount_pct: 59 },
+  { origin: "CDG", destination: "LIS", destCity: "LISBONNE", departure_date: "2026-09-01", return_date: "2026-09-10", price: 135, baseline_price: 190, discount_pct: 29 },
+  { origin: "ORY", destination: "NAP", destCity: "NAPLES", departure_date: "2026-10-15", return_date: "2026-10-22", price: 89, baseline_price: 120, discount_pct: 26 },
+  { origin: "LYS", destination: "BCN", destCity: "BARCELONE", departure_date: "2026-11-05", return_date: "2026-11-12", price: 72, baseline_price: 95, discount_pct: 24 },
 ];
 
 function formatShortDateFr(iso: string): string {
