@@ -16,6 +16,7 @@ const AIRPORTS = [
   { code: "BOD", label: "Bordeaux Merignac" },
   { code: "NTE", label: "Nantes Atlantique" },
   { code: "TLS", label: "Toulouse Blagnac" },
+  { code: "BVA", label: "Paris Beauvais" },
 ];
 
 const OFFER_TYPES = [
