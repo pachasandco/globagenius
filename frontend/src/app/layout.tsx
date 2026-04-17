@@ -18,7 +18,7 @@ const plusJakarta = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: "Globe Genius — Vols à Prix Cassés | Alertes Telegram temps réel",
   description:
-    "Globe Genius détecte les vols aller-retour à prix anormalement bas sur 8 aéroports français. Chaque deal est statistiquement vérifié et reconfirmé en temps réel avant l'alerte Telegram.",
+    "Globe Genius détecte les vols aller-retour à prix anormalement bas sur 9 aéroports français. Chaque deal est statistiquement vérifié et reconfirmé en temps réel avant l'alerte Telegram.",
   keywords: [
     "vol pas cher alerte",
     "deal vol aller-retour",
@@ -30,11 +30,13 @@ export const metadata: Metadata = {
     "détecter deal vol",
   ],
   metadataBase: new URL("https://globegenius.app"),
-  alternates: {},
+  alternates: {
+    canonical: "https://globegenius.app",
+  },
   openGraph: {
     title: "Globe Genius — Vols à Prix Cassés | Alertes Telegram temps réel",
     description:
-      "Détection des vols aller-retour à prix anormalement bas sur 8 aéroports français. Alertes Telegram dès qu'un deal est confirmé.",
+      "Détection des vols aller-retour à prix anormalement bas sur 9 aéroports français. Alertes Telegram dès qu'un deal est confirmé.",
     url: "https://globegenius.app",
     siteName: "Globe Genius",
     images: [
@@ -52,7 +54,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Globe Genius — Vols à Prix Cassés",
     description:
-      "Détection de vols aller-retour à prix anormalement bas. Alertes Telegram temps réel. 8 aéroports français.",
+      "Détection de vols aller-retour à prix anormalement bas. Alertes Telegram temps réel. 9 aéroports français.",
     images: ["https://globegenius.app/og-image.png"],
     creator: "@globegenius",
   },
@@ -80,6 +82,73 @@ export default function RootLayout({
       className={`${dmSerif.variable} ${plusJakarta.variable}`}
     >
       <body className="min-h-screen w-full">
+        {/* JSON-LD Structured Data — server-rendered for SEO
+            All values are static constants, no user input — safe for JSON-LD */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "Organization",
+              "@id": "https://globegenius.app/#organization",
+              name: "Globe Genius",
+              url: "https://globegenius.app",
+              logo: {
+                "@type": "ImageObject",
+                url: "https://globegenius.app/globe1.png",
+                width: 512,
+                height: 512,
+              },
+              description:
+                "Globe Genius détecte les vols aller-retour à prix anormalement bas sur les 9 aéroports français. Alertes Telegram dès qu\u2019une anomalie est confirmée.",
+              sameAs: ["https://t.me/Globegenius_bot"],
+              contactPoint: {
+                "@type": "ContactPoint",
+                contactType: "customer support",
+                email: "contact@globegenius.app",
+                availableLanguage: "French",
+              },
+            }),
+          }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "WebSite",
+              "@id": "https://globegenius.app/#website",
+              name: "Globe Genius",
+              url: "https://globegenius.app",
+              description:
+                "Deals vols à prix cassés. Vols aller-retour avec anomalies de prix confirmées, alertes Telegram.",
+              inLanguage: "fr-FR",
+              publisher: { "@id": "https://globegenius.app/#organization" },
+            }),
+          }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "SoftwareApplication",
+              name: "Globe Genius",
+              operatingSystem: "Web",
+              applicationCategory: "TravelApplication",
+              offers: {
+                "@type": "AggregateOffer",
+                lowPrice: "0",
+                highPrice: "29",
+                priceCurrency: "EUR",
+                offerCount: 2,
+              },
+              url: "https://globegenius.app",
+              description:
+                "Détecteur de vols à prix cassés. Alertes Telegram en temps réel sur les meilleurs deals au départ de 9 aéroports français.",
+            }),
+          }}
+        />
         {children}
       </body>
     </html>

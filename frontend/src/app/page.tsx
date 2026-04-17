@@ -158,41 +158,7 @@ function FAQItem({ q, a, i }: { q: string; a: string; i: number }) {
   );
 }
 
-/* ─── STRUCTURED DATA (static constants, no user input — safe for JSON-LD) ─── */
-const organizationSchema = {
-  "@context": "https://schema.org",
-  "@type": "Organization",
-  "@id": "https://globegenius.app/#organization",
-  name: "Globe Genius",
-  url: "https://globegenius.app",
-  logo: {
-    "@type": "ImageObject",
-    url: "https://globegenius.app/globe1.png",
-    width: 512,
-    height: 512,
-  },
-  description:
-    "Globe Genius détecte les vols aller-retour à prix anormalement bas sur les 9 aéroports français. Alertes Telegram dès qu\u2019une anomalie est confirmée.",
-  sameAs: ["https://t.me/Globegenius_bot"],
-  contactPoint: {
-    "@type": "ContactPoint",
-    contactType: "customer support",
-    availableLanguage: "French",
-  },
-};
-
-const websiteSchema = {
-  "@context": "https://schema.org",
-  "@type": "WebSite",
-  "@id": "https://globegenius.app/#website",
-  name: "Globe Genius",
-  url: "https://globegenius.app",
-  description:
-    "Deals vols à prix cassés. Vols aller-retour avec anomalies de prix confirmées, alertes Telegram.",
-  inLanguage: "fr-FR",
-  publisher: { "@id": "https://globegenius.app/#organization" },
-};
-
+/* ─── FAQ STRUCTURED DATA (page-specific — Organization/WebSite/SoftwareApplication are in layout.tsx) ─── */
 const faqSchema = {
   "@context": "https://schema.org",
   "@type": "FAQPage",
@@ -217,9 +183,7 @@ export default function Landing() {
   return (
     <div className="min-h-screen bg-[var(--color-cream)]">
 
-      {/* ── JSON-LD STRUCTURED DATA ── */}
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }} />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteSchema) }} />
+      {/* ── FAQ JSON-LD (page-specific, complements layout.tsx schemas) ── */}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />
 
       {/* ── NAVBAR ── */}
