@@ -18,6 +18,7 @@ class Settings:
     STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
     STRIPE_PRICE_ID: str = os.getenv("STRIPE_PRICE_ID", "price_1TKhmOD7eB0iNRMdzxmxjRJa")
     STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+    STRIPE_COUPON_ID: str = os.getenv("STRIPE_COUPON_ID", "")
     APP_ENV: str = os.getenv("APP_ENV", "development")
     JWT_SECRET: str = os.getenv("JWT_SECRET", "globegenius-dev-secret-change-in-prod")
     ADMIN_API_KEY: str = os.getenv("ADMIN_API_KEY", "")

@@ -776,9 +776,10 @@ async def create_checkout(user: dict = Depends(get_current_user)):
             customer=customer_id,
             mode="subscription",
             line_items=[{"price": settings.STRIPE_PRICE_ID, "quantity": 1}],
-            subscription_data={"trial_period_days": 7},
-            success_url="https://www.globegenius.app/home?payment=success",
-            cancel_url="https://www.globegenius.app/home?payment=cancel",
+            discounts=[{"coupon": settings.STRIPE_COUPON_ID}] if settings.STRIPE_COUPON_ID else [],
+            success_url="https://globegenius.app/home?payment=success",
+            cancel_url="https://globegenius.app/home?payment=cancel",
+            allow_promotion_codes=True,
         )
 
         return {"checkout_url": session.url, "session_id": session.id}
