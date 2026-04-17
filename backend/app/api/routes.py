@@ -757,7 +757,7 @@ async def create_checkout(user: dict = Depends(get_current_user)):
         session = stripe.checkout.Session.create(
             customer=customer_id,
             mode="subscription",
-            payment_method_types=["card", "paypal"],
+            payment_method_types=["card"],
             line_items=[{"price": settings.STRIPE_PRICE_ID, "quantity": 1}],
             discounts=[{"coupon": settings.STRIPE_COUPON_ID}] if settings.STRIPE_COUPON_ID else [],
             success_url="https://globegenius.app/home?payment=success",
