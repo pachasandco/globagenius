@@ -425,18 +425,11 @@ export default function Landing() {
     let cancelled = false;
     async function load() {
       try {
-        const [freeRes, premiumRes] = await Promise.allSettled([
-          getFlightDeals("free", 6),
-          getFlightDeals("premium", 6),
-        ]);
-        const all: FlightDeal[] = [];
-        if (freeRes.status === "fulfilled") all.push(...(freeRes.value.items || []));
-        if (premiumRes.status === "fulfilled") all.push(...(premiumRes.value.items || []));
-        // Sort by created_at desc, take 6 most recent across both tiers
-        all.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-        if (!cancelled && all.length > 0) {
-          setRecentDeals(all.slice(0, 6));
-          setDealsUpdatedAt(all[0].created_at);
+        const freeRes = await getFlightDeals("free", 6);
+        const items = freeRes.items || [];
+        if (!cancelled && items.length > 0) {
+          setRecentDeals(items.slice(0, 6));
+          setDealsUpdatedAt(items[0].created_at);
         }
       } catch { /* keep empty, section will hide */ }
     }

@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getFlightDeals, getPipelineStatus, getPreferences, updatePreferences, type FlightDeal, type PipelineStatus, type UserPreferences } from "@/lib/api";
+import { getFlightDeals, getPipelineStatus, type FlightDeal, type PipelineStatus } from "@/lib/api";
 import { initSession } from "@/lib/session";
 
 interface PlanDay {
@@ -138,18 +138,14 @@ function FlightDealCard({ deal }: { deal: FlightDeal }) {
 
 export default function HomePage() {
   const [email, setEmail] = useState("");
-  const [premiumDeals, setPremiumDeals] = useState<FlightDeal[]>([]);
-  const [freeDeals, setFreeDeals] = useState<FlightDeal[]>([]);
+  const [myDeals, setMyDeals] = useState<FlightDeal[]>([]);
+  const [lockedDeals, setLockedDeals] = useState<FlightDeal[]>([]);
   const [, setStatus] = useState<PipelineStatus | null>(null);
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [isPremium, setIsPremium] = useState(false);
-  const [activeTab, setActiveTab] = useState<"premium" | "free">("premium");
   const [showAllDeals, setShowAllDeals] = useState(false);
   const [destFilter, setDestFilter] = useState<string>("all");
-  const [minDiscount, setMinDiscount] = useState<number>(20);
-  const [userPrefs, setUserPrefs] = useState<UserPreferences | null>(null);
-  const [showUpsellBanner, setShowUpsellBanner] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
@@ -170,35 +166,8 @@ export default function HomePage() {
     const sessionCleanup = initSession();
 
     async function load() {
-      try {
-        const [premRes, freeRes, statusRes] = await Promise.allSettled([
-          getFlightDeals("premium", 50, 0, minDiscount),
-          getFlightDeals("free", 50, 0, minDiscount),
-          getPipelineStatus(),
-        ]);
-        if (premRes.status === "fulfilled") {
-          setPremiumDeals(premRes.value.items || []);
-        }
-        if (freeRes.status === "fulfilled") {
-          setFreeDeals(freeRes.value.items || []);
-        }
-        if (statusRes.status === "fulfilled") {
-          setStatus(statusRes.value as PipelineStatus);
-        }
-      } catch { /* ignore */ }
-
-      // Load user preferences so we can persist min_discount changes with a full payload
-      if (userId) {
-        try {
-          const prefs = await getPreferences(userId);
-          setUserPrefs(prefs);
-          if (prefs.min_discount) {
-            setMinDiscount(prefs.min_discount);
-          }
-        } catch { /* ignore */ }
-      }
-
-      // Check premium status
+      // Check premium status first so we know which deals to fetch
+      let isPremiumRef = false;
       try {
         const token = localStorage.getItem("gg_token");
         if (token) {
@@ -206,9 +175,33 @@ export default function HomePage() {
             headers: { Authorization: `Bearer ${token}` },
           });
           const premData = await premStatus.json();
-          setIsPremium(premData.is_premium || false);
+          isPremiumRef = premData.is_premium || false;
+          setIsPremium(isPremiumRef);
         }
       } catch { /* ignore */ }
+
+      // Fetch deals based on premium status
+      const plan = isPremiumRef ? "premium" : "free";
+      try {
+        const [dealsRes, statusRes] = await Promise.allSettled([
+          getFlightDeals(plan, 50),
+          getPipelineStatus(),
+        ]);
+        if (dealsRes.status === "fulfilled") {
+          setMyDeals(dealsRes.value.items || []);
+        }
+        if (statusRes.status === "fulfilled") {
+          setStatus(statusRes.value as PipelineStatus);
+        }
+      } catch { /* ignore */ }
+
+      // If free user, also fetch 3 locked premium deals for teaser
+      if (!isPremiumRef) {
+        try {
+          const lockedRes = await getFlightDeals("premium", 3);
+          setLockedDeals(lockedRes.items || []);
+        } catch { /* ignore */ }
+      }
 
       // Load articles
       try {
@@ -225,7 +218,7 @@ export default function HomePage() {
       clearInterval(interval);
       if (sessionCleanup) sessionCleanup();
     };
-  }, [router, minDiscount]);
+  }, [router]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -253,10 +246,21 @@ export default function HomePage() {
   }
 
   // Get unique destinations from deals for planner suggestions
-  const detectedDestinations = [...new Set([
-    ...premiumDeals.map(d => d.destination),
-    ...freeDeals.map(d => d.destination),
-  ])].slice(0, 6);
+  const detectedDestinations = [...new Set(myDeals.map(d => d.destination))].slice(0, 6);
+
+  async function handleCheckout() {
+    try {
+      const token = localStorage.getItem("gg_token");
+      const res = await fetch(`${API_URL}/api/stripe/create-checkout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      if (data.checkout_url) {
+        window.location.href = data.checkout_url;
+      }
+    } catch { /* ignore */ }
+  }
 
   function handleLogout() {
     localStorage.removeItem("gg_user_id");
@@ -265,12 +269,11 @@ export default function HomePage() {
     router.push("/");
   }
 
-  const allDeals = activeTab === "premium" ? premiumDeals : freeDeals;
-  const filteredByDest = destFilter === "all" ? allDeals : allDeals.filter(d => d.destination === destFilter);
+  const filteredByDest = destFilter === "all" ? myDeals : myDeals.filter(d => d.destination === destFilter);
   const INITIAL_DEALS_COUNT = 6;
   const deals = showAllDeals ? filteredByDest : filteredByDest.slice(0, INITIAL_DEALS_COUNT);
   const hasMoreDeals = filteredByDest.length > INITIAL_DEALS_COUNT;
-  const availableDestinations = Array.from(new Set(allDeals.map(d => d.destination)));
+  const availableDestinations = Array.from(new Set(myDeals.map(d => d.destination)));
 
   return (
     <div className="min-h-screen bg-[#FFF8F0]">
@@ -359,66 +362,13 @@ export default function HomePage() {
         <div className="mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
             <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl">Vos deals</h2>
-            <div className="flex items-center gap-1 bg-[#F0E6D8]/40 rounded-xl p-1 self-start sm:self-auto">
+            {!isPremium && (
               <button
-                onClick={() => setActiveTab("premium")}
-                className={`px-3 py-2 rounded-lg text-xs md:text-sm font-semibold transition-all ${activeTab === "premium" ? "bg-[#FF6B47] text-white shadow-sm" : "text-[#0A1F3D]/60 hover:text-[#0A1F3D]"}`}
+                onClick={handleCheckout}
+                className="bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold px-5 py-2.5 rounded-full text-sm transition-all self-start sm:self-auto"
               >
-                ⭐ Premium ≥30%
-                {premiumDeals.length > 0 && <span className="ml-1 bg-amber-100 text-amber-700 text-[10px] md:text-xs px-1.5 py-0.5 rounded-full">{premiumDeals.length}</span>}
+                Essayer Premium — 29€/an
               </button>
-              <button
-                onClick={() => setActiveTab("free")}
-                className={`px-3 py-2 rounded-lg text-xs md:text-sm font-semibold transition-all ${activeTab === "free" ? "bg-[#FF6B47] text-white shadow-sm" : "text-[#0A1F3D]/60 hover:text-[#0A1F3D]"}`}
-              >
-                🆓 Gratuit -20 à -29%
-                {freeDeals.length > 0 && <span className="ml-1 bg-gray-200 text-gray-600 text-[10px] md:text-xs px-1.5 py-0.5 rounded-full">{freeDeals.length}</span>}
-              </button>
-            </div>
-          </div>
-
-          {/* Min-discount threshold pills */}
-          <div className="mb-5">
-            <p className="text-xs font-bold text-gray-400 tracking-wider uppercase mb-2">Seuil minimum de réduction</p>
-            <div className="flex flex-wrap gap-2">
-              {[20, 30, 40, 50, 60].map((val) => (
-                <button
-                  key={val}
-                  type="button"
-                  onClick={() => {
-                    if (!isPremium && val >= 30) {
-                      setShowUpsellBanner(true);
-                      return;
-                    }
-                    setShowUpsellBanner(false);
-                    setMinDiscount(val);
-                    // Fire-and-forget persist. Requires full payload — use preloaded userPrefs.
-                    const userId = localStorage.getItem("gg_user_id");
-                    if (userId && userPrefs) {
-                      updatePreferences(userId, {
-                        airport_codes: userPrefs.airport_codes,
-                        offer_types: userPrefs.offer_types,
-                        min_discount: val,
-                        max_budget: userPrefs.max_budget,
-                        preferred_destinations: userPrefs.preferred_destinations,
-                      }).catch(() => {});
-                    }
-                  }}
-                  className="px-4 py-2 rounded-xl border-2 font-semibold text-sm transition-all"
-                  style={{
-                    borderColor: minDiscount === val ? "#FF6B47" : "#F0E6D8",
-                    background: minDiscount === val ? "#FFF1EC" : "#FFFEF9",
-                    color: minDiscount === val ? "#E55A38" : "#6b7280",
-                  }}
-                >
-                  -{val}%
-                </button>
-              ))}
-            </div>
-            {showUpsellBanner && !isPremium && (
-              <div className="mt-3 bg-[#FFF1EC] border border-[#FF6B47] rounded-xl p-3 text-sm text-[#0A1F3D]/70">
-                💎 Les deals -30% et plus sont réservés Premium. <span className="font-semibold">29€/an, remboursé dès le 1er voyage.</span>
-              </div>
             )}
           </div>
 
@@ -495,6 +445,37 @@ export default function HomePage() {
                 >
                   Voir moins
                 </button>
+              </div>
+            )}
+
+            {/* Locked premium deals teaser */}
+            {!isPremium && lockedDeals.length > 0 && (
+              <div className="mt-10">
+                <div className="flex items-center gap-3 mb-4">
+                  <h3 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#0A1F3D]">Deals Premium</h3>
+                  <span className="text-xs font-bold bg-[#FF6B47] text-white px-2.5 py-0.5 rounded-full">🔒 Réservé</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
+                  {lockedDeals.map((deal) => (
+                    <div key={deal.id} className="relative">
+                      <div className="blur-[6px] pointer-events-none opacity-60">
+                        <FlightDealCard deal={deal} />
+                      </div>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="bg-[#FFFEF9] border border-[#FF6B47] rounded-2xl px-6 py-4 text-center shadow-xl">
+                          <div className="text-sm font-semibold text-[#0A1F3D] mb-1">-{Math.round(deal.discount_pct)}% détecté</div>
+                          <div className="text-xs text-[#0A1F3D]/60 mb-3">Débloquez avec Premium</div>
+                          <button
+                            onClick={handleCheckout}
+                            className="bg-[#FF6B47] hover:bg-[#E55A38] text-white text-xs font-semibold px-4 py-2 rounded-full transition-all"
+                          >
+                            29€/an →
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </>)}
