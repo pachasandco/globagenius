@@ -129,9 +129,8 @@ export default function Dashboard() {
       {/* Nav */}
       <nav className="sticky top-0 z-50 bg-white border-b border-gray-100">
         <div className="max-w-6xl mx-auto px-5 h-[64px] flex items-center justify-between">
-          <Link href="/" className="flex items-end gap-2">
-            <img src="/globe1.png" alt="Globe Genius" className="w-10 h-10 shrink-0 object-contain" />
-            <span className="font-[family-name:var(--font-dm-serif)] text-[19px] leading-none">Globe Genius</span>
+          <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-[19px] leading-none">
+            Globe<span className="text-[#FF6B47]">Genius</span>
           </Link>
           <div className="flex items-center gap-4 text-sm">
             <span className="text-gray-400">Dashboard</span>

@@ -33,9 +33,8 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-[#FFF8F0] flex items-start sm:items-center justify-center px-4 md:px-5 py-8 sm:py-0">
       <div className="w-full max-w-sm">
-        <Link href="/" className="flex items-end gap-2 justify-center mb-10">
-          <img src="/globe1.png" alt="Globe Genius" className="w-11 h-11 shrink-0 object-contain" />
-          <span className="font-[family-name:var(--font-dm-serif)] text-xl leading-none">Globe Genius</span>
+        <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-xl leading-none block text-center mb-10">
+          Globe<span className="text-[#FF6B47]">Genius</span>
         </Link>
 
         <h1 className="font-[family-name:var(--font-dm-serif)] text-2xl text-center mb-2">
