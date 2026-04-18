@@ -30,6 +30,9 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [userId, setUserId] = useState("");
+  const [email, setEmail] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [showEmailForm, setShowEmailForm] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const router = useRouter();
@@ -38,11 +41,13 @@ export default function ProfilePage() {
 
   useEffect(() => {
     const id = localStorage.getItem("gg_user_id");
+    const userEmail = localStorage.getItem("gg_email");
     if (!id) {
       router.push("/signup");
       return;
     }
     setUserId(id);
+    setEmail(userEmail || "");
 
     // Load existing preferences
     getPreferences(id)
@@ -99,6 +104,44 @@ export default function ProfilePage() {
     );
   }
 
+  async function handleChangeEmail() {
+    if (!newEmail.trim()) {
+      setError("Veuillez entrer une adresse email");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setSuccess("");
+    try {
+      const token = localStorage.getItem("gg_token");
+      const res = await fetch(`${API_URL}/api/users/${userId}/email`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ email: newEmail }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Erreur lors de la modification de l'email");
+      }
+
+      localStorage.setItem("gg_email", newEmail);
+      setEmail(newEmail);
+      setNewEmail("");
+      setShowEmailForm(false);
+      setSuccess("Email modifié avec succès !");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur lors de la modification de l'email");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#FFF8F0] flex items-center justify-center">
@@ -123,7 +166,7 @@ export default function ProfilePage() {
 
       <div className="max-w-2xl mx-auto px-4 md:px-5 py-12">
         <h1 className="font-[family-name:var(--font-dm-serif)] text-3xl mb-1">Mon profil</h1>
-        <p className="text-gray-400 mb-8">Mettez à jour vos préférences de voyage</p>
+        <p className="text-gray-400 mb-8">Mettez à jour vos préférences et votre compte</p>
 
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
@@ -136,6 +179,52 @@ export default function ProfilePage() {
             ✅ {success}
           </div>
         )}
+
+        {/* ── Email ── */}
+        <div className="mb-12">
+          <h2 className="text-xl font-semibold mb-1">Adresse email</h2>
+          <p className="text-gray-400 text-sm mb-4">Votre email de connexion</p>
+
+          {!showEmailForm ? (
+            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-200">
+              <span className="text-gray-900">{email}</span>
+              <button
+                onClick={() => setShowEmailForm(true)}
+                className="text-sm text-[#FF6B47] hover:text-[#E55A38] font-semibold transition-colors"
+              >
+                Modifier
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <input
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                placeholder="Nouvelle adresse email"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FF6B47]"
+              />
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowEmailForm(false);
+                    setNewEmail("");
+                  }}
+                  className="flex-1 py-2 rounded-xl border border-gray-200 text-gray-500 font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleChangeEmail}
+                  disabled={saving || !newEmail.trim()}
+                  className="flex-1 bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold py-2 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {saving ? "Modification..." : "Confirmer"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* ── Airports ── */}
         <div className="mb-12">

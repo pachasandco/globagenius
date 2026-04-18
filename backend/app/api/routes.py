@@ -587,6 +587,28 @@ def update_preferences(user_id: str, req: PreferencesRequest, user: dict = Depen
     return {**resp.data[0], "capped": capped}
 
 
+@router.put("/api/users/{user_id}/email")
+def update_email(user_id: str, req: dict, user: dict = Depends(get_current_user)):
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    new_email = req.get("email", "").strip().lower()
+    if not new_email or "@" not in new_email:
+        raise HTTPException(status_code=400, detail="Invalid email format")
+
+    # Check if email already exists
+    existing = db.table("users").select("id").eq("email", new_email).execute()
+    if existing.data:
+        raise HTTPException(status_code=400, detail="Email already in use")
+
+    # Update email in users table
+    resp = db.table("users").update({"email": new_email}).eq("id", user_id).execute()
+    if not resp.data:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {"email": new_email, "message": "Email updated successfully"}
+
+
 # ─── TELEGRAM CONNECT ───
 
 @router.post("/api/users/{user_id}/telegram/generate-link")

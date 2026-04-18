@@ -138,6 +138,8 @@ function FlightDealCard({ deal }: { deal: FlightDeal }) {
 
 export default function HomePage() {
   const [email, setEmail] = useState("");
+  const [airports, setAirports] = useState<string[]>([]);
+  const [minDiscount, setMinDiscount] = useState<number>(20);
   const [myDeals, setMyDeals] = useState<FlightDeal[]>([]);
   const [lockedDeals, setLockedDeals] = useState<FlightDeal[]>([]);
   const [, setStatus] = useState<PipelineStatus | null>(null);
@@ -166,6 +168,17 @@ export default function HomePage() {
     const sessionCleanup = initSession();
 
     async function load() {
+      // Load user preferences
+      try {
+        const userId = localStorage.getItem("gg_user_id");
+        if (userId) {
+          const { getPreferences } = await import("@/lib/api");
+          const prefs = await getPreferences(userId);
+          setAirports(prefs.airport_codes || []);
+          setMinDiscount(prefs.min_discount || 20);
+        }
+      } catch { /* ignore */ }
+
       // Check premium status first so we know which deals to fetch
       let isPremiumRef = false;
       try {
@@ -299,7 +312,11 @@ export default function HomePage() {
             <a href="#guides" className="hover:text-gray-900 transition-colors">Guides</a>
           </div>
           <div className="flex items-center gap-2 md:gap-3">
-            <span className="text-sm text-gray-400 hidden md:block">{email}</span>
+            {airports.length > 0 && (
+              <span className="text-sm text-gray-400 hidden md:block">
+                {airports.join(", ")} • -{minDiscount}%
+              </span>
+            )}
             <Link href="/profile" className="text-sm text-gray-400 hover:text-gray-900 transition-colors">
               Profil
             </Link>
