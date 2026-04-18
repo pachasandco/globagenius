@@ -2,6 +2,7 @@
 
 import logging
 from typing import Optional
+from .chromadb_client import get_chromadb_client
 
 logger = logging.getLogger(__name__)
 
@@ -9,9 +10,9 @@ logger = logging.getLogger(__name__)
 class RagRetriever:
     """Query vector database for travel-relevant context."""
 
-    def __init__(self, db_client):
+    def __init__(self, db_client=None):
         """Initialize retriever with ChromaDB client."""
-        self.db_client = db_client
+        self.db_client = db_client or get_chromadb_client()
 
     def retrieve(
         self,
