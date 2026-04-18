@@ -763,7 +763,7 @@ class PlannerMessage(BaseModel):
 @router.post("/api/planner/{user_id}/chat")
 async def planner_chat(user_id: str, req: PlannerMessage):
     """Chat with the travel planner agent."""
-    from app.agents.travel_planner import get_or_create_session
+    from app.agents.rag import get_or_create_session
     session = get_or_create_session(user_id)
     response = session.chat(req.message)
     return response or {"type": "error", "message": "Pas de reponse"}
@@ -772,7 +772,7 @@ async def planner_chat(user_id: str, req: PlannerMessage):
 @router.post("/api/planner/{user_id}/reset")
 async def planner_reset(user_id: str):
     """Reset the planner conversation."""
-    from app.agents.travel_planner import reset_session
+    from app.agents.rag import reset_session
     reset_session(user_id)
     return {"status": "reset"}
 
