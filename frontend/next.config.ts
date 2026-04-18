@@ -9,6 +9,16 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "www.globegenius.app" }],
+        destination: "https://globegenius.app/:path*",
+        permanent: true,
+      },
+    ];
+  },
   async headers() {
     return [
       {
