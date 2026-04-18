@@ -138,8 +138,6 @@ function FlightDealCard({ deal }: { deal: FlightDeal }) {
 
 export default function HomePage() {
   const [email, setEmail] = useState("");
-  const [airports, setAirports] = useState<string[]>([]);
-  const [minDiscount, setMinDiscount] = useState<number>(20);
   const [myDeals, setMyDeals] = useState<FlightDeal[]>([]);
   const [lockedDeals, setLockedDeals] = useState<FlightDeal[]>([]);
   const [, setStatus] = useState<PipelineStatus | null>(null);
@@ -175,8 +173,6 @@ export default function HomePage() {
           const { getPreferences } = await import("@/lib/api");
           const prefs = await getPreferences(userId);
           console.log("Preferences loaded:", prefs);
-          setAirports(prefs.airport_codes || []);
-          setMinDiscount(prefs.min_discount || 20);
         }
       } catch (err) {
         console.error("Failed to load preferences:", err);
@@ -315,9 +311,7 @@ export default function HomePage() {
             <a href="#guides" className="hover:text-gray-900 transition-colors">Guides</a>
           </div>
           <div className="flex items-center gap-2 md:gap-3">
-            <span className="text-sm text-gray-400 hidden md:block">
-              {airports.length > 0 ? `${airports.join(", ")} • -${minDiscount}%` : email}
-            </span>
+            <span className="text-sm text-gray-400 hidden md:block">{email}</span>
             <Link href="/profile" className="text-sm text-gray-400 hover:text-gray-900 transition-colors">
               Profil
             </Link>
