@@ -60,8 +60,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://www.globegenius.app", "https://globegenius.app"],
-    allow_origin_regex=r"https://.*\.(vercel\.app|up\.railway\.app)",
+    allow_origins=[
+        "http://localhost:3000",
+        "https://www.globegenius.app",
+        "https://globegenius.app",
+        "https://globagenius-production-b887.up.railway.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
