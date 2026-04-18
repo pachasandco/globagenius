@@ -41,21 +41,21 @@ def format_search_results(results: list[dict]) -> str:
     """
     Format web search results into a readable string for LLM context.
 
+    Only includes the text content, no source attribution.
+
     Args:
         results: List of search result dicts
 
     Returns:
-        Formatted text block
+        Formatted text block for LLM context
     """
     if not results:
         return ""
 
-    lines = ["Sources: Web Search"]
-    for i, result in enumerate(results, 1):
-        title = result.get("title", "")
+    lines = []
+    for result in results:
         body = result.get("body", "")
-        lines.append(f"\n{i}. {title}")
         if body:
-            lines.append(f"   {body[:200]}...")
+            lines.append(f"• {body[:300]}")
 
     return "\n".join(lines)

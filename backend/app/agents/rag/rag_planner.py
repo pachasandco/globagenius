@@ -66,10 +66,21 @@ class RagTravelPlannerSession:
         # Try to extract destination
         destination = extract_destination(user_message)
 
-        # Retrieve RAG context
+        # Retrieve RAG context with multiple queries for comprehensive coverage
         rag_context = ""
         if self.retriever and destination:
+            # Query for main destination
             chunks = self.retriever.retrieve_by_destination(destination, top_k=5)
+
+            # If weak results, also query for food, activities, culture
+            if chunks and len(chunks) < 3:
+                food_chunks = self.retriever.retrieve(f"restaurants food cuisine {destination}", top_k=3)
+                activity_chunks = self.retriever.retrieve(f"activities things to do {destination}", top_k=3)
+                culture_chunks = self.retriever.retrieve(f"culture local tips {destination}", top_k=2)
+                chunks.extend(food_chunks)
+                chunks.extend(activity_chunks)
+                chunks.extend(culture_chunks)
+
             if chunks:
                 rag_context = self._format_rag_chunks(chunks)
             else:
@@ -109,55 +120,49 @@ class RagTravelPlannerSession:
 
     def _build_system_prompt(self, rag_context: str, destination: Optional[str] = None) -> str:
         """Build system prompt with RAG context."""
-        base_prompt = """Tu es un expert voyage passionné qui planifie des séjours incroyables.
+        base_prompt = """Tu es un expert voyage passionné qui planifie des séjours incroyables, basé sur l'expérience réelle de voyageurs du monde entier.
 
 Tu réponds toujours en FRANÇAIS. Tu dois répondre avec un JSON strict dans l'un de ces formats:
 
 1. Pour poser une question:
 {"type": "question", "message": "Ta question en français", "options": ["Option 1", "Option 2", "Option 3"]}
 
-2. Pour proposer un plan de voyage:
-{"type": "planning", "destination": "Destination", "duration": "7 jours", "estimated_budget": "1500€", "days": [{"day": 1, "title": "Titre", "morning": {"activity": "Activité"}, "afternoon": {"activity": "Activité"}, "evening": {"activity": "Activité"}}, ...]}
+2. Pour proposer un plan de voyage détaillé:
+{"type": "planning", "destination": "Destination", "duration": "7 jours", "estimated_budget": "1500€", "days": [{"day": 1, "title": "Jour 1 - Arrivée et exploration du quartier XYZ", "morning": {"activity": "08h: Arrivée à l'aéroport. Transfert à l'hôtel. Petit-déjeuner au café local recommandé (El Café, rue XX). Pause et repos jusqu'à 11h."}, "afternoon": {"activity": "12h-15h: Déjeuner dans le quartier historique (Restaurant NOM, spécialité: PLAT). 15h-17h: Visite du marché central, exploration des ruelles, photos. Magasinage d'artisanat local."}, "evening": {"activity": "19h: Apéritif au rooftop bar vue sur la ville (NOM du bar). 20h: Dîner street food au quartier XXXX (tacos, kebabs, fruits tropicaux). Repos à l'hôtel."}}, ...]}
 
 3. Pour un message simple:
 {"type": "message", "message": "Ton message en français"}
 
-RÈGLES:
-- Réponds TOUJOURS en JSON valide.
-- Si tu trouves des informations pertinentes dans les sources YouTube, cite le créateur et la vidéo.
-- Si aucune source YouTube ne couvre la destination, dis-le et propose quand même un plan basé sur tes connaissances.
-- Les plans de voyage doivent inclure 1 jour par jour du séjour.
-- Sois engageant et enthousiaste.
+INSTRUCTIONS CRITIQUES:
+- Réponds TOUJOURS en JSON valide et complet.
+- N'UTILISE PAS les noms de créateurs ou chaînes YouTube — intègre leurs insights directement dans tes conseils.
+- Les plans doivent être très détaillés: noms de lieux, restaurants, activités précises, horaires, conseils pratiques.
+- Inclus les meilleurs restaurants, street food, marchés, monuments, quartiers à explorer.
+- Propose des itinéraires réalistes avec les transports et temps de trajet.
+- Les budgets doivent être réalistes par catégorie: hébergement, nourriture, activités, transport.
+- Les plans de voyage doivent inclure 1 jour par jour complet du séjour avec timing.
+- Sois très engageant, enthousiaste et inspirant dans tes descriptions.
+- Fais des recommandations authentiques basées sur l'expérience réelle (pas générique).
 """
 
         if rag_context:
-            base_prompt += f"\n\nSOURCES DISPONIBLES:\n{rag_context}"
+            base_prompt += f"\n\nINFORMATIONS DE TERRAIN (d'expériences réelles de voyageurs):\n{rag_context}"
 
         if destination:
-            base_prompt += f"\n\nDestination mentionnée: {destination}"
+            base_prompt += f"\n\nDestination demandée: {destination}"
 
         return base_prompt
 
     def _format_rag_chunks(self, chunks: list[dict]) -> str:
-        """Format RAG chunks for LLM context."""
-        lines = ["Sources YouTube:"]
-        seen_videos = set()
+        """Format RAG chunks for LLM context (without citing sources)."""
+        lines = []
 
         for chunk in chunks:
-            video_id = chunk.get("video_id")
-            channel = chunk.get("channel")
-            title = chunk.get("video_title")
-            text = chunk.get("text", "")[:300]  # Truncate to 300 chars
+            text = chunk.get("text", "")
+            if text.strip():
+                lines.append(f"• {text}")
 
-            # Avoid duplicate video references
-            key = (video_id, channel)
-            if key not in seen_videos:
-                lines.append(f"- {channel} - {title}")
-                seen_videos.add(key)
-
-            lines.append(f"  {text}...")
-
-        return "\n".join(lines)
+        return "\n".join(lines) if lines else ""
 
     def _parse_response(self, text: str) -> dict:
         """Extract JSON from Claude response."""
