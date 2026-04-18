@@ -85,10 +85,10 @@ export default function OnboardingPage() {
         offer_types: offerTypes.length > 0 ? offerTypes : ["flight"],
         min_discount: minDiscount,
       });
-      setStep(3);
+      setStep(4);
     } catch {
       // Continue anyway
-      setStep(3);
+      setStep(4);
     } finally {
       setLoading(false);
     }
@@ -264,7 +264,21 @@ export default function OnboardingPage() {
             {showUpsellBanner && !isPremium && (
               <div className="mb-8 bg-[#FFF1EC] border border-[#FF6B47] rounded-xl p-4 text-sm text-[#0A1F3D]/70">
                 💎 Les deals -30% et plus sont réservés Premium. 29€/an, remboursé dès le 1er voyage.{" "}
-                <a href="/home" className="underline font-semibold">Débloquer Premium →</a>
+                <button
+                  onClick={async () => {
+                    try {
+                      await updatePreferences(userId, {
+                        airport_codes: airports.length > 0 ? airports : ["CDG"],
+                        offer_types: offerTypes.length > 0 ? offerTypes : ["flight"],
+                        min_discount: minDiscount,
+                      });
+                    } catch { /* ignore */ }
+                    router.push("/home?upgrade=1");
+                  }}
+                  className="underline font-semibold hover:opacity-80 transition-opacity"
+                >
+                  Débloquer Premium →
+                </button>
               </div>
             )}
 
