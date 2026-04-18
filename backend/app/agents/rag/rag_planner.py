@@ -105,10 +105,14 @@ class RagTravelPlannerSession:
             # Store assistant message
             self.messages.append({"role": "assistant", "content": assistant_message})
 
+            # Add Telegram reminder at the end
+            telegram_reminder = self._get_telegram_reminder()
+            final_message = f"{assistant_message}\n\n{telegram_reminder}"
+
             # Return as plain message (Markdown will render naturally)
             return {
                 "type": "message",
-                "message": assistant_message,
+                "message": final_message,
             }
 
         except Exception as e:
