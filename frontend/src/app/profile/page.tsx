@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getPreferences, updatePreferences } from "@/lib/api";
+import { getPreferences, updatePreferences, changePassword } from "@/lib/api";
 
 const AIRPORTS = [
   { code: "CDG", label: "Paris Charles de Gaulle" },
@@ -33,6 +33,9 @@ export default function ProfilePage() {
   const [email, setEmail] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [showEmailForm, setShowEmailForm] = useState(false);
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const router = useRouter();
@@ -142,6 +145,29 @@ export default function ProfilePage() {
     }
   }
 
+  async function handleChangePassword() {
+    if (!currentPassword || !newPassword) {
+      setError("Veuillez remplir tous les champs");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setSuccess("");
+    try {
+      await changePassword(userId, currentPassword, newPassword);
+      setCurrentPassword("");
+      setNewPassword("");
+      setShowPasswordForm(false);
+      setSuccess("Mot de passe modifié avec succès !");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur lors de la modification du mot de passe");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#FFF8F0] flex items-center justify-center">
@@ -218,6 +244,65 @@ export default function ProfilePage() {
                   onClick={handleChangeEmail}
                   disabled={saving || !newEmail.trim()}
                   className="flex-1 bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold py-2 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {saving ? "Modification..." : "Confirmer"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Password ── */}
+        <div className="mb-12">
+          <h2 className="text-xl font-semibold mb-1">Mot de passe</h2>
+          <p className="text-gray-400 text-sm mb-6">
+            Sécurisez votre compte en changeant votre mot de passe.
+          </p>
+
+          {!showPasswordForm ? (
+            <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-between">
+              <div>
+                <div className="text-gray-600 font-medium">••••••••</div>
+              </div>
+              <button
+                onClick={() => setShowPasswordForm(true)}
+                className="px-4 py-2 bg-[#FF6B47] hover:bg-[#E55A38] text-white text-sm font-semibold rounded-lg transition-colors"
+              >
+                Modifier
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <input
+                type="password"
+                placeholder="Mot de passe actuel"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none text-sm transition-colors"
+              />
+              <input
+                type="password"
+                placeholder="Nouveau mot de passe (min. 6 caractères)"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none text-sm transition-colors"
+              />
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowPasswordForm(false);
+                    setCurrentPassword("");
+                    setNewPassword("");
+                    setError("");
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-200 text-gray-600 font-medium rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleChangePassword}
+                  disabled={saving || !currentPassword || !newPassword}
+                  className="flex-1 px-4 py-2 bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {saving ? "Modification..." : "Confirmer"}
                 </button>

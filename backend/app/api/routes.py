@@ -515,6 +515,11 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
 @router.post("/api/auth/login")
 def login(req: LoginRequest, request: Request):
     _check_rate_limit(f"login:{request.client.host if request.client else 'unknown'}")
@@ -607,6 +612,30 @@ def update_email(user_id: str, req: dict, user: dict = Depends(get_current_user)
         raise HTTPException(status_code=404, detail="User not found")
 
     return {"email": new_email, "message": "Email updated successfully"}
+
+
+@router.put("/api/users/{user_id}/password")
+def update_password(user_id: str, req: ChangePasswordRequest, user: dict = Depends(get_current_user)):
+    _check_rate_limit(f"change_password:{user_id}")
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    if len(req.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Le mot de passe doit contenir au moins 6 caracteres")
+
+    # Fetch current password hash
+    row = db.table("users").select("password_hash").eq("id", user_id).single().execute()
+    if not row.data:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Verify current password
+    if not _verify_password(req.current_password, row.data["password_hash"]):
+        raise HTTPException(status_code=400, detail="Mot de passe actuel incorrect")
+
+    # Update password
+    db.table("users").update({"password_hash": _hash_password(req.new_password)}).eq("id", user_id).execute()
+
+    return {"message": "Password updated successfully"}
 
 
 # ─── TELEGRAM CONNECT ───

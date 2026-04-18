@@ -37,6 +37,13 @@ export function login(email: string, password: string) {
   });
 }
 
+export function changePassword(userId: string, currentPassword: string, newPassword: string) {
+  return fetchAPI<{ message: string }>(`/api/users/${userId}/password`, {
+    method: "PUT",
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+}
+
 // ─── Preferences ───
 
 export interface UserPreferences {
