@@ -23,41 +23,10 @@ const OFFER_TYPES = [
   { id: "flight", label: "Vols à prix cassés", desc: "Billets d'avion aller-retour en promo", icon: "✈️" },
 ];
 
-const DESTINATIONS_EUROPE = [
-  { code: "LIS", label: "Lisbonne", emoji: "🇵🇹" },
-  { code: "BCN", label: "Barcelone", emoji: "🇪🇸" },
-  { code: "FCO", label: "Rome", emoji: "🇮🇹" },
-  { code: "ATH", label: "Athenes", emoji: "🇬🇷" },
-  { code: "AMS", label: "Amsterdam", emoji: "🇳🇱" },
-  { code: "PRG", label: "Prague", emoji: "🇨🇿" },
-  { code: "BUD", label: "Budapest", emoji: "🇭🇺" },
-  { code: "RAK", label: "Marrakech", emoji: "🇲🇦" },
-  { code: "IST", label: "Istanbul", emoji: "🇹🇷" },
-  { code: "MAD", label: "Madrid", emoji: "🇪🇸" },
-  { code: "BER", label: "Berlin", emoji: "🇩🇪" },
-  { code: "DUB", label: "Dublin", emoji: "🇮🇪" },
-];
-
-const DESTINATIONS_LONG_COURRIER = [
-  { code: "JFK", label: "New York", emoji: "🇺🇸" },
-  { code: "YUL", label: "Montreal", emoji: "🇨🇦" },
-  { code: "CUN", label: "Cancun", emoji: "🇲🇽" },
-  { code: "PUJ", label: "Punta Cana", emoji: "🇩🇴" },
-  { code: "BKK", label: "Bangkok", emoji: "🇹🇭" },
-  { code: "NRT", label: "Tokyo", emoji: "🇯🇵" },
-  { code: "DXB", label: "Dubai", emoji: "🇦🇪" },
-  { code: "MLE", label: "Maldives", emoji: "🇲🇻" },
-  { code: "MRU", label: "Maurice", emoji: "🇲🇺" },
-  { code: "RUN", label: "La Reunion", emoji: "🇫🇷" },
-  { code: "PPT", label: "Tahiti", emoji: "🇵🇫" },
-  { code: "GIG", label: "Rio de Janeiro", emoji: "🇧🇷" },
-];
-
 export default function OnboardingPage() {
   const [step, setStep] = useState(1);
   const [airports, setAirports] = useState<string[]>(["CDG"]);
   const [offerTypes, setOfferTypes] = useState<string[]>(["flight"]);
-  const [destinations, setDestinations] = useState<string[]>([]);
   const [minDiscount, setMinDiscount] = useState<number>(20);
   const [isPremium, setIsPremium] = useState(false);
   const [showUpsellBanner, setShowUpsellBanner] = useState(false);
@@ -83,9 +52,6 @@ export default function OnboardingPage() {
         if (prefs.offer_types && prefs.offer_types.length > 0) {
           setOfferTypes(prefs.offer_types);
         }
-        if (prefs.preferred_destinations && prefs.preferred_destinations.length > 0) {
-          setDestinations(prefs.preferred_destinations);
-        }
         if (prefs.min_discount) {
           setMinDiscount(prefs.min_discount);
         }
@@ -110,11 +76,6 @@ export default function OnboardingPage() {
     );
   }
 
-  function toggleDestination(code: string) {
-    setDestinations((prev) =>
-      prev.includes(code) ? prev.filter((d) => d !== code) : [...prev, code]
-    );
-  }
 
   async function handleSavePreferences() {
     setLoading(true);
@@ -122,13 +83,12 @@ export default function OnboardingPage() {
       await updatePreferences(userId, {
         airport_codes: airports.length > 0 ? airports : ["CDG"],
         offer_types: offerTypes.length > 0 ? offerTypes : ["flight"],
-        preferred_destinations: destinations.length > 0 ? destinations : null,
         min_discount: minDiscount,
       });
-      setStep(4);
+      setStep(3);
     } catch {
       // Continue anyway
-      setStep(4);
+      setStep(3);
     } finally {
       setLoading(false);
     }
@@ -156,7 +116,7 @@ export default function OnboardingPage() {
 
         {/* Progress */}
         <div className="flex gap-2 mb-8 max-w-xs mx-auto">
-          {[1, 2, 3, 4].map((s) => (
+          {[1, 2, 3].map((s) => (
             <div
               key={s}
               className="h-1 flex-1 rounded-full transition-colors"
@@ -266,90 +226,47 @@ export default function OnboardingPage() {
           </div>
         )}
 
-        {/* ── STEP 3: Destinations ── */}
+        {/* ── STEP 3: Min Discount ── */}
         {step === 3 && (
           <div>
             <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-center mb-2">
-              Destinations preferees
+              Seuil minimum de réduction
             </h2>
-            <p className="text-gray-400 text-sm text-center mb-6">
-              Optionnel — selectionnez vos destinations favorites ou laissez vide pour tout recevoir.
+            <p className="text-gray-400 text-sm text-center mb-8">
+              Vous ne recevrez des alertes qu&apos;à partir de ce pourcentage.
             </p>
 
-            <div className="mb-3">
-              <div className="text-xs font-bold text-gray-400 tracking-wider uppercase mb-2">Europe & Maghreb</div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {DESTINATIONS_EUROPE.map((d) => (
-                  <button
-                    key={d.code}
-                    onClick={() => toggleDestination(d.code)}
-                    className="p-2.5 rounded-xl border-2 text-center transition-all"
-                    style={{
-                      borderColor: destinations.includes(d.code) ? "#06b6d4" : "#e5e7eb",
-                      background: destinations.includes(d.code) ? "#ecfeff" : "white",
-                    }}
-                  >
-                    <div className="text-base mb-0.5">{d.emoji}</div>
-                    <div className="text-[11px] font-medium">{d.label}</div>
-                  </button>
-                ))}
-              </div>
+            <div className="mb-8 flex flex-wrap gap-2 justify-center">
+              {[20, 30, 40, 50, 60].map((val) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => {
+                    if (!isPremium && val >= 40) {
+                      setShowUpsellBanner(true);
+                      return;
+                    }
+                    setShowUpsellBanner(false);
+                    setMinDiscount(val);
+                  }}
+                  className="px-6 py-3 rounded-xl border-2 font-semibold text-base transition-all"
+                  style={{
+                    borderColor: minDiscount === val ? "#FF6B47" : "#F0E6D8",
+                    background: minDiscount === val ? "#FFF1EC" : "#FFFEF9",
+                    color: minDiscount === val ? "#E55A38" : "#6b7280",
+                  }}
+                >
+                  -{val}%
+                </button>
+              ))}
             </div>
 
-            <div className="mb-6">
-              <div className="text-xs font-bold text-gray-400 tracking-wider uppercase mb-2">Long-courrier</div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {DESTINATIONS_LONG_COURRIER.map((d) => (
-                  <button
-                    key={d.code}
-                    onClick={() => toggleDestination(d.code)}
-                    className="p-2.5 rounded-xl border-2 text-center transition-all"
-                    style={{
-                      borderColor: destinations.includes(d.code) ? "#06b6d4" : "#e5e7eb",
-                      background: destinations.includes(d.code) ? "#ecfeff" : "white",
-                    }}
-                  >
-                    <div className="text-base mb-0.5">{d.emoji}</div>
-                    <div className="text-[11px] font-medium">{d.label}</div>
-                  </button>
-                ))}
+            {showUpsellBanner && !isPremium && (
+              <div className="mb-8 bg-[#FFF1EC] border border-[#FF6B47] rounded-xl p-4 text-sm text-[#0A1F3D]/70">
+                💎 Les deals -30% et plus sont réservés Premium. 29€/an, remboursé dès le 1er voyage.{" "}
+                <a href="/home" className="underline font-semibold">Débloquer Premium →</a>
               </div>
-            </div>
-
-            <div className="mb-8">
-              <h3 className="font-semibold text-[15px] mb-1">Seuil minimum de réduction</h3>
-              <p className="text-sm text-gray-400 mb-4">Vous ne recevrez des alertes qu&apos;à partir de ce pourcentage.</p>
-              <div className="flex flex-wrap gap-2">
-                {[20, 30, 40, 50, 60].map((val) => (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() => {
-                      if (!isPremium && val >= 40) {
-                        setShowUpsellBanner(true);
-                        return;
-                      }
-                      setShowUpsellBanner(false);
-                      setMinDiscount(val);
-                    }}
-                    className="px-4 py-2 rounded-xl border-2 font-semibold text-sm transition-all"
-                    style={{
-                      borderColor: minDiscount === val ? "#FF6B47" : "#F0E6D8",
-                      background: minDiscount === val ? "#FFF1EC" : "#FFFEF9",
-                      color: minDiscount === val ? "#E55A38" : "#6b7280",
-                    }}
-                  >
-                    -{val}%
-                  </button>
-                ))}
-              </div>
-              {showUpsellBanner && !isPremium && (
-                <div className="mt-3 bg-[#FFF1EC] border border-[#FF6B47] rounded-xl p-3 text-sm text-[#0A1F3D]/70">
-                  💎 Les deals -30% et plus sont réservés Premium. 29€/an, remboursé dès le 1er voyage.{" "}
-                  <a href="/home" className="underline font-semibold">Débloquer Premium →</a>
-                </div>
-              )}
-            </div>
+            )}
 
             <div className="flex gap-3">
               <button onClick={() => setStep(2)} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-500 font-medium hover:bg-gray-50 transition-colors">
@@ -366,7 +283,7 @@ export default function OnboardingPage() {
           </div>
         )}
 
-        {/* ── STEP 4: Telegram ── */}
+        {/* ── STEP 4: Telegram (3 visually) ── */}
         {step === 4 && (
           <div className="text-center">
             <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl mb-2">

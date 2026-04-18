@@ -300,6 +300,9 @@ export default function HomePage() {
           </div>
           <div className="flex items-center gap-2 md:gap-3">
             <span className="text-sm text-gray-400 hidden md:block">{email}</span>
+            <Link href="/profile" className="text-sm text-gray-400 hover:text-gray-900 transition-colors">
+              Profil
+            </Link>
             <button onClick={handleLogout} className="text-sm text-gray-400 hover:text-red-500 transition-colors">
               Déconnexion
             </button>
