@@ -1,6 +1,5 @@
 """RAG-augmented travel planner — replaces travel_planner.py."""
 
-import json
 import logging
 import re
 from typing import Optional
@@ -58,7 +57,7 @@ class RagTravelPlannerSession:
             user_message: User input (French)
 
         Returns:
-            JSON dict with keys: type, message, options, destination, days, estimated_budget
+            JSON dict with type "message" and message text (Markdown formatted)
         """
         # Store user message
         self.messages.append({"role": "user", "content": user_message})
@@ -96,57 +95,59 @@ class RagTravelPlannerSession:
             client = get_client()
             response = client.messages.create(
                 model="claude-haiku-4-5",
-                max_tokens=2000,
+                max_tokens=3000,
                 system=system_prompt,
                 messages=self.messages,
             )
 
             assistant_message = response.content[0].text
 
-            # Try to parse JSON response
-            data = self._parse_response(assistant_message)
-
             # Store assistant message
             self.messages.append({"role": "assistant", "content": assistant_message})
 
-            return data
+            # Return as plain message (Markdown will render naturally)
+            return {
+                "type": "message",
+                "message": assistant_message,
+            }
 
         except Exception as e:
             logger.error(f"Chat error: {e}")
             return {
-                "type": "error",
+                "type": "message",
                 "message": f"Erreur: {str(e)}",
             }
 
     def _build_system_prompt(self, rag_context: str, destination: Optional[str] = None) -> str:
         """Build system prompt with RAG context."""
-        base_prompt = """Tu es un expert voyage passionné qui planifie des séjours incroyables, basé sur l'expérience réelle de voyageurs du monde entier.
+        base_prompt = """Tu es un expert voyage passionné qui planifie des séjours extraordinaires basé sur l'expérience réelle de voyageurs du monde entier.
 
-Tu réponds toujours en FRANÇAIS. Tu dois répondre avec un JSON strict dans l'un de ces formats:
+Tu réponds TOUJOURS en FRANÇAIS en langage naturel, conversationnel et enthousiaaste.
 
-1. Pour poser une question:
-{"type": "question", "message": "Ta question en français", "options": ["Option 1", "Option 2", "Option 3"]}
+FORMAT DE RÉPONSE:
+- Utilise Markdown pour structurer ta réponse (# titres, ## sous-titres, • bullet points)
+- Réponds comme un ami enthousiaste qui partage ses meilleures découvertes
+- Pas de JSON, pas de parenthèses inutiles
+- Chaque activité, adresse, tarif sur sa propre ligne en bullet point
+- Groupes par jour (Jour 1, Jour 2, etc.) avec sections Matin, Après-midi, Soir
 
-2. Pour proposer un plan de voyage détaillé:
-{"type": "planning", "destination": "Destination", "duration": "7 jours", "estimated_budget": "1500€", "days": [{"day": 1, "title": "Jour 1 - Arrivée et exploration du quartier XYZ", "morning": {"activity": "08h: Arrivée à l'aéroport. Transfert à l'hôtel. Petit-déjeuner au café local recommandé (El Café, rue XX). Pause et repos jusqu'à 11h."}, "afternoon": {"activity": "12h-15h: Déjeuner dans le quartier historique (Restaurant NOM, spécialité: PLAT). 15h-17h: Visite du marché central, exploration des ruelles, photos. Magasinage d'artisanat local."}, "evening": {"activity": "19h: Apéritif au rooftop bar vue sur la ville (NOM du bar). 20h: Dîner street food au quartier XXXX (tacos, kebabs, fruits tropicaux). Repos à l'hôtel."}}, ...]}
+CONTENU:
+- Sois très détaillé: noms de restaurants, adresses, tarifs, horaires
+- Inclus les meilleures expériences authentiques, street food, marchés, monuments
+- Propose des itinéraires réalistes avec transports et timing
+- Budget détaillé: hébergement, nourriture, activités, transport
+- Recommandations basées sur l'expérience réelle, pas génériques
+- Ne cite jamais les créateurs YouTube, intègre juste leurs insights
 
-3. Pour un message simple:
-{"type": "message", "message": "Ton message en français"}
-
-INSTRUCTIONS CRITIQUES:
-- Réponds TOUJOURS en JSON valide et complet.
-- N'UTILISE PAS les noms de créateurs ou chaînes YouTube — intègre leurs insights directement dans tes conseils.
-- Les plans doivent être très détaillés: noms de lieux, restaurants, activités précises, horaires, conseils pratiques.
-- Inclus les meilleurs restaurants, street food, marchés, monuments, quartiers à explorer.
-- Propose des itinéraires réalistes avec les transports et temps de trajet.
-- Les budgets doivent être réalistes par catégorie: hébergement, nourriture, activités, transport.
-- Les plans de voyage doivent inclure 1 jour par jour complet du séjour avec timing.
-- Sois très engageant, enthousiaste et inspirant dans tes descriptions.
-- Fais des recommandations authentiques basées sur l'expérience réelle (pas générique).
-"""
+STYLE:
+- Enthousiaste et inspirant
+- Conversationnel, comme entre amis
+- Très détaillé et pratique
+- Honnête sur les prix et difficultés
+- Inclus astuces locales et plans secrets"""
 
         if rag_context:
-            base_prompt += f"\n\nINFORMATIONS DE TERRAIN (d'expériences réelles de voyageurs):\n{rag_context}"
+            base_prompt += f"\n\nINFORMATIONS DE TERRAIN (expériences réelles de voyageurs):\n{rag_context}"
 
         if destination:
             base_prompt += f"\n\nDestination demandée: {destination}"
@@ -163,22 +164,6 @@ INSTRUCTIONS CRITIQUES:
                 lines.append(f"• {text}")
 
         return "\n".join(lines) if lines else ""
-
-    def _parse_response(self, text: str) -> dict:
-        """Extract JSON from Claude response."""
-        # Try to extract JSON block
-        json_match = re.search(r"\{.*\}", text, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group(0))
-            except json.JSONDecodeError:
-                pass
-
-        # Fallback: wrap raw text
-        return {
-            "type": "message",
-            "message": text,
-        }
 
 
 # Global session storage
