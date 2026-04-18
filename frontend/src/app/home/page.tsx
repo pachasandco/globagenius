@@ -174,10 +174,13 @@ export default function HomePage() {
         if (userId) {
           const { getPreferences } = await import("@/lib/api");
           const prefs = await getPreferences(userId);
+          console.log("Preferences loaded:", prefs);
           setAirports(prefs.airport_codes || []);
           setMinDiscount(prefs.min_discount || 20);
         }
-      } catch { /* ignore */ }
+      } catch (err) {
+        console.error("Failed to load preferences:", err);
+      }
 
       // Check premium status first so we know which deals to fetch
       let isPremiumRef = false;
@@ -312,11 +315,9 @@ export default function HomePage() {
             <a href="#guides" className="hover:text-gray-900 transition-colors">Guides</a>
           </div>
           <div className="flex items-center gap-2 md:gap-3">
-            {airports.length > 0 && (
-              <span className="text-sm text-gray-400 hidden md:block">
-                {airports.join(", ")} • -{minDiscount}%
-              </span>
-            )}
+            <span className="text-sm text-gray-400 hidden md:block">
+              {airports.length > 0 ? `${airports.join(", ")} • -${minDiscount}%` : email}
+            </span>
             <Link href="/profile" className="text-sm text-gray-400 hover:text-gray-900 transition-colors">
               Profil
             </Link>
