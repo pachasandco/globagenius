@@ -341,27 +341,11 @@ export default function HomePage() {
         )}
 
         {isPremium && (
-          <div className="mb-6 bg-[#FFFEF9] border border-[#16A34A] rounded-2xl px-5 py-3 flex items-center justify-between">
+          <div className="mb-6 bg-[#FFFEF9] border border-[#16A34A] rounded-2xl px-5 py-3">
             <div className="flex items-center gap-2">
               <span className="text-lg">✅</span>
               <span className="text-sm font-medium text-[#0A1F3D]">Abonnement Premium actif</span>
             </div>
-            <button
-              onClick={async () => {
-                try {
-                  const token = localStorage.getItem("gg_token");
-                  const res = await fetch(`${API_URL}/api/stripe/portal`, {
-                    method: "POST",
-                    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-                  });
-                  const data = await res.json();
-                  if (data.portal_url) window.location.href = data.portal_url;
-                } catch { /* ignore */ }
-              }}
-              className="text-sm text-green-700 hover:underline"
-            >
-              Gerer mon abonnement
-            </button>
           </div>
         )}
 

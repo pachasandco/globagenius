@@ -311,6 +311,34 @@ export default function ProfilePage() {
           )}
         </div>
 
+        {/* ── Abonnement ── */}
+        {isPremium && (
+          <div className="mb-12">
+            <h2 className="text-xl font-semibold mb-1">Abonnement</h2>
+            <p className="text-gray-400 text-sm mb-6">
+              Gérez votre abonnement Premium.
+            </p>
+            <button
+              onClick={async () => {
+                try {
+                  const token = localStorage.getItem("gg_token");
+                  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/stripe/portal`, {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                  });
+                  const data = await res.json();
+                  if (data.portal_url) window.location.href = data.portal_url;
+                } catch (err) {
+                  console.error("Erreur:", err);
+                }
+              }}
+              className="px-6 py-3 bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold rounded-lg transition-colors"
+            >
+              Gérer mon abonnement →
+            </button>
+          </div>
+        )}
+
         {/* ── Airports ── */}
         <div className="mb-12">
           <h2 className="text-xl font-semibold mb-1">Aéroports de départ</h2>
