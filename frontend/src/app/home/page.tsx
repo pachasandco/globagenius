@@ -83,7 +83,7 @@ function FlightDealCard({ deal }: { deal: FlightDeal }) {
         {dep} – {ret} · {days} jour{days > 1 ? "s" : ""}
       </div>
 
-      {/* Chips row : airline + stops + score */}
+      {/* Chips row : airline + stops */}
       <div className="flex flex-wrap items-center gap-1.5 mb-4">
         {deal.airline && (
           <span className="bg-[#F0E6D8]/60 text-[#0A1F3D] text-xs px-2.5 py-1 rounded-full">
@@ -92,9 +92,6 @@ function FlightDealCard({ deal }: { deal: FlightDeal }) {
         )}
         <span className="bg-[#F0E6D8]/60 text-[#0A1F3D] text-xs px-2.5 py-1 rounded-full">
           {stopsLabel}
-        </span>
-        <span className="ml-auto bg-[#06B6D4]/10 text-[#06B6D4] text-xs font-semibold px-2.5 py-1 rounded-full">
-          Score {deal.score}
         </span>
       </div>
 
@@ -256,9 +253,6 @@ export default function HomePage() {
       setChatLoading(false);
     }
   }
-
-  // Get unique destinations from deals for planner suggestions
-  const detectedDestinations = [...new Set(myDeals.map(d => d.destination))].slice(0, 6);
 
   async function handleCheckout() {
     try {
@@ -522,27 +516,9 @@ export default function HomePage() {
               {chatMessages.length === 0 && (
                 <div className="text-center py-8">
                   <div className="text-3xl mb-3">✈️</div>
-                  <p className="text-sm text-gray-500 mb-4">
+                  <p className="text-sm text-gray-500">
                     Dites-moi votre destination et vos dates, je vous prépare un programme sur mesure.
                   </p>
-                  {/* Destination suggestions from detected deals */}
-                  <div className="flex flex-wrap justify-center gap-2">
-                    {detectedDestinations.length > 0 ? (
-                      detectedDestinations.map(dest => (
-                        <button key={dest} onClick={() => sendChat(`Je pars à ${dest} 7 jours`)}
-                          className="text-xs bg-cyan-50 text-cyan-700 border border-cyan-100 px-3 py-1.5 rounded-full hover:bg-cyan-100 transition-colors">
-                          {dest}
-                        </button>
-                      ))
-                    ) : (
-                      ["Lisbonne", "Barcelone", "Rome", "Marrakech", "Prague", "Athènes"].map(dest => (
-                        <button key={dest} onClick={() => sendChat(`Je pars à ${dest} 7 jours en mai`)}
-                          className="text-xs bg-cyan-50 text-cyan-700 border border-cyan-100 px-3 py-1.5 rounded-full hover:bg-cyan-100 transition-colors">
-                          {dest}
-                        </button>
-                      ))
-                    )}
-                  </div>
                 </div>
               )}
               {chatMessages.map((msg, i) => (

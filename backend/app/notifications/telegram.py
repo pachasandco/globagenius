@@ -241,11 +241,6 @@ def format_grouped_flight_alerts(
         msg_parts.append("")
         msg_parts.append(f"+ {remaining} autres")
 
-    scores = [o.get("score", 0) for o in shown if o.get("score")]
-    if scores:
-        max_score = int(round(max(scores)))
-        msg_parts += ["", f"🎯 Score max : {max_score}/100"]
-
     link = f"👉 Toutes les offres : {settings.FRONTEND_URL}/home?dest={destination_iata}"
     msg_parts += ["", link]
 
