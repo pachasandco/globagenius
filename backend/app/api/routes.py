@@ -589,6 +589,39 @@ def update_preferences(user_id: str, req: PreferencesRequest, user: dict = Depen
     if not resp.data:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Sync telegram_subscribers: add entries for each airport if Telegram is connected
+    prefs = resp.data[0]
+    if prefs.get("telegram_connected") and prefs.get("telegram_chat_id"):
+        chat_id = prefs["telegram_chat_id"]
+        new_airports = req.airport_codes or []
+
+        # Get current subscriptions
+        try:
+            current_subs = db.table("telegram_subscribers").select("airport_code").eq("user_id", user_id).execute()
+            current_airports = {s["airport_code"] for s in current_subs.data}
+        except Exception:
+            current_airports = set()
+
+        # Add missing subscriptions
+        for airport in new_airports:
+            if airport not in current_airports:
+                try:
+                    db.table("telegram_subscribers").insert({
+                        "user_id": user_id,
+                        "chat_id": chat_id,
+                        "airport_code": airport,
+                    }).execute()
+                except Exception:
+                    pass  # Silent fail if duplicate or constraint issue
+
+        # Remove unselected subscriptions
+        for airport in current_airports:
+            if airport not in new_airports:
+                try:
+                    db.table("telegram_subscribers").delete().eq("user_id", user_id).eq("airport_code", airport).execute()
+                except Exception:
+                    pass  # Silent fail
+
     return {**resp.data[0], "capped": capped}
 
 

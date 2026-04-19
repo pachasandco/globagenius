@@ -272,37 +272,47 @@ async def _dispatch_grouped_flight_alerts(
     if not origins:
         return
 
+    # Fetch users with Telegram enabled who track any of these airports
     try:
-        subs_resp = (
-            db.table("telegram_subscribers")
-            .select("chat_id,user_id,airport_code")
-            .in_("airport_code", origins)
+        prefs_resp = (
+            db.table("user_preferences")
+            .select("user_id,telegram_chat_id,telegram_connected,airport_codes,min_discount")
+            .eq("telegram_connected", True)
             .execute()
         )
-        subs = subs_resp.data or []
+        all_prefs = prefs_resp.data or []
     except Exception as e:
-        logger.warning(f"Failed to fetch subscribers for grouped dispatch: {e}")
+        logger.warning(f"Failed to fetch user preferences: {e}")
         return
 
-    if not isinstance(subs, list):
+    # Filter: keep only users who track at least one of the origin airports
+    subs = []
+    for pref in all_prefs:
+        if not isinstance(pref, dict):
+            continue
+        airports = pref.get("airport_codes", [])
+        if not isinstance(airports, list):
+            continue
+        # Check if any origin is in this user's tracked airports
+        tracked_origins = [o for o in origins if o in airports]
+        if not tracked_origins or not pref.get("telegram_chat_id"):
+            continue
+        # Create a "subscriber" entry for each tracked origin
+        for origin in tracked_origins:
+            subs.append({
+                "user_id": pref.get("user_id"),
+                "chat_id": pref.get("telegram_chat_id"),
+                "airport_code": origin,
+            })
+
+    if not subs:
         return
 
-    # Bulk-fetch user preferences (min_discount) once for all subscribers.
+    # Build min_discount lookup from the preferences we already fetched
     prefs_by_user: dict[str, int] = {}
-    user_ids = [s["user_id"] for s in subs if isinstance(s, dict) and s.get("user_id")]
-    if user_ids:
-        try:
-            prefs_resp = (
-                db.table("user_preferences")
-                .select("user_id,min_discount")
-                .in_("user_id", user_ids)
-                .execute()
-            )
-            for p in (prefs_resp.data or []):
-                if isinstance(p, dict) and p.get("user_id"):
-                    prefs_by_user[p["user_id"]] = p.get("min_discount", 20)
-        except Exception as e:
-            logger.warning(f"Failed to fetch user preferences: {e}")
+    for pref in all_prefs:
+        if isinstance(pref, dict) and pref.get("user_id"):
+            prefs_by_user[pref["user_id"]] = pref.get("min_discount", 20)
 
     for sub in subs:
         if not isinstance(sub, dict):
