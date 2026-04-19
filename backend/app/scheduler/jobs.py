@@ -197,7 +197,9 @@ async def _analyze_new_flights(flights: list[dict]):
             continue
 
         # Extra filters on top of detect_anomaly's tiering
-        if anomaly.discount_pct < 20 or anomaly.z_score < 2.0:
+        # Qualify if EITHER discount is good (>=15%) OR statistical anomaly is strong (z>=1.5)
+        # This avoids over-filtering deals that are either value-driven or statistically rare
+        if anomaly.discount_pct < 15 and anomaly.z_score < 1.5:
             counters["rejected_low_discount_or_z"] += 1
             continue
 
@@ -246,6 +248,7 @@ async def _analyze_new_flights(flights: list[dict]):
             qualified_flights.append((flight, anomaly, tier))
 
     logger.info(f"Analyze pipeline counters: {counters}")
+    logger.info(f"Dispatching {len(qualified_flights)} qualified flights for alert delivery")
 
     await _dispatch_grouped_flight_alerts(qualified_flights)
 
@@ -407,6 +410,8 @@ async def _dispatch_grouped_flight_alerts(
                         offers=offers,
                         tier=group_tier,
                     )
+                    if success:
+                        logger.info(f"✅ Sent {len(offers)} flight alerts to {origin_city}→{dest_city} for user {user_id}")
                 except Exception as e:
                     logger.warning(f"Failed to send grouped flight alert: {e}")
                     success = False
