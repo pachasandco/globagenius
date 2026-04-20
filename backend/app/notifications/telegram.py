@@ -223,7 +223,18 @@ def format_grouped_flight_alerts(
             disc = int(round(o.get("discount_pct", 0)))
             airline = o.get("airline", "").strip()
             airline_suffix = f" · {airline}" if airline else ""
-            lines.append(f"{dep_str} - {ret_str} · {duration}j · {price}€ (-{disc}%){airline_suffix}")
+
+            # Color code by discount level
+            if disc >= 60:
+                color_badge = "🔴"
+            elif disc >= 40:
+                color_badge = "🟠"
+            elif disc >= 20:
+                color_badge = "🟡"
+            else:
+                color_badge = "⚪"
+
+            lines.append(f"{color_badge} {dep_str} - {ret_str} · {duration}j · {price}€ (-{disc}%){airline_suffix}")
             booking_url = o.get("booking_url", "").strip()
             if booking_url:
                 lines.append(f"✈️ Vol : {booking_url}")
