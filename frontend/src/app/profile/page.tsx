@@ -315,6 +315,9 @@ export default function ProfilePage() {
         {isPremium && (
           <div className="mb-12">
             <h2 className="text-xl font-semibold mb-1">Abonnement</h2>
+            <div className="mb-4 inline-block px-3 py-1 bg-green-50 border border-green-200 rounded-full text-sm text-green-700 font-semibold">
+              ✅ Abonnement Premium actif
+            </div>
             <p className="text-gray-400 text-sm mb-6">
               Gérez votre abonnement Premium.
             </p>
