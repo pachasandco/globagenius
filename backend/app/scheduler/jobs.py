@@ -386,6 +386,17 @@ async def _dispatch_grouped_flight_alerts(
                 for key, flight, anomaly, tier in candidates:
                     if key and key in already_keys:
                         continue
+
+                    # Filter: minimum 4 days stay
+                    try:
+                        departure = datetime.fromisoformat(flight["departure_date"])
+                        return_date = datetime.fromisoformat(flight["return_date"])
+                        nights = (return_date - departure).days
+                        if nights < 4:
+                            continue  # Skip trips shorter than 4 days
+                    except (ValueError, KeyError, TypeError):
+                        continue  # Skip if dates invalid
+
                     offers.append({
                         "departure_date": flight["departure_date"],
                         "return_date": flight["return_date"],
