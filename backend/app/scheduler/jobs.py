@@ -181,11 +181,26 @@ async def _analyze_new_flights(flights: list[dict]):
             .eq("type", "flight")
             .execute()
         )
-        if not baseline_resp.data:
+
+        baseline = None
+        if baseline_resp.data:
+            baseline = baseline_resp.data[0]
+        else:
+            # FALLBACK: Try destination-wide baseline (any origin → destination)
+            dest_route_key = f"*-{flight['destination']}-bucket_{bucket}"
+            dest_resp = (
+                db.table("price_baselines")
+                .select("*")
+                .eq("route_key", dest_route_key)
+                .eq("type", "flight")
+                .execute()
+            )
+            if dest_resp.data:
+                baseline = dest_resp.data[0]
+
+        if not baseline:
             counters["rejected_no_baseline"] += 1
             continue
-
-        baseline = baseline_resp.data[0]
         if (baseline.get("sample_count") or 0) < MIN_SAMPLE_COUNT:
             counters["rejected_low_sample"] += 1
             continue
@@ -624,6 +639,16 @@ async def job_travelpayouts_enrichment():
                     total_published += 1
                 except Exception as e:
                     logger.warning(f"Failed to upsert baseline {baseline['route_key']}: {e}")
+
+            # Also create destination-wide baselines for fallback (new routes like BVA→BCN)
+            dest_baselines = compute_baselines_by_bucket(f"*-{dest}", observations)
+            for baseline in dest_baselines:
+                try:
+                    db.table("price_baselines").upsert(baseline, on_conflict="route_key").execute()
+                    total_published += 1
+                except Exception as e:
+                    logger.warning(f"Failed to upsert destination baseline {baseline['route_key']}: {e}")
+
             # Yield the event loop after each route to keep HTTP requests responsive.
             await asyncio.sleep(0)
 
