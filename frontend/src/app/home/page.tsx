@@ -137,7 +137,6 @@ function FlightDealCard({ deal }: { deal: FlightDeal }) {
 }
 
 export default function HomePage() {
-  const [email, setEmail] = useState("");
   const [myDeals, setMyDeals] = useState<FlightDeal[]>([]);
   const [lockedDeals, setLockedDeals] = useState<FlightDeal[]>([]);
   const [, setStatus] = useState<PipelineStatus | null>(null);
@@ -154,12 +153,10 @@ export default function HomePage() {
 
   useEffect(() => {
     const userId = localStorage.getItem("gg_user_id");
-    const userEmail = localStorage.getItem("gg_email");
     if (!userId) {
       router.push("/login");
       return;
     }
-    setEmail(userEmail || "");
 
     // Auto-logout after 15 min inactivity. Keep the cleanup so we can
     // return it from the useEffect at the END, after load() has started.
@@ -308,7 +305,7 @@ export default function HomePage() {
             <a href="#guides" className="hover:text-gray-900 transition-colors">Guides</a>
           </div>
           <div className="flex items-center gap-2 md:gap-3">
-            <span className="text-sm text-gray-400 hidden md:block">{email}</span>
+            <span className="text-sm text-gray-400 hidden md:block">{isPremium ? "🌟 Premium" : "Free"}</span>
             <Link href="/profile" className="text-sm text-gray-400 hover:text-gray-900 transition-colors">
               Profil
             </Link>
@@ -343,14 +340,6 @@ export default function HomePage() {
           </div>
         )}
 
-        {isPremium && (
-          <div className="mb-6 bg-[#FFFEF9] border border-[#16A34A] rounded-2xl px-5 py-3">
-            <div className="flex items-center gap-2">
-              <span className="text-lg">✅</span>
-              <span className="text-sm font-medium text-[#0A1F3D]">Abonnement Premium actif</span>
-            </div>
-          </div>
-        )}
 
         {/* Deals section */}
         <div className="mb-8">
