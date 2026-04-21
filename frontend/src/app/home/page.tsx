@@ -148,6 +148,7 @@ export default function HomePage() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  const [showPlanner, setShowPlanner] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
@@ -483,83 +484,108 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Planificateur de voyage integre */}
-        <div className="mb-8">
-          <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl mb-4">🗺️ Planificateur de voyage</h2>
-          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-            {/* Chat messages */}
-            <div className="h-[300px] md:h-[350px] overflow-y-auto p-4 md:p-5 space-y-3">
-              {chatMessages.length === 0 && (
-                <div className="text-center py-8">
-                  <div className="text-3xl mb-3">✈️</div>
-                  <p className="text-sm text-gray-500">
-                    Dites-moi votre destination et vos dates, je vous prépare un programme sur mesure.
-                  </p>
-                </div>
-              )}
-              {chatMessages.map((msg, i) => (
-                <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
-                    msg.role === "user" ? "bg-gray-900 text-white" : "bg-gray-50 border border-gray-100"
-                  }`}>
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
-                    {msg.data?.options && msg.data.options.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {msg.data.options.map(opt => (
-                          <button key={opt} onClick={() => sendChat(opt)} disabled={chatLoading}
-                            className="text-[11px] bg-cyan-50 text-cyan-700 border border-cyan-100 px-2 py-1 rounded-full hover:bg-cyan-100 disabled:opacity-50">
-                            {opt}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {msg.data?.type === "planning" && msg.data?.days && (
-                      <div className="mt-3 space-y-2">
-                        <div className="bg-cyan-50 rounded-lg p-2 text-center text-xs font-semibold text-cyan-900">
-                          {msg.data.destination} · {msg.data.duration} · Budget: {msg.data.estimated_budget}
-                        </div>
-                        {msg.data.days.map(day => (
-                          <div key={day.day} className="border border-gray-100 rounded-lg p-2 text-xs">
-                            <div className="font-semibold mb-1">Jour {day.day} — {day.title}</div>
-                            <div className="text-gray-500">🌅 {day.morning?.activity} · ☀️ {day.afternoon?.activity} · 🌙 {day.evening?.activity}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {chatLoading && (
-                <div className="flex justify-start">
-                  <div className="bg-gray-50 border border-gray-100 rounded-2xl px-4 py-2.5">
-                    <div className="flex gap-1">
-                      <div className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" />
-                      <div className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: "150ms" }} />
-                      <div className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: "300ms" }} />
-                    </div>
-                  </div>
-                </div>
-              )}
-              <div ref={chatEndRef} />
-            </div>
-            {/* Input */}
-            <div className="border-t border-gray-100 p-3 flex gap-2">
-              <input
-                type="text"
-                value={chatInput}
-                onChange={e => setChatInput(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && !chatLoading && sendChat(chatInput)}
-                placeholder="Ex: Je pars à Lisbonne 5 jours en mai..."
-                className="flex-1 px-3 py-2 rounded-xl border border-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none text-sm"
-                disabled={chatLoading}
-              />
-              <button onClick={() => sendChat(chatInput)} disabled={chatLoading || !chatInput.trim()}
-                className="bg-[#FF6B47] hover:bg-[#E55A38] text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 shrink-0">
-                Envoyer
+        {/* Planificateur de voyage integre — Premium only */}
+        {!isPremium ? (
+          <div className="mb-8 bg-[#FFFEF9] border border-[#FF6B47] rounded-2xl p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="font-semibold text-[#0A1F3D] mb-1">🗺️ Planificateur de voyage</h3>
+                <p className="text-sm text-[#0A1F3D]/70">Créez des itinéraires sur mesure avec l'IA. Exclusive aux abonnés Premium.</p>
+              </div>
+              <button
+                onClick={handleCheckout}
+                className="bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold px-4 py-2 rounded-xl text-sm shrink-0 transition-all"
+              >
+                Débloquer →
               </button>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="mb-8">
+            <button
+              onClick={() => setShowPlanner(!showPlanner)}
+              className="w-full flex items-center justify-between mb-4 hover:opacity-75 transition-opacity"
+            >
+              <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl">🗺️ Planificateur de voyage</h2>
+              <span className="text-2xl font-light text-gray-400">{showPlanner ? "−" : "+"}</span>
+            </button>
+            {showPlanner && (
+              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                {/* Chat messages */}
+                <div className="h-[300px] md:h-[350px] overflow-y-auto p-4 md:p-5 space-y-3">
+                  {chatMessages.length === 0 && (
+                    <div className="text-center py-8">
+                      <div className="text-3xl mb-3">✈️</div>
+                      <p className="text-sm text-gray-500">
+                        Dites-moi votre destination et vos dates, je vous prépare un programme sur mesure.
+                      </p>
+                    </div>
+                  )}
+                  {chatMessages.map((msg, i) => (
+                    <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                      <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
+                        msg.role === "user" ? "bg-gray-900 text-white" : "bg-gray-50 border border-gray-100"
+                      }`}>
+                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                        {msg.data?.options && msg.data.options.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {msg.data.options.map(opt => (
+                              <button key={opt} onClick={() => sendChat(opt)} disabled={chatLoading}
+                                className="text-[11px] bg-cyan-50 text-cyan-700 border border-cyan-100 px-2 py-1 rounded-full hover:bg-cyan-100 disabled:opacity-50">
+                                {opt}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {msg.data?.type === "planning" && msg.data?.days && (
+                          <div className="mt-3 space-y-2">
+                            <div className="bg-cyan-50 rounded-lg p-2 text-center text-xs font-semibold text-cyan-900">
+                              {msg.data.destination} · {msg.data.duration} · Budget: {msg.data.estimated_budget}
+                            </div>
+                            {msg.data.days.map(day => (
+                              <div key={day.day} className="border border-gray-100 rounded-lg p-2 text-xs">
+                                <div className="font-semibold mb-1">Jour {day.day} — {day.title}</div>
+                                <div className="text-gray-500">🌅 {day.morning?.activity} · ☀️ {day.afternoon?.activity} · 🌙 {day.evening?.activity}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {chatLoading && (
+                    <div className="flex justify-start">
+                      <div className="bg-gray-50 border border-gray-100 rounded-2xl px-4 py-2.5">
+                        <div className="flex gap-1">
+                          <div className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" />
+                          <div className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: "150ms" }} />
+                          <div className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: "300ms" }} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+                {/* Input */}
+                <div className="border-t border-gray-100 p-3 flex gap-2">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={e => setChatInput(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && !chatLoading && sendChat(chatInput)}
+                    placeholder="Ex: Je pars à Lisbonne 5 jours en mai..."
+                    className="flex-1 px-3 py-2 rounded-xl border border-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none text-sm"
+                    disabled={chatLoading}
+                  />
+                  <button onClick={() => sendChat(chatInput)} disabled={chatLoading || !chatInput.trim()}
+                    className="bg-[#FF6B47] hover:bg-[#E55A38] text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 shrink-0">
+                    Envoyer
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Quick links */}
         <div className="grid sm:grid-cols-2 gap-4">
