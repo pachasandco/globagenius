@@ -58,7 +58,12 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Mot de passe</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium text-gray-700">Mot de passe</label>
+              <Link href="/reset-password" className="text-xs text-[#FF6B47] hover:text-[#E55A38] font-semibold transition-colors">
+                Oublié ?
+              </Link>
+            </div>
             <input
               type="password"
               required

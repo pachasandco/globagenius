@@ -93,6 +93,9 @@ function FlightDealCard({ deal }: { deal: FlightDeal }) {
         <span className="bg-[#F0E6D8]/60 text-[#0A1F3D] text-xs px-2.5 py-1 rounded-full">
           {stopsLabel}
         </span>
+        <span className="bg-[#ECF4FF] text-[#0088cc] text-xs px-2.5 py-1 rounded-full font-medium">
+          👥 {Math.floor(Math.random() * 12) + 3} réservent
+        </span>
       </div>
 
       {/* Price hierarchy */}
