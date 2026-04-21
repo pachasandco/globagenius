@@ -237,7 +237,7 @@ def format_grouped_flight_alerts(
             lines.append(f"{color_badge} {dep_str} - {ret_str} · {duration}j · {price}€ (-{disc}%){airline_suffix}")
             booking_url = o.get("booking_url", "").strip()
             if booking_url:
-                lines.append(f"✈️ Vol : {booking_url}")
+                lines.append(f"👉 [Consulter le deal]({booking_url})")
             if disc >= 50:
                 hotel_url = build_booking_url(
                     dest_city,
