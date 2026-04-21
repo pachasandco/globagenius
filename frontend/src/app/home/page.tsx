@@ -510,77 +510,44 @@ export default function HomePage() {
               <span className="text-2xl font-light text-gray-400">{showPlanner ? "−" : "+"}</span>
             </button>
             {showPlanner && (
-              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                {/* Chat messages */}
-                <div className="h-[300px] md:h-[350px] overflow-y-auto p-4 md:p-5 space-y-3">
-                  {chatMessages.length === 0 && (
-                    <div className="text-center py-8">
-                      <div className="text-3xl mb-3">✈️</div>
-                      <p className="text-sm text-gray-500">
-                        Dites-moi votre destination et vos dates, je vous prépare un programme sur mesure.
-                      </p>
-                    </div>
-                  )}
-                  {chatMessages.map((msg, i) => (
-                    <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                      <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
-                        msg.role === "user" ? "bg-gray-900 text-white" : "bg-gray-50 border border-gray-100"
-                      }`}>
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
-                        {msg.data?.options && msg.data.options.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 mt-2">
-                            {msg.data.options.map(opt => (
-                              <button key={opt} onClick={() => sendChat(opt)} disabled={chatLoading}
-                                className="text-[11px] bg-cyan-50 text-cyan-700 border border-cyan-100 px-2 py-1 rounded-full hover:bg-cyan-100 disabled:opacity-50">
-                                {opt}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        {msg.data?.type === "planning" && msg.data?.days && (
-                          <div className="mt-3 space-y-2">
-                            <div className="bg-cyan-50 rounded-lg p-2 text-center text-xs font-semibold text-cyan-900">
-                              {msg.data.destination} · {msg.data.duration} · Budget: {msg.data.estimated_budget}
-                            </div>
-                            {msg.data.days.map(day => (
-                              <div key={day.day} className="border border-gray-100 rounded-lg p-2 text-xs">
-                                <div className="font-semibold mb-1">Jour {day.day} — {day.title}</div>
-                                <div className="text-gray-500">🌅 {day.morning?.activity} · ☀️ {day.afternoon?.activity} · 🌙 {day.evening?.activity}</div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  {chatLoading && (
-                    <div className="flex justify-start">
-                      <div className="bg-gray-50 border border-gray-100 rounded-2xl px-4 py-2.5">
-                        <div className="flex gap-1">
-                          <div className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" />
-                          <div className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: "150ms" }} />
-                          <div className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: "300ms" }} />
+              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden p-6">
+                <div className="text-center space-y-6">
+                  {/* Calendar */}
+                  <div>
+                    <h3 className="text-sm font-semibold text-[#0A1F3D] mb-4">Sélectionnez vos dates</h3>
+                    <div className="grid grid-cols-7 gap-2 max-w-xs mx-auto mb-4">
+                      {/* Days of week headers */}
+                      {["L", "M", "M", "J", "V", "S", "D"].map((day) => (
+                        <div key={day} className="text-xs font-semibold text-gray-400 py-2">
+                          {day}
                         </div>
-                      </div>
+                      ))}
+                      {/* Calendar days */}
+                      {Array.from({ length: 35 }).map((_, i) => {
+                        const day = i - 3;
+                        const isCurrentMonth = day > 0 && day <= 30;
+                        return (
+                          <button
+                            key={i}
+                            className={`aspect-square rounded-lg text-sm font-medium transition-all ${
+                              isCurrentMonth
+                                ? "bg-gray-50 text-[#0A1F3D] hover:bg-[#FF6B47] hover:text-white cursor-pointer"
+                                : "text-gray-200"
+                            }`}
+                          >
+                            {isCurrentMonth ? day : ""}
+                          </button>
+                        );
+                      })}
                     </div>
-                  )}
-                  <div ref={chatEndRef} />
-                </div>
-                {/* Input */}
-                <div className="border-t border-gray-100 p-3 flex gap-2">
-                  <input
-                    type="text"
-                    value={chatInput}
-                    onChange={e => setChatInput(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && !chatLoading && sendChat(chatInput)}
-                    placeholder="Ex: Je pars à Lisbonne 5 jours en mai..."
-                    className="flex-1 px-3 py-2 rounded-xl border border-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none text-sm"
-                    disabled={chatLoading}
-                  />
-                  <button onClick={() => sendChat(chatInput)} disabled={chatLoading || !chatInput.trim()}
-                    className="bg-[#FF6B47] hover:bg-[#E55A38] text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 shrink-0">
-                    Envoyer
-                  </button>
+                  </div>
+
+                  {/* Hint text */}
+                  <div className="border-t pt-4">
+                    <p className="text-xs text-gray-400">
+                      👆 Cliquez sur le titre pour accéder au planificateur complet avec l'IA
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
