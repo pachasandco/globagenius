@@ -226,7 +226,7 @@ async def _analyze_new_flights(flights: list[dict]):
         counters["qualified"] += 1
 
         # Tier classification
-        tier = "premium" if anomaly.discount_pct >= 30 else "free"
+        tier = "premium" if anomaly.discount_pct >= 40 else "free"
 
         score = compute_score(
             discount_pct=anomaly.discount_pct,
@@ -357,8 +357,8 @@ async def _dispatch_grouped_flight_alerts(
                 for flight, anomaly, tier in flight_tuples:
                     if anomaly.discount_pct < user_min:
                         continue
-                    # Phase D4: strict tier gate — free users never see >=30%.
-                    if sub_tier == "free" and anomaly.discount_pct >= 30:
+                    # Phase D4: strict tier gate — free users never see >=40%.
+                    if sub_tier == "free" and anomaly.discount_pct >= 40:
                         continue
                     key = None
                     if user_id:
