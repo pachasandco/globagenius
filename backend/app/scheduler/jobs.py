@@ -368,8 +368,8 @@ async def _dispatch_grouped_flight_alerts(
             if not sub_origin or chat_id is None:
                 continue
 
-            # Free tier: restricted origins (CDG, ORY, LYS only)
-            FREE_TIER_ORIGINS = {"CDG", "ORY", "LYS"}
+            # Free tier: long-haul only allowed from CDG (direct transatlantic service)
+            FREE_TIER_LONGHOUL_ORIGINS = {"CDG"}
 
             # Free tier: weekly alert quota (max 3 per user per week)
             FREE_TIER_WEEKLY_LIMIT = 3
@@ -392,9 +392,7 @@ async def _dispatch_grouped_flight_alerts(
                 if grp_origin != sub_origin:
                     continue
 
-                # Free tier: block restricted origins
-                if sub_tier == "free" and grp_origin not in FREE_TIER_ORIGINS:
-                    continue
+                # Free tier: long-haul only scrapped from CDG — no restriction on short-haul origins
 
                 # Free tier: block long-haul destinations entirely
                 if sub_tier == "free" and is_long_haul(grp_dest):
