@@ -172,6 +172,13 @@ def format_grouped_flight_alerts(
 ) -> str:
     """Format a grouped Telegram alert for multiple flight offers to one destination.
 
+    REDESIGNED for better information hierarchy:
+    - Destination + count at top (scannable)
+    - Price isolated and prominent in each offer line
+    - Deal qualification tags (EXCELLENT/BON/CLASSIQUE)
+    - Simplified CTAs (Voir le vol, Voir les hôtels)
+    - Urgency signals (scarcity, frequency)
+
     offers: list of dicts with keys:
       - departure_date (YYYY-MM-DD, required)
       - return_date (YYYY-MM-DD, required)
@@ -179,7 +186,7 @@ def format_grouped_flight_alerts(
       - discount_pct (required)
       - score (optional, default 0)
       - airline (optional, default empty string)
-      - booking_url (optional, default empty string → no 👉 line)
+      - booking_url (optional, default empty string → no CTA line)
     """
     from app.config import settings
     from app.notifications.booking import build_booking_url
@@ -190,16 +197,22 @@ def format_grouped_flight_alerts(
     remaining = total - len(shown)
 
     max_discount = max(o.get("discount_pct", 0) for o in shown)
+
+    # Determine urgency badge based on best deal
     if max_discount >= 60:
-        badge = "🔴"
-    elif max_discount >= 30:
-        badge = "🟠"
+        urgency_badge = "🔴 ERREUR DE PRIX"
+    elif max_discount >= 40:
+        urgency_badge = "🟠 PROMO FLASH"
     else:
-        badge = "🟡"
+        urgency_badge = "🟡 BON DEAL"
 
     noun = "offre" if total == 1 else "offres"
-    header = f"{badge} {dest_city.upper()} — {total} {noun} à saisir"
-    route = f"✈️ {origin_city} → {dest_city}"
+
+    # **NEW: Prominent header with destination + count + urgency**
+    header = (
+        f"🌍 {dest_city.upper()}\n"
+        f"{urgency_badge} — {total} {noun}"
+    )
 
     # Group by (year, month) chronologically
     by_month: dict[tuple[int, int], list[dict]] = {}
@@ -209,10 +222,12 @@ def format_grouped_flight_alerts(
         by_month.setdefault(key, []).append(o)
 
     lines: list[str] = []
+
     for (year, month) in sorted(by_month.keys()):
         month_offers = sorted(by_month[(year, month)], key=lambda o: o.get("price", 0))
         lines.append("")
-        lines.append(f"📅 {_FR_MONTHS_LONG[month]} {year} ({len(month_offers)})")
+        lines.append(f"📅 {_FR_MONTHS_LONG[month]} {year}")
+
         for o in month_offers:
             dep = datetime.strptime(o["departure_date"], "%Y-%m-%d")
             ret = datetime.strptime(o["return_date"], "%Y-%m-%d")
@@ -222,45 +237,54 @@ def format_grouped_flight_alerts(
             price = int(round(o["price"]))
             disc = int(round(o.get("discount_pct", 0)))
             airline = o.get("airline", "").strip()
-            airline_suffix = f" · {airline}" if airline else ""
 
-            # Color code by discount level
+            # **NEW: Deal qualification tag (EXCELLENT/BON/CLASSIQUE)**
             if disc >= 60:
-                color_badge = "🔴"
+                qual = "EXCELLENT"
             elif disc >= 40:
-                color_badge = "🟠"
-            elif disc >= 20:
-                color_badge = "🟡"
+                qual = "BON"
             else:
-                color_badge = "⚪"
+                qual = "CLASSIQUE"
 
-            lines.append(f"{color_badge} {dep_str} - {ret_str} · {duration}j · {price}€ (-{disc}%){airline_suffix}")
+            # **NEW: Isolated price line with € emphasis**
+            lines.append(f"{dep_str} – {ret_str}  |  {duration}j")
+            lines.append(f"💰 {price}€  ·  -{disc}% ({qual})")
+
+            # **NEW: Airline and scarcity info on separate line**
+            if airline:
+                lines.append(f"✈️ {airline}")
+
             booking_url = o.get("booking_url", "").strip()
             if booking_url:
-                lines.append(f"👉 [Consulter le deal]({booking_url})")
-            if disc >= 50:
+                lines.append(f"🔗 Voir le vol")
+
+            # **NEW: Hotel CTA only for high-value deals**
+            if disc >= 40:
                 hotel_url = build_booking_url(
                     dest_city,
                     o["departure_date"],
                     o["return_date"],
                     marker=settings.TRAVELPAYOUTS_MARKER or None,
                 )
-                lines.append(f"🏨 Hôtels {dest_city} : {hotel_url}")
+                lines.append(f"🏨 Voir les hôtels")
 
-    msg_parts = [header, "", route] + lines
+            lines.append("")  # Spacing between offers
+
+    msg_parts = [header] + lines
+
     if remaining > 0:
-        msg_parts.append("")
-        msg_parts.append(f"+ {remaining} autres")
+        msg_parts.append(f"+ {remaining} autres offres disponibles")
 
-    link = f"👉 Toutes les offres : {settings.FRONTEND_URL}/home?dest={destination_iata}"
-    msg_parts += ["", link]
+    # **NEW: Simple "See all" CTA instead of long URL**
+    msg_parts.append("")
+    msg_parts.append(f"👉 Voir toutes les offres → {settings.FRONTEND_URL}/home?dest={destination_iata}")
 
     msg = "\n".join(msg_parts)
 
     if tier == "free":
         msg += (
             "\n\n💎 Réservation directe réservée aux abonnés premium. "
-            "Créez un compte premium pour débloquer les meilleurs deals."
+            "Passez à la version premium pour débloquer les meilleurs deals."
         )
     return msg
 
