@@ -123,8 +123,9 @@ def scrape_flights_for_route(origin: str, destination: str) -> list[dict]:
 def scrape_flights_for_airport(origin: str) -> list[dict]:
     """Scrape all priority destinations for one origin airport.
 
-    Long-haul destinations are only scraped from CDG."""
-    destinations = get_priority_destinations(max_count=25)
+    Long-haul destinations are only scraped from CDG — the only French hub
+    with direct transatlantic/long-haul service."""
+    destinations = get_priority_destinations(max_count=40)
     all_flights = []
     for dest in destinations:
         if dest == origin:

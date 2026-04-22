@@ -9,6 +9,7 @@ from app.analysis.baselines import compute_baseline, compute_baselines_by_bucket
 from app.scraper.travelpayouts import get_prices_for_dates
 from app.scraper.travelpayouts_flights import _normalize_priced_entry
 from app.analysis.route_selector import get_priority_destinations, is_long_haul
+from app.analysis.destination_updater import update_priority_destinations_in_db
 from app.analysis.anomaly_detector import detect_anomaly
 from app.analysis.scorer import compute_score
 from app.analysis.buckets import bucket_for_duration, stops_allowed
@@ -70,6 +71,15 @@ def get_scheduler_jobs() -> list[dict]:
             "func": job_daily_admin_report,
             "trigger": "cron",
             "hour": 9,
+        },
+        # ── DESTINATION SELECTOR : 1x/semaine le lundi a 3h ──
+        # Requête Travelpayouts + scoring saisonnier → met à jour priority_destinations en DB
+        {
+            "id": "update_destinations",
+            "func": job_update_destinations,
+            "trigger": "cron",
+            "day_of_week": "mon",
+            "hour": 3,
         },
     ]
 
@@ -607,13 +617,14 @@ async def job_travelpayouts_enrichment():
     if not db or not settings.TRAVELPAYOUTS_TOKEN:
         return
 
-    destinations = get_priority_destinations(max_count=25)
+    destinations = get_priority_destinations(max_count=40, db=db)
     total_published = 0
 
     for origin in settings.MVP_AIRPORTS:
         for dest in destinations:
             if dest == origin:
                 continue
+            # Long-haul routes only from CDG — the only French hub with direct transatlantic service
             if is_long_haul(dest) and origin != "CDG":
                 continue
 
@@ -653,3 +664,20 @@ async def job_travelpayouts_enrichment():
             await asyncio.sleep(0)
 
     logger.info(f"Travelpayouts enrichment: {total_published} bucket baselines upserted")
+
+
+async def job_update_destinations():
+    """Weekly job: update priority_destinations table from Travelpayouts + seasonal scoring.
+
+    Runs every Monday at 3am. Non-blocking — if it fails, existing DB rows remain
+    and scraping jobs continue using the last good snapshot.
+    """
+    logger.info("Starting weekly destination update")
+    if not db:
+        logger.warning("No DB connection — skipping destination update")
+        return
+    try:
+        count = update_priority_destinations_in_db(db, max_count=40)
+        logger.info(f"Destination update complete: {count} destinations upserted")
+    except Exception as e:
+        logger.error(f"Destination update failed: {e}")

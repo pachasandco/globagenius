@@ -108,7 +108,27 @@ def get_current_season() -> str:
         return "autumn"
 
 
-def get_priority_destinations(max_count: int = 25) -> list[str]:
+def get_priority_destinations(max_count: int = 40, db=None) -> list[str]:
+    """Return ranked list of priority destinations.
+
+    Order of precedence:
+    1. DB table `priority_destinations` (updated weekly by job_update_destinations)
+    2. Hardcoded seasonal fallback (used on first boot or if DB is unavailable)
+
+    Pass `db` (Supabase client) to enable DB lookup. When called from the
+    scheduler, db is always available. When called from tests or scripts, the
+    fallback list is used.
+    """
+    if db is not None:
+        try:
+            from app.analysis.destination_updater import get_priority_destinations_from_db
+            db_results = get_priority_destinations_from_db(db, max_count=max_count)
+            if db_results:
+                return db_results
+        except Exception:
+            pass  # Fall through to hardcoded list
+
+    # Hardcoded seasonal fallback
     season = get_current_season()
     seasonal = SEASONAL_DESTINATIONS[season]
 
