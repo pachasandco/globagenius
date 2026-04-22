@@ -26,3 +26,18 @@ CREATE INDEX IF NOT EXISTS idx_priority_destinations_region
 COMMENT ON TABLE priority_destinations IS
     'Weekly-scored destination list. Updated by job_update_destinations every Monday at 3am. '
     'Combines seasonal French travel patterns with Travelpayouts live cheap-route signal.';
+
+-- RLS: table is public read, service_role only for writes
+ALTER TABLE priority_destinations ENABLE ROW LEVEL SECURITY;
+
+-- Anyone can read (used by scraping jobs and frontend)
+CREATE POLICY "priority_destinations_select"
+    ON priority_destinations FOR SELECT
+    USING (true);
+
+-- Only service_role can insert/update/delete (backend jobs)
+CREATE POLICY "priority_destinations_service_write"
+    ON priority_destinations FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);
