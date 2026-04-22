@@ -183,14 +183,14 @@ def test_format_grouped_flight_alerts_same_month_two_separate_lines():
         {"departure_date": "2026-09-15", "return_date": "2026-09-22", "price": 112, "discount_pct": 48},
     ]
     msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers, tier="premium")
-    # Single month header with count
-    assert msg.count("📅 Septembre 2026 (2)") == 1
+    # Single month header (no count in new format)
+    assert msg.count("📅 Septembre 2026") == 1
     # Both offers present in the message (each on its own line)
     assert "89€" in msg
     assert "112€" in msg
-    # Each offer line contains its own date range
-    assert "01 sept - 10 sept" in msg
-    assert "15 sept - 22 sept" in msg
+    # Each offer line contains its own date range (with en-dash)
+    assert "01 sept – 10 sept" in msg
+    assert "15 sept – 22 sept" in msg
 
 
 def test_format_grouped_flight_alerts_caps_at_10():
@@ -202,7 +202,7 @@ def test_format_grouped_flight_alerts_caps_at_10():
     ]
     msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers, tier="premium")
     assert "15 offres" in msg  # header shows total
-    assert "+ 5 autres" in msg  # cap overflow indicator
+    assert "+ 5 autres offres" in msg  # cap overflow indicator (new format)
 
 
 def test_format_grouped_flight_badge_red():
