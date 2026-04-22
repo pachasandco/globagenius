@@ -354,7 +354,9 @@ async def _dispatch_grouped_flight_alerts(
             continue
         try:
             user_id = sub.get("user_id")
-            user_min = prefs_by_user.get(user_id, 20) if user_id else 20
+            # Free tier: ignore user min_discount preference — fixed at system default (20%)
+            # Only premium users can customize their discount threshold
+            user_min = 20 if sub_tier == "free" else (prefs_by_user.get(user_id, 20) if user_id else 20)
             # Phase D4: resolve subscriber tier once. Free-tier users must not
             # receive any offer >= 30% discount, regardless of their
             # min_discount preference.
