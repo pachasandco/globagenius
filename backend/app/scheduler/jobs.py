@@ -368,23 +368,26 @@ async def _dispatch_grouped_flight_alerts(
             if not sub_origin or chat_id is None:
                 continue
 
-            # Free tier: long-haul only allowed from CDG (direct transatlantic service)
-            FREE_TIER_LONGHOUL_ORIGINS = {"CDG"}
-
-            # Free tier: weekly alert quota (max 3 per user per week)
-            FREE_TIER_WEEKLY_LIMIT = 3
+            # Free tier weekly quotas
+            FREE_TIER_WEEKLY_LIMIT = 3       # total alerts/week (includes long-haul)
+            FREE_TIER_LONGHUAL_LIMIT = 1     # long-haul alerts/week (subset of the 3)
             weekly_sent_count = 0
+            weekly_longhual_sent_count = 0
             if sub_tier == "free" and user_id:
                 week_start = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
                 try:
                     wk_resp = (
                         db.table("sent_alerts")
-                        .select("alert_key", count="exact")
+                        .select("alert_key,destination", count="exact")
                         .eq("user_id", user_id)
                         .gte("created_at", week_start)
                         .execute()
                     )
                     weekly_sent_count = wk_resp.count or 0
+                    weekly_longhual_sent_count = sum(
+                        1 for r in (wk_resp.data or [])
+                        if is_long_haul(r.get("destination", ""))
+                    )
                 except Exception as e:
                     logger.warning(f"Failed to count weekly alerts for {user_id}: {e}")
 
@@ -394,31 +397,34 @@ async def _dispatch_grouped_flight_alerts(
 
                 # Free tier: long-haul only scrapped from CDG — no restriction on short-haul origins
 
-                # Free tier: block long-haul destinations entirely
+                # Free tier: long-haul — 1 per week allowed, block after quota
                 if sub_tier == "free" and is_long_haul(grp_dest):
-                    # Send a teaser notification for the blocked long-haul deal
-                    best = max(flight_tuples, key=lambda t: t[1].discount_pct, default=None)
-                    if best and chat_id is not None:
-                        flight_b, anomaly_b, _ = best
-                        dest_city_b = IATA_TO_CITY.get(grp_dest, grp_dest)
-                        try:
-                            from app.notifications.telegram import _get_bot
-                            bot = _get_bot()
-                            if bot:
-                                await bot.send_message(
-                                    chat_id=chat_id,
-                                    text=(
-                                        f"🔒 Deal long-courrier détecté\n\n"
-                                        f"🌍 {IATA_TO_CITY.get(grp_origin, grp_origin)} → {dest_city_b}\n"
-                                        f"💰 À partir de {int(flight_b['price'])}€  ·  "
-                                        f"-{int(anomaly_b.discount_pct)}% ({_deal_label(anomaly_b.discount_pct)})\n\n"
-                                        f"✈️ Les vols long-courrier sont réservés aux membres premium.\n"
-                                        f"👉 Débloquer ce deal → {settings.FRONTEND_URL}/premium"
-                                    ),
-                                )
-                        except Exception:
-                            pass
-                    continue
+                    if weekly_longhual_sent_count >= FREE_TIER_LONGHUAL_LIMIT:
+                        # Quota exhausted — send teaser and skip
+                        best = max(flight_tuples, key=lambda t: t[1].discount_pct, default=None)
+                        if best and chat_id is not None:
+                            flight_b, anomaly_b, _ = best
+                            dest_city_b = IATA_TO_CITY.get(grp_dest, grp_dest)
+                            try:
+                                from app.notifications.telegram import _get_bot
+                                bot = _get_bot()
+                                if bot:
+                                    await bot.send_message(
+                                        chat_id=chat_id,
+                                        text=(
+                                            f"🔒 Deal long-courrier détecté\n\n"
+                                            f"🌍 {IATA_TO_CITY.get(grp_origin, grp_origin)} → {dest_city_b}\n"
+                                            f"💰 À partir de {int(flight_b['price'])}€  ·  "
+                                            f"-{int(anomaly_b.discount_pct)}%\n\n"
+                                            f"Tu as déjà reçu ton alerte long-courrier de la semaine.\n"
+                                            f"💎 Premium = alertes illimitées en temps réel\n"
+                                            f"👉 {settings.FRONTEND_URL}/premium"
+                                        ),
+                                    )
+                            except Exception:
+                                pass
+                        continue
+                    # Within quota — let the deal through (no discount filter for long-haul free)
 
                 # Build candidate list after min_discount + tier filter
                 candidates: list[tuple[str | None, dict, object, str]] = []
@@ -567,6 +573,8 @@ async def _dispatch_grouped_flight_alerts(
                         logger.info(f"✅ Sent {len(offers)} flight alerts to {origin_city}→{dest_city} for user {user_id}")
                         if sub_tier == "free":
                             weekly_sent_count += 1  # prevent quota overflow within same run
+                            if is_long_haul(grp_dest):
+                                weekly_longhual_sent_count += 1
                 except Exception as e:
                     logger.warning(f"Failed to send grouped flight alert: {e}")
                     success = False
