@@ -156,7 +156,7 @@ async def send_flight_deal_alert(
             "Créez un compte premium pour débloquer les meilleurs deals."
         )
     try:
-        await bot.send_message(chat_id=chat_id, text=msg)
+        await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
         return True
     except Exception as e:
         logger.error(f"Failed to send flight alert to {chat_id}: {e}")
@@ -256,9 +256,9 @@ def format_grouped_flight_alerts(
 
             booking_url = o.get("booking_url", "").strip()
             if booking_url:
-                lines.append(f"🔗 Voir le vol")
+                lines.append(f"[🔗 Voir le vol]({booking_url})")
 
-            # **NEW: Hotel CTA only for high-value deals**
+            # Hotel CTA only for high-value deals
             if disc >= 40:
                 hotel_url = build_booking_url(
                     dest_city,
@@ -266,7 +266,7 @@ def format_grouped_flight_alerts(
                     o["return_date"],
                     marker=settings.TRAVELPAYOUTS_MARKER or None,
                 )
-                lines.append(f"🏨 Voir les hôtels")
+                lines.append(f"[🏨 Voir les hôtels]({hotel_url})")
 
             lines.append("")  # Spacing between offers
 
@@ -304,7 +304,7 @@ async def send_grouped_flight_alerts(
         return False
     msg = format_grouped_flight_alerts(origin_city, dest_city, destination_iata, offers, tier)
     try:
-        await bot.send_message(chat_id=chat_id, text=msg)
+        await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
         return True
     except Exception as e:
         logger.error(f"Failed to send grouped flight alert to {chat_id}: {e}")
