@@ -140,7 +140,7 @@ export default function HomePage() {
   const [myDeals, setMyDeals] = useState<FlightDeal[]>([]);
   const [lockedDeals, setLockedDeals] = useState<FlightDeal[]>([]);
   const [, setStatus] = useState<PipelineStatus | null>(null);
-  const [articles, setArticles] = useState<Article[]>([]);
+  const [, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [isPremium, setIsPremium] = useState(false);
   const [showAllDeals, setShowAllDeals] = useState(false);
@@ -457,32 +457,6 @@ export default function HomePage() {
           </>)}
         </div>
 
-        {/* Guides section */}
-        {articles.length > 0 && (
-          <div id="guides" className="mb-8">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl">Guides de voyage</h2>
-              <span className="text-sm text-[#0A1F3D]/40">
-                {articles.length} guide{articles.length > 1 ? "s" : ""}
-              </span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {articles.map((article) => (
-                <Link key={article.slug} href={`/articles/${article.slug}`} className="group">
-                  <div className="relative aspect-[4/3] rounded-xl overflow-hidden mb-2">
-                    <img src={article.cover_photo} alt={article.destination} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-                    <div className="absolute bottom-2 left-2">
-                      <div className="text-white font-semibold text-sm drop-shadow">{article.destination}</div>
-                      <div className="text-white/70 text-[11px]">{article.country}</div>
-                    </div>
-                  </div>
-                  <h3 className="text-sm font-medium group-hover:text-cyan-600 transition-colors line-clamp-1">{article.title}</h3>
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Planificateur de voyage integre — Premium only */}
         {!isPremium ? (
@@ -588,19 +562,6 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Quick links */}
-        <div className="grid sm:grid-cols-2 gap-4">
-          <a href="#guides" className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md transition-shadow group">
-            <div className="text-xl mb-1">✍️</div>
-            <h3 className="font-semibold text-sm group-hover:text-cyan-600 transition-colors">Guides de destinations</h3>
-            <p className="text-xs text-gray-400">Guides complets pour préparer votre voyage.</p>
-          </a>
-          <Link href="/onboarding" className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md transition-shadow group">
-            <div className="text-xl mb-1">⚙️</div>
-            <h3 className="font-semibold text-sm group-hover:text-cyan-600 transition-colors">Mes préférences</h3>
-            <p className="text-xs text-gray-400">Aéroports, destinations, alertes Telegram.</p>
-          </Link>
-        </div>
       </div>
 
       {/* Footer */}
