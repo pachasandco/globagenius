@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   title: "Politique de confidentialité — Globe Genius",
   description: "Politique de confidentialité et protection des données personnelles de Globe Genius.",
   alternates: { canonical: "https://globegenius.app/confidentialite" },
+  robots: { index: false, follow: false },
 };
 
 export default function Confidentialite() {

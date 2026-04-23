@@ -2,42 +2,27 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://globegenius.app/</loc>
-    <lastmod>2026-04-17</lastmod>
-  </url>
-  <url>
-    <loc>https://globegenius.app/signup</loc>
-    <lastmod>2026-04-10</lastmod>
-  </url>
-  <url>
-    <loc>https://globegenius.app/login</loc>
-    <lastmod>2026-04-10</lastmod>
+    <lastmod>2026-04-23</lastmod>
+    <priority>1.0</priority>
   </url>
   <url>
     <loc>https://globegenius.app/articles/marrakech</loc>
     <lastmod>2026-04-10</lastmod>
+    <priority>0.8</priority>
   </url>
   <url>
     <loc>https://globegenius.app/articles/lisbonne</loc>
     <lastmod>2026-04-10</lastmod>
+    <priority>0.8</priority>
   </url>
   <url>
     <loc>https://globegenius.app/articles/barcelone</loc>
     <lastmod>2026-04-10</lastmod>
+    <priority>0.8</priority>
   </url>
   <url>
     <loc>https://globegenius.app/articles/rome</loc>
     <lastmod>2026-04-10</lastmod>
-  </url>
-  <url>
-    <loc>https://globegenius.app/conditions</loc>
-    <lastmod>2026-04-17</lastmod>
-  </url>
-  <url>
-    <loc>https://globegenius.app/confidentialite</loc>
-    <lastmod>2026-04-17</lastmod>
-  </url>
-  <url>
-    <loc>https://globegenius.app/mentions-legales</loc>
-    <lastmod>2026-04-17</lastmod>
+    <priority>0.8</priority>
   </url>
 </urlset>

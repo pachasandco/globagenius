@@ -17,6 +17,11 @@ const nextConfig: NextConfig = {
         destination: "https://globegenius.app/:path*",
         permanent: true,
       },
+      {
+        source: "/premium",
+        destination: "/signup",
+        permanent: true,
+      },
     ];
   },
   async headers() {

@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   title: "Mentions légales — Globe Genius",
   description: "Mentions légales et conditions générales d'utilisation du service Globe Genius.",
   alternates: { canonical: "https://globegenius.app/mentions-legales" },
+  robots: { index: false, follow: false },
 };
 
 export default function MentionsLegales() {

@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   title: "Conditions Générales de Vente — Globe Genius",
   description: "Conditions générales de vente et d'utilisation du service Globe Genius Premium.",
   alternates: { canonical: "https://globegenius.app/conditions" },
+  robots: { index: false, follow: false },
 };
 
 export default function Conditions() {
