@@ -354,17 +354,15 @@ async def _dispatch_grouped_flight_alerts(
             continue
         try:
             user_id = sub.get("user_id")
-            # Free tier: fixed at 30% min discount, no customization
-            # Premium users can set their own threshold via min_discount preference
-            user_min = 30 if sub_tier == "free" else (prefs_by_user.get(user_id, 20) if user_id else 20)
-            # Phase D4: resolve subscriber tier once. Free-tier users must not
-            # receive any offer >= 30% discount, regardless of their
-            # min_discount preference.
+            # Resolve tier first — needed by all subsequent gates
             try:
                 sub_tier = _get_user_tier(user_id) if user_id else "free"
             except Exception as e:
                 logger.warning(f"Failed to resolve tier for {user_id}: {e}")
                 sub_tier = "free"
+            # Free tier: fixed at 30% min discount, no customization
+            # Premium users can set their own threshold via min_discount preference
+            user_min = 30 if sub_tier == "free" else (prefs_by_user.get(user_id, 20) if user_id else 20)
             sub_origin = sub.get("airport_code")
             chat_id = sub.get("chat_id")
             if not sub_origin or chat_id is None:
