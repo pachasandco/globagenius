@@ -52,7 +52,7 @@ export default function Conditions() {
               Conformément à l&apos;article L221-28 du Code de la consommation, le droit de rétractation ne s&apos;applique pas aux services pleinement exécutés avant la fin du délai de rétractation.
             </p>
             <p>
-              Toutefois, Globe Genius offre une <strong>garantie satisfait ou remboursé de 14 jours</strong> à compter de la date de souscription. Si vous n&apos;êtes pas satisfait du service, envoyez un email à <a href="mailto:contact@globegenius.app" className="text-[#FF6B47] hover:underline">contact@globegenius.app</a> dans les 14 jours suivant l&apos;achat pour obtenir un remboursement intégral, sans condition.
+              Toutefois, Globe Genius offre une <strong>garantie satisfait ou remboursé de 30 jours</strong> à compter de la date de souscription. Si vous n&apos;êtes pas satisfait du service, envoyez un email à <a href="mailto:contact@globegenius.app" className="text-[#FF6B47] hover:underline">contact@globegenius.app</a> dans les 30 jours suivant l&apos;achat pour obtenir un remboursement intégral, sans condition.
             </p>
           </section>
 
@@ -66,7 +66,7 @@ export default function Conditions() {
           <section>
             <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#0A1F3D]">Article 6 — Résiliation</h2>
             <p>
-              L&apos;utilisateur peut résilier son abonnement Premium à tout moment depuis son espace client ou par email. La résiliation prend effet à la fin de la période en cours. Aucun remboursement au prorata n&apos;est effectué en dehors de la période de garantie de 14 jours.
+              L&apos;utilisateur peut résilier son abonnement Premium à tout moment depuis son espace client ou par email. La résiliation prend effet à la fin de la période en cours. Aucun remboursement au prorata n&apos;est effectué en dehors de la période de garantie de 30 jours.
             </p>
           </section>
 
