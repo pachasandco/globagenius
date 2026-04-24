@@ -39,7 +39,7 @@ def _make_redirect_token(
 ) -> str:
     """Persist a short opaque token → URL mapping and return the tracking URL."""
     from app.db import db
-    token = secrets.token_urlsafe(12)
+    token = f"{dest}-{secrets.token_urlsafe(6)}"
     if db:
         try:
             db.table("alert_redirect_tokens").insert({
