@@ -15,6 +15,7 @@ from app.analysis.anomaly_detector import detect_anomaly
 from app.analysis.scorer import compute_score
 from app.analysis.buckets import bucket_for_duration, stops_allowed
 from app.analysis.velocity_detector import save_snapshot, detect_velocity_drop, purge_old_snapshots
+from app.analysis.cross_airline_comparator import compare_cross_airline, format_competitor_context
 from app.scraper.reverify import reverify_flight_price
 from app.notifications.aviasales import build_aviasales_url
 from app.notifications.dedup import compute_alert_key
@@ -267,7 +268,20 @@ async def _analyze_new_flights(flights: list[dict]):
             logger.warning(f"Skipping qualified_item insert: missing flight id for {flight['origin']}->{flight['destination']}")
             continue
 
-        db.table("qualified_items").insert({
+        # Cross-airline comparison — only meaningful for Tier 1 sources
+        # (ryanair_direct / transavia_direct). Tier 2 (Travelpayouts) flights
+        # don't have per-airline snapshots to compare against.
+        competitor_prices = None
+        source = flight.get("source", "")
+        if source in ("ryanair_direct", "transavia_direct"):
+            comparison = compare_cross_airline(db, flight)
+            if comparison and comparison.signal != "none":
+                competitor_prices = comparison.to_dict()
+                # Stash comparison on flight dict so dispatch can use it for
+                # Telegram message context without re-querying.
+                flight["_comparison"] = comparison
+
+        qualified_item_row = {
             "type": "flight",
             "item_id": flight_id,
             "price": anomaly.price,
@@ -276,7 +290,11 @@ async def _analyze_new_flights(flights: list[dict]):
             "score": score,
             "tier": tier,
             "status": "active",
-        }).execute()
+        }
+        if competitor_prices is not None:
+            qualified_item_row["competitor_prices"] = competitor_prices
+
+        db.table("qualified_items").insert(qualified_item_row).execute()
 
         # Defer flight alert dispatch: accumulate and send as grouped alerts
         # (by origin+destination) after the analysis pass completes. This lets
@@ -338,6 +356,14 @@ async def _dispatch_velocity_alerts(flights: list[dict]):
         )
         flight["score"] = score
         tier = "premium"  # Velocity alerts are always premium (high-value)
+
+        # Cross-airline comparison for velocity alerts (Tier 1 only)
+        source = flight.get("source", "")
+        if source in ("ryanair_direct", "transavia_direct"):
+            comparison = compare_cross_airline(db, flight)
+            if comparison and comparison.signal != "none":
+                flight["_comparison"] = comparison
+
         verified.append((flight, anomaly, tier))
 
     if verified:
@@ -602,7 +628,7 @@ async def _dispatch_grouped_flight_alerts(
                     except (ValueError, KeyError, TypeError):
                         continue  # Skip if dates invalid
 
-                    offers.append({
+                    offer: dict = {
                         "departure_date": flight["departure_date"],
                         "return_date": flight["return_date"],
                         "price": flight["price"],
@@ -616,7 +642,14 @@ async def _dispatch_grouped_flight_alerts(
                             flight["return_date"],
                             marker=settings.TRAVELPAYOUTS_MARKER or None,
                         ),
-                    })
+                    }
+                    # Attach cross-airline context if available
+                    comparison = flight.get("_comparison")
+                    if comparison:
+                        ctx = format_competitor_context(comparison)
+                        if ctx:
+                            offer["competitor_context"] = ctx
+                    offers.append(offer)
                     if key:
                         keys_to_store.append(key)
                     if tier == "premium":
