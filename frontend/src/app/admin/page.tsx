@@ -6,6 +6,22 @@ import { useRouter } from "next/navigation";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+interface CtrData {
+  period_days: number;
+  total_sent: number;
+  total_links_generated: number;
+  total_links_clicked: number;
+  total_clicks: number;
+  ctr_pct: number;
+  top_destinations: Array<{
+    destination: string;
+    tokens: number;
+    clicked: number;
+    clicks: number;
+    ctr: number;
+  }>;
+}
+
 interface ScrapeLog {
   id: string;
   type: string;
@@ -93,6 +109,7 @@ export default function AdminPage() {
   const [debug, setDebug] = useState<DebugData | null>(null);
   const [routes, setRoutes] = useState<RouteRow[] | null>(null);
   const [routeFilter, setRouteFilter] = useState("");
+  const [ctr, setCtr] = useState<CtrData | null>(null);
   const [loading, setLoading] = useState(false);
   const [triggerResult, setTriggerResult] = useState("");
   const router = useRouter();
@@ -109,14 +126,16 @@ export default function AdminPage() {
   async function loadData(key: string) {
     setLoading(true);
     try {
-      const [statusRes, debugRes, routesRes] = await Promise.all([
+      const [statusRes, debugRes, routesRes, ctrRes] = await Promise.all([
         fetch(`${API_URL}/api/status`).then(r => r.json()),
         fetch(`${API_URL}/api/debug/data`, { headers: { "X-Admin-Key": key } }).then(r => r.json()),
         fetch(`${API_URL}/api/admin/routes`, { headers: { "X-Admin-Key": key } }).then(r => r.json()),
+        fetch(`${API_URL}/api/admin/ctr?days=30`, { headers: { "X-Admin-Key": key } }).then(r => r.json()),
       ]);
       setStatus(statusRes);
       if (!debugRes.detail) setDebug(debugRes);
       if (routesRes.routes) setRoutes(routesRes.routes);
+      if (!ctrRes.detail) setCtr(ctrRes);
     } catch { /* ignore */ }
     setLoading(false);
   }
@@ -194,6 +213,55 @@ export default function AdminPage() {
               <div className="w-3 h-3 rounded-full bg-green-400 animate-pulse" />
               <span className="text-sm font-medium">Pipeline actif</span>
             </div>
+          </div>
+        )}
+
+        {/* CTR block */}
+        {ctr && (
+          <div className="bg-white rounded-xl border border-gray-100 p-4 mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold">Taux de clic — 30 derniers jours</h2>
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${ctr.ctr_pct >= 25 ? "bg-green-100 text-green-700" : ctr.ctr_pct >= 10 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
+                {ctr.ctr_pct}% CTR
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+              <div className="bg-gray-50 rounded-lg p-3">
+                <div className="text-xl font-bold">{ctr.total_sent}</div>
+                <div className="text-xs text-gray-400">alertes envoyées</div>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <div className="text-xl font-bold">{ctr.total_links_generated}</div>
+                <div className="text-xs text-gray-400">liens générés</div>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <div className="text-xl font-bold">{ctr.total_links_clicked}</div>
+                <div className="text-xs text-gray-400">liens cliqués</div>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <div className="text-xl font-bold">{ctr.total_clicks}</div>
+                <div className="text-xs text-gray-400">clics totaux</div>
+              </div>
+            </div>
+            {ctr.top_destinations.length > 0 && (
+              <div>
+                <div className="text-xs font-semibold text-gray-400 uppercase mb-2">Top destinations par CTR</div>
+                <div className="space-y-1">
+                  {ctr.top_destinations.map(d => (
+                    <div key={d.destination} className="flex items-center gap-2 text-sm">
+                      <span className="w-10 font-mono font-medium">{d.destination}</span>
+                      <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="h-2 rounded-full bg-[#FF6B47]"
+                          style={{ width: `${Math.min(d.ctr, 100)}%` }}
+                        />
+                      </div>
+                      <span className="w-14 text-right text-xs text-gray-500">{d.ctr}% ({d.clicked}/{d.tokens})</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
