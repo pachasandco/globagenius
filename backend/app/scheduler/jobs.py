@@ -400,7 +400,11 @@ async def _dispatch_grouped_flight_alerts(
     if not origins:
         return
 
-    # Fetch users with Telegram enabled who track any of these airports
+    # Fetch users with Telegram enabled who track any of these airports.
+    # alerts_paused_until is fetched optimistically: if the column doesn't exist yet
+    # (migration 012 not applied), we fall back to a SELECT without it so alerts
+    # still flow — pause feature simply degrades gracefully until migration is applied.
+    all_prefs = []
     try:
         prefs_resp = (
             db.table("user_preferences")
@@ -410,8 +414,23 @@ async def _dispatch_grouped_flight_alerts(
         )
         all_prefs = prefs_resp.data or []
     except Exception as e:
-        logger.warning(f"Failed to fetch user preferences: {e}")
-        return
+        err_msg = str(e)
+        if "alerts_paused_until" in err_msg:
+            logger.warning("Migration 012 not yet applied — fetching prefs without alerts_paused_until")
+            try:
+                prefs_resp = (
+                    db.table("user_preferences")
+                    .select("user_id,telegram_chat_id,telegram_connected,airport_codes,min_discount")
+                    .eq("telegram_connected", True)
+                    .execute()
+                )
+                all_prefs = prefs_resp.data or []
+            except Exception as e2:
+                logger.warning(f"Failed to fetch user preferences: {e2}")
+                return
+        else:
+            logger.warning(f"Failed to fetch user preferences: {e}")
+            return
 
     # Bulk-fetch active wishlists for all routes present in this batch
     # keyed by user_id → list of {origin, destination, max_price, month}
