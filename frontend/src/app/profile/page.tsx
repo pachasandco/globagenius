@@ -61,9 +61,12 @@ function CoverageRecap({ selectedAirports }: { selectedAirports: string[] }) {
   return (
     <div className="mb-12">
       <h2 className="text-xl font-semibold mb-1">Destinations surveillées</h2>
-      <p className="text-gray-400 text-sm mb-6">
+      <p className="text-gray-400 text-sm mb-4">
         Récapitulatif des routes actives selon votre sélection d'aéroports.
       </p>
+      <div className="mb-6 p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-800 leading-relaxed">
+        Sur les destinations Travelpayouts, il peut exister un décalage de quelques heures entre le moment où la compagnie aérienne affiche le prix et celui où vous recevez l'alerte. Les destinations en temps réel (CDG, ORY) sont mises à jour toutes les 20 minutes directement depuis les compagnies.
+      </div>
 
       <div className="space-y-4">
         {selectedAirports.map((ap) => {
