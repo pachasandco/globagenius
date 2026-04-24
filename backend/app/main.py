@@ -22,6 +22,12 @@ scheduler = AsyncIOScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.config import settings
+    if not settings.TELEGRAM_BOT_TOKEN:
+        logger.error("TELEGRAM_BOT_TOKEN is not set — Telegram alerts will be silently disabled")
+    else:
+        logger.info("Telegram bot token configured ✓")
+
     for job_def in get_scheduler_jobs():
         job_id = job_def["id"]
         func = job_def["func"]
@@ -38,6 +44,8 @@ async def lifespan(app: FastAPI):
             cron_kwargs = {}
             if "hour" in job_def:
                 cron_kwargs["hour"] = job_def["hour"]
+            if "minute" in job_def:
+                cron_kwargs["minute"] = job_def["minute"]
             if "day_of_week" in job_def:
                 cron_kwargs["day_of_week"] = job_def["day_of_week"]
             scheduler.add_job(func, "cron", id=job_id, **cron_kwargs)
