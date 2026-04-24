@@ -5,127 +5,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getPreferences, updatePreferences, changePassword } from "@/lib/api";
 
-// Tier 1 routes — scraped every 20 min via Ryanair/Transavia/Vueling direct APIs (CDG + ORY only)
-const TIER1_ROUTES: [string, string][] = [
-  ["CDG","RAK"],["CDG","CMN"],["CDG","AGA"],["CDG","FEZ"],["CDG","TNG"],
-  ["ORY","RAK"],["ORY","CMN"],["ORY","AGA"],
-  ["CDG","LIS"],["CDG","OPO"],["CDG","FAO"],
-  ["ORY","LIS"],["ORY","OPO"],
-  ["CDG","BCN"],["CDG","MAD"],["CDG","SVQ"],["CDG","VLC"],["CDG","AGP"],
-  ["CDG","IBZ"],["CDG","PMI"],["CDG","ALC"],
-  ["ORY","BCN"],["ORY","MAD"],["ORY","AGP"],["ORY","PMI"],["ORY","IBZ"],["ORY","ALC"],
-  ["CDG","FCO"],["CDG","CIA"],["CDG","BGY"],["CDG","NAP"],["CDG","BRI"],["CDG","PMO"],
-  ["ORY","FCO"],["ORY","NAP"],
-  ["CDG","ATH"],["CDG","HER"],["CDG","RHO"],["CDG","SKG"],
-  ["ORY","ATH"],["ORY","HER"],
-  ["CDG","TFS"],["CDG","LPA"],["CDG","ACE"],["CDG","FUE"],
-  ["ORY","TFS"],["ORY","LPA"],
-  ["CDG","TUN"],["CDG","MIR"],
-  ["ORY","TUN"],["ORY","ALG"],
-  ["CDG","DUB"],["CDG","STN"],
-  ["CDG","KRK"],["CDG","WRO"],["CDG","BUD"],
-];
-
-const TIER1_SET = new Set(TIER1_ROUTES.map(([o, d]) => `${o}:${d}`));
-
-const IATA_TO_CITY: Record<string, string> = {
-  RAK:"Marrakech", CMN:"Casablanca", AGA:"Agadir", FEZ:"Fès", TNG:"Tanger",
-  LIS:"Lisbonne", OPO:"Porto", FAO:"Faro",
-  BCN:"Barcelone", MAD:"Madrid", SVQ:"Séville", VLC:"Valence", AGP:"Malaga",
-  IBZ:"Ibiza", PMI:"Palma de Majorque", ALC:"Alicante",
-  FCO:"Rome", CIA:"Rome Ciampino", BGY:"Milan Bergame", NAP:"Naples", BRI:"Bari", PMO:"Palerme",
-  ATH:"Athènes", HER:"Héraklion", RHO:"Rhodes", SKG:"Thessalonique",
-  TFS:"Ténérife", LPA:"Gran Canaria", ACE:"Lanzarote", FUE:"Fuerteventura",
-  TUN:"Tunis", MIR:"Monastir", ALG:"Alger",
-  DUB:"Dublin", STN:"Londres Stansted",
-  KRK:"Cracovie", WRO:"Wrocław", BUD:"Budapest",
-  // Long-courrier (Travelpayouts only)
-  JFK:"New York", YUL:"Montréal", CUN:"Cancún", PUJ:"Punta Cana",
-  BKK:"Bangkok", NRT:"Tokyo", DXB:"Dubaï", MLE:"Maldives",
-  MRU:"Maurice", RUN:"La Réunion", PPT:"Papeete",
-  GIG:"Rio de Janeiro", MIA:"Miami", LAX:"Los Angeles", HKG:"Hong Kong",
-  IST:"Istanbul", TLV:"Tel Aviv", CAI:"Le Caire",
-  AMS:"Amsterdam", BER:"Berlin", PRG:"Prague", VIE:"Vienne",
-  WAW:"Varsovie", CPH:"Copenhague", ZRH:"Zurich", BRU:"Bruxelles",
-};
-
-// All destinations monitored via Travelpayouts aggregator (every 2h) for any MVP airport
-const TP_DESTINATIONS = [
-  "RAK","CMN","AGA","LIS","OPO","BCN","MAD","AGP","FCO","NAP","ATH","HER",
-  "TFS","LPA","TUN","DUB","BUD","KRK","IST","TLV","CAI",
-  "JFK","YUL","CUN","PUJ","BKK","NRT","DXB","MLE","MRU","RUN","GIG","MIA","LAX","HKG",
-  "AMS","BER","PRG","VIE","WAW","CPH","ZRH","BRU",
-];
-
-function CoverageRecap({ selectedAirports }: { selectedAirports: string[] }) {
-  if (selectedAirports.length === 0) return null;
-
-  return (
-    <div className="mb-12">
-      <h2 className="text-xl font-semibold mb-1">Destinations surveillées</h2>
-      <p className="text-gray-400 text-sm mb-4">
-        Récapitulatif des routes actives selon votre sélection d'aéroports.
-      </p>
-      <div className="mb-6 p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-800 leading-relaxed">
-        Sur certaines destinations, l'alerte peut arriver avec quelques heures de décalage par rapport au moment où la compagnie affiche le prix. Pour Paris CDG et Orly, les prix sont vérifiés toutes les 20 minutes — vous êtes alerté quasi instantanément.
-      </div>
-
-      <div className="space-y-4">
-        {selectedAirports.map((ap) => {
-          const realtime = TIER1_ROUTES
-            .filter(([o]) => o === ap)
-            .map(([, d]) => d);
-
-          const tpOnly = TP_DESTINATIONS.filter(
-            (d) => !TIER1_SET.has(`${ap}:${d}`)
-          );
-
-          return (
-            <div key={ap} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
-                <span className="font-bold text-sm">{ap}</span>
-                <span className="text-xs text-gray-400">
-                  {realtime.length} instantané{realtime.length > 1 ? "s" : ""} · {tpOnly.length} régulier{tpOnly.length > 1 ? "s" : ""}
-                </span>
-              </div>
-
-              {realtime.length > 0 && (
-                <div className="px-4 py-3 border-b border-gray-100">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <span className="inline-block w-2 h-2 rounded-full bg-green-400" />
-                    <span className="text-xs font-semibold text-green-700">Alertes instantanées — prix vérifiés toutes les 20 min</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {realtime.map((d) => (
-                      <span key={d} className="px-2 py-0.5 bg-green-50 border border-green-100 rounded-full text-xs text-green-800">
-                        {d} · {IATA_TO_CITY[d] ?? d}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="px-4 py-3">
-                <div className="flex items-center gap-1.5 mb-2">
-                  <span className="inline-block w-2 h-2 rounded-full bg-blue-400" />
-                  <span className="text-xs font-semibold text-blue-700">Alertes régulières — prix vérifiés toutes les 2h</span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {tpOnly.map((d) => (
-                    <span key={d} className="px-2 py-0.5 bg-blue-50 border border-blue-100 rounded-full text-xs text-blue-800">
-                      {d} · {IATA_TO_CITY[d] ?? d}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 const AIRPORTS = [
   { code: "CDG", label: "Paris Charles de Gaulle" },
   { code: "ORY", label: "Paris Orly" },
@@ -600,9 +479,6 @@ export default function ProfilePage() {
             </div>
           )}
         </div>
-
-        {/* ── Destinations surveillées ── */}
-        <CoverageRecap selectedAirports={airports} />
 
         {/* Save Button */}
         <button
