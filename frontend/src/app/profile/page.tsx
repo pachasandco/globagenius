@@ -25,6 +25,7 @@ export default function ProfilePage() {
   const [airports, setAirports] = useState<string[]>([]);
   const [offerTypes, setOfferTypes] = useState<string[]>([]);
   const [minDiscount, setMinDiscount] = useState<number>(20);
+  const [flightRange, setFlightRange] = useState<string>("all");
   const [isPremium, setIsPremium] = useState(false);
   const [showUpsellBanner, setShowUpsellBanner] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -66,6 +67,9 @@ export default function ProfilePage() {
         if (prefs.min_discount) {
           setMinDiscount(prefs.min_discount);
         }
+        if (prefs.flight_range) {
+          setFlightRange(prefs.flight_range);
+        }
       })
       .catch((err) => {
         setError("Erreur lors du chargement des préférences");
@@ -93,6 +97,7 @@ export default function ProfilePage() {
         airport_codes: airports.length > 0 ? airports : ["CDG"],
         offer_types: offerTypes.length > 0 ? offerTypes : ["flight"],
         min_discount: minDiscount,
+        flight_range: flightRange,
       });
       setSuccess("Préférences mises à jour avec succès !");
       setTimeout(() => setSuccess(""), 3000);
@@ -435,6 +440,40 @@ export default function ProfilePage() {
                     </div>
                   )}
                 </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Flight Range ── */}
+        <div className="mb-12">
+          <h2 className="text-xl font-semibold mb-1">Type de vols</h2>
+          <p className="text-gray-400 text-sm mb-4">Filtrez les alertes selon la distance de vol.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {[
+              { id: "all",          icon: "🌍", label: "Tous les vols",       desc: "Court, moyen et long-courrier" },
+              { id: "short_medium", icon: "✈️", label: "Court / Moyen-courrier", desc: "Europe, Maghreb, Moyen-Orient" },
+              { id: "long_haul",    icon: "🚀", label: "Long-courrier",        desc: "Amériques, Asie, Océanie…" },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => setFlightRange(opt.id)}
+                className="text-left p-4 rounded-xl border-2 transition-all"
+                style={{
+                  borderColor: flightRange === opt.id ? "#FF6B47" : "#e5e7eb",
+                  background: flightRange === opt.id ? "#FFF1EC" : "white",
+                }}
+              >
+                <div className="text-xl mb-1">{opt.icon}</div>
+                <div className="font-semibold text-sm text-[#0A1F3D]">{opt.label}</div>
+                <div className="text-xs text-gray-400 mt-0.5">{opt.desc}</div>
+                {flightRange === opt.id && (
+                  <div className="mt-2 w-4 h-4 rounded-full bg-[#FF6B47] flex items-center justify-center ml-auto">
+                    <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                )}
               </button>
             ))}
           </div>
