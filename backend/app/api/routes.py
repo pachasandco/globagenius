@@ -180,6 +180,7 @@ class PreferencesRequest(BaseModel):
     min_discount: int = 40
     max_budget: int | None = None
     preferred_destinations: list[str] | None = None
+    flight_range: str = "all"
 
     @field_validator("min_discount")
     @classmethod
@@ -187,6 +188,14 @@ class PreferencesRequest(BaseModel):
         allowed = {20, 30, 40, 50, 60}
         if v not in allowed:
             raise ValueError(f"min_discount must be one of {sorted(allowed)}")
+        return v
+
+    @field_validator("flight_range")
+    @classmethod
+    def validate_flight_range(cls, v: str) -> str:
+        allowed = {"all", "short_medium", "long_haul"}
+        if v not in allowed:
+            raise ValueError(f"flight_range must be one of {sorted(allowed)}")
         return v
 
 
@@ -589,6 +598,7 @@ def update_preferences(user_id: str, req: PreferencesRequest, user: dict = Depen
         "min_discount": effective_min_discount,
         "max_budget": req.max_budget,
         "preferred_destinations": req.preferred_destinations or [],
+        "flight_range": req.flight_range,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 

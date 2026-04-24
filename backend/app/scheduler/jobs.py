@@ -416,15 +416,15 @@ async def _dispatch_grouped_flight_alerts(
     try:
         prefs_resp = (
             db.table("user_preferences")
-            .select("user_id,telegram_chat_id,telegram_connected,airport_codes,min_discount,alerts_paused_until")
+            .select("user_id,telegram_chat_id,telegram_connected,airport_codes,min_discount,alerts_paused_until,flight_range")
             .eq("telegram_connected", True)
             .execute()
         )
         all_prefs = prefs_resp.data or []
     except Exception as e:
         err_msg = str(e)
-        if "alerts_paused_until" in err_msg:
-            logger.warning("Migration 012 not yet applied — fetching prefs without alerts_paused_until")
+        if "alerts_paused_until" in err_msg or "flight_range" in err_msg:
+            logger.warning("Migration not yet applied — fetching prefs without optional columns")
             try:
                 prefs_resp = (
                     db.table("user_preferences")
@@ -487,12 +487,14 @@ async def _dispatch_grouped_flight_alerts(
     # Build per-user lookups from the preferences we already fetched
     prefs_by_user: dict[str, int] = {}
     paused_until_by_user: dict[str, str] = {}
+    flight_range_by_user: dict[str, str] = {}
     for pref in all_prefs:
         if isinstance(pref, dict) and pref.get("user_id"):
             uid = pref["user_id"]
             prefs_by_user[uid] = pref.get("min_discount", 20)
             if pref.get("alerts_paused_until"):
                 paused_until_by_user[uid] = pref["alerts_paused_until"]
+            flight_range_by_user[uid] = pref.get("flight_range") or "all"
 
     for sub in subs:
         if not isinstance(sub, dict):
@@ -549,6 +551,14 @@ async def _dispatch_grouped_flight_alerts(
 
             for (grp_origin, grp_dest), flight_tuples in groups.items():
                 if grp_origin != sub_origin:
+                    continue
+
+                # Flight range filter — user preference
+                user_flight_range = flight_range_by_user.get(user_id, "all") if user_id else "all"
+                dest_is_long_haul = is_long_haul(grp_dest)
+                if user_flight_range == "long_haul" and not dest_is_long_haul:
+                    continue
+                if user_flight_range == "short_medium" and dest_is_long_haul:
                     continue
 
                 # Free tier: long-haul only scrapped from CDG — no restriction on short-haul origins
