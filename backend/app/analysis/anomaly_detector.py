@@ -1,9 +1,11 @@
 """Price anomaly detection with tiered alert classification.
 
 Alert levels:
-- FARE_MISTAKE: z_score < -3.5, discount > 60% — airline pricing error
-- FLASH_PROMO: z_score < -2.5, discount > 40% — flash sale or promo
-- GOOD_DEAL: z_score < -1.5, discount > 20% — below market price
+- FARE_MISTAKE: z_score >= 3.5, discount > 60% — airline pricing error
+- FLASH_PROMO: z_score >= 2.5, discount > 40% — flash sale or promo
+- GOOD_DEAL:   z_score >= 2.0, discount > 20% — below market price
+              (raised from 1.0 while baselines mature — revert after 3 months
+               of price_observations accumulation)
 """
 
 from dataclasses import dataclass
@@ -37,7 +39,7 @@ def detect_anomaly(price: float, baseline: dict) -> QualifiedItem | None:
         alert_level = "fare_mistake"
     elif z_score >= 2.5 and discount_pct >= 40:
         alert_level = "flash_promo"
-    elif z_score >= 1.0 and discount_pct >= 20:
+    elif z_score >= 2.0 and discount_pct >= 20:
         alert_level = "good_deal"
     else:
         return None
