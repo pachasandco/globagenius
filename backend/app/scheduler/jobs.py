@@ -914,12 +914,9 @@ async def job_daily_admin_report():
 
 
 async def job_scrape_tier1():
-    """Tier 1 scrape — Ryanair + Transavia direct endpoints, every 20 min.
-
-    Covers hot routes from CDG/ORY with near-real-time prices.
-    Results are inserted into raw_flights exactly like the Travelpayouts scrape,
-    so the same qualification pipeline handles them automatically."""
-    logger.info("Starting Tier 1 scrape (Ryanair + Transavia direct)")
+    """Tier 1 scrape — Ryanair + Transavia + Vueling direct endpoints, every 20 min."""
+    started_at = datetime.now(timezone.utc)
+    logger.info("Starting Tier 1 scrape (Ryanair + Transavia + Vueling direct)")
     if not db:
         return
 
@@ -964,9 +961,27 @@ async def job_scrape_tier1():
         except Exception as e:
             logger.warning(f"Tier1 insert error: {e}")
 
+    completed_at = datetime.now(timezone.utc)
+    duration_ms = int((completed_at - started_at).total_seconds() * 1000)
+    t1_status = "success" if errors == 0 else ("partial" if inserted > 0 else "failed")
+    try:
+        db.table("scrape_logs").insert({
+            "actor_id": "tier1",
+            "source": "ryanair+transavia+vueling",
+            "type": "flights",
+            "items_count": inserted,
+            "errors_count": errors,
+            "duration_ms": duration_ms,
+            "status": t1_status,
+            "started_at": started_at.isoformat(),
+            "completed_at": completed_at.isoformat(),
+        }).execute()
+    except Exception as e:
+        logger.warning(f"Failed to write tier1 scrape_log: {e}")
+
     logger.info(
         f"Tier 1 scrape done: {inserted} inserted, {skipped} skipped (dupes), "
-        f"{errors} errors, {len(velocity_alerts)} velocity alerts"
+        f"{errors} errors, {len(velocity_alerts)} velocity alerts, {duration_ms}ms"
     )
 
     # --- Dispatch velocity alerts immediately (bypass normal 2h window) ---
