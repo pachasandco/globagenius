@@ -14,6 +14,7 @@ from app.analysis.destination_updater import update_priority_destinations_in_db
 from app.analysis.anomaly_detector import detect_anomaly
 from app.analysis.scorer import compute_score
 from app.analysis.buckets import bucket_for_duration, stops_allowed
+from app.analysis.velocity_detector import save_snapshot, detect_velocity_drop, purge_old_snapshots
 from app.scraper.reverify import reverify_flight_price
 from app.notifications.aviasales import build_aviasales_url
 from app.notifications.dedup import compute_alert_key
@@ -291,6 +292,57 @@ async def _analyze_new_flights(flights: list[dict]):
     logger.info(f"Dispatching {len(qualified_flights)} qualified flights for alert delivery")
 
     await _dispatch_grouped_flight_alerts(qualified_flights)
+
+
+async def _dispatch_velocity_alerts(flights: list[dict]):
+    """Dispatch velocity-detected mistake fares immediately.
+
+    These bypass the normal z-score qualification because:
+    1. A 40-60% price drop in < 2h is a near-certain mistake fare signal
+    2. These deals last 2-8h max — waiting for the 2h Travelpayouts cycle would miss them
+    3. Re-verification still runs to confirm the price is still live
+
+    Uses the same grouped dispatch and dedup logic as the normal pipeline."""
+    if not db or not flights:
+        return
+
+    # Re-verify each flight before dispatching
+    verified: list[tuple[dict, object, str]] = []
+    for flight in flights:
+        if not await reverify_flight_price(flight):
+            logger.info(
+                f"Velocity alert rejected by reverify: "
+                f"{flight['origin']}->{flight['destination']} {flight.get('departure_date')}"
+            )
+            continue
+
+        drop_pct = float(flight.get("velocity_drop_pct") or 0)
+        ref_price = float(flight.get("velocity_reference_price") or flight["price"])
+        alert_level = flight.get("ai_alert_level", "fare_mistake")
+
+        # Create a synthetic anomaly-like object for the dispatch pipeline
+        from app.analysis.anomaly_detector import QualifiedItem
+        anomaly = QualifiedItem(
+            price=float(flight["price"]),
+            baseline_price=ref_price,
+            discount_pct=round(drop_pct, 1),
+            z_score=99.0,  # Sentinel: velocity alerts always pass z-score gate
+            alert_level=alert_level,
+        )
+
+        score = compute_score(
+            discount_pct=drop_pct,
+            destination_code=flight["destination"],
+            date_flexibility=0,
+            accommodation_rating=None,
+        )
+        flight["score"] = score
+        tier = "premium"  # Velocity alerts are always premium (high-value)
+        verified.append((flight, anomaly, tier))
+
+    if verified:
+        logger.info(f"Dispatching {len(verified)} verified velocity alerts")
+        await _dispatch_grouped_flight_alerts(verified)
 
 
 def _deal_label(discount_pct: float) -> str:
@@ -677,6 +729,9 @@ async def job_expire_stale_data():
 
     logger.info("Expired stale qualified items")
 
+    # Purge price_snapshots older than 24h (velocity detector data)
+    purge_old_snapshots(db)
+
 
 async def job_daily_digest():
     if not db:
@@ -761,7 +816,26 @@ async def job_scrape_tier1():
 
     inserted = 0
     skipped = 0
+    velocity_alerts: list[dict] = []
+
     for flight in flights:
+        # --- Velocity detection: save snapshot BEFORE upsert ---
+        # We save every observed price, including duplicates, to track price
+        # movement over time. The upsert below deduplicates by hash (same price
+        # same dates = same hash), but snapshots are always appended.
+        save_snapshot(db, flight)
+
+        # --- Detect velocity drop vs last 2h ---
+        v_alert = detect_velocity_drop(db, flight)
+        if v_alert:
+            # Convert VelocityAlert to a flight dict the dispatch pipeline understands
+            velocity_alerts.append({
+                **flight,
+                "ai_alert_level": v_alert.alert_level,
+                "velocity_drop_pct": v_alert.drop_pct,
+                "velocity_reference_price": v_alert.reference_price,
+            })
+
         try:
             result = (
                 db.table("raw_flights")
@@ -776,11 +850,16 @@ async def job_scrape_tier1():
             logger.warning(f"Tier1 insert error: {e}")
 
     logger.info(
-        f"Tier 1 scrape done: {inserted} inserted, {skipped} skipped (dupes), {errors} errors"
+        f"Tier 1 scrape done: {inserted} inserted, {skipped} skipped (dupes), "
+        f"{errors} errors, {len(velocity_alerts)} velocity alerts"
     )
 
-    # Run qualification pipeline immediately on fresh Tier 1 data
-    # so mistake fares trigger alerts within minutes, not at the next 2h window.
+    # --- Dispatch velocity alerts immediately (bypass normal 2h window) ---
+    if velocity_alerts:
+        logger.info(f"Dispatching {len(velocity_alerts)} velocity alerts immediately")
+        await _dispatch_velocity_alerts(velocity_alerts)
+
+    # --- Run qualification pipeline on all fresh Tier 1 data ---
     if inserted > 0:
         await job_qualify_and_alert()
 
