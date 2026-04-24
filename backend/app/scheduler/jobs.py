@@ -94,6 +94,14 @@ def get_scheduler_jobs() -> list[dict]:
             "day_of_week": "mon",
             "hour": 3,
         },
+        # ── STRIPE SYNC : 1x/jour à 6h ──
+        # Vérifie les abonnements Stripe actifs et met à jour premium_expires_at.
+        {
+            "id": "sync_stripe_subscriptions",
+            "func": job_sync_stripe_subscriptions,
+            "trigger": "cron",
+            "hour": 6,
+        },
     ]
 
 
@@ -1111,3 +1119,71 @@ async def job_update_destinations():
         logger.info(f"Destination update complete: {count} destinations upserted")
     except Exception as e:
         logger.error(f"Destination update failed: {e}")
+
+
+async def job_sync_stripe_subscriptions():
+    """Sync premium_expires_at from Stripe for all users with a stripe_subscription_id.
+
+    Runs daily at 6am. Queries Stripe for each active subscription and writes the
+    current_period_end as premium_expires_at. If the subscription is cancelled or
+    past_due, sets premium_expires_at to now() so _get_user_tier returns 'free'
+    immediately on the next check.
+    """
+    if not db:
+        logger.warning("No DB connection — skipping Stripe sync")
+        return
+
+    import stripe as stripe_lib
+    from app.config import settings as _settings
+
+    if not _settings.STRIPE_SECRET_KEY:
+        logger.warning("STRIPE_SECRET_KEY not set — skipping Stripe sync")
+        return
+
+    stripe_lib.api_key = _settings.STRIPE_SECRET_KEY
+
+    # Fetch all users that have a subscription_id
+    try:
+        rows = (
+            db.table("user_preferences")
+            .select("user_id,stripe_subscription_id,stripe_customer_id")
+            .not_.is_("stripe_subscription_id", "null")
+            .execute()
+        )
+        prefs = rows.data or []
+    except Exception as e:
+        logger.error(f"Stripe sync: failed to fetch prefs: {e}")
+        return
+
+    updated = expired = errors = 0
+    now = datetime.now(timezone.utc)
+
+    for pref in prefs:
+        sub_id = pref.get("stripe_subscription_id")
+        user_id = pref.get("user_id")
+        if not sub_id or not user_id:
+            continue
+        try:
+            sub = stripe_lib.Subscription.retrieve(sub_id)
+            status = sub.get("status", "")
+            period_end = sub.get("current_period_end")  # Unix timestamp
+
+            if status in ("active", "trialing") and period_end:
+                expires_at = datetime.fromtimestamp(period_end, tz=timezone.utc)
+                db.table("user_preferences").update({
+                    "premium_expires_at": expires_at.isoformat(),
+                }).eq("user_id", user_id).execute()
+                updated += 1
+            else:
+                # Cancelled, past_due, unpaid → expire immediately
+                db.table("user_preferences").update({
+                    "premium_expires_at": now.isoformat(),
+                }).eq("user_id", user_id).execute()
+                expired += 1
+                logger.info(f"Stripe sync: subscription {sub_id} status={status} → premium expired for {user_id}")
+
+        except Exception as e:
+            logger.warning(f"Stripe sync: error for sub {sub_id}: {e}")
+            errors += 1
+
+    logger.info(f"Stripe sync complete: {updated} renewed, {expired} expired, {errors} errors")
