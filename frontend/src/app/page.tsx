@@ -136,6 +136,8 @@ const faqs = [
   { q: "Quelle est la différence entre Gratuit et Premium ?", a: "En Gratuit, vous recevez les deals avec des réductions jusqu\u2019à -29%. En Premium, vous accédez à tous les deals (jusqu\u2019à -70%+), y compris les erreurs de prix des compagnies, avec des alertes prioritaires." },
   { q: "Comment fonctionne la garantie 14 jours ?", a: "Si Premium ne vous convient pas, contactez-nous dans les 14 jours suivant votre achat et on vous rembourse intégralement, sans question." },
   { q: "Les prix incluent-ils les bagages ?", a: "Les prix affichés sont ceux des compagnies aériennes. Les bagages en soute sont parfois inclus selon la compagnie et le tarif. On le précise dans chaque alerte quand l\u2019information est disponible." },
+  { q: "Combien de temps entre la publication du prix et votre alerte ?", a: "Pour les vols Ryanair, Transavia et Vueling au départ de Paris (CDG/ORY), on scrape les prix directement sur les APIs des compagnies toutes les 20 minutes. Dès qu\u2019une anomalie est détectée, l\u2019alerte Telegram part dans la foulée, généralement moins de 5 minutes après l\u2019apparition du deal. Pour les autres destinations, on utilise un agrégateur de vols interrogé toutes les 2 heures." },
+  { q: "Pourquoi certains deals disparaissent avant que j\u2019aie pu réserver ?", a: "Les tarifs érronés (\u00ab\u00a0erreurs de prix\u00a0\u00bb) sont des oublis de configuration des compagnies. Dès qu\u2019elles s\u2019en rendent compte, elles corrigent le tarif \u2014 parfois en quelques heures. C\u2019est pourquoi les alertes temps réel sont déterminantes : réserver dans l\u2019heure qui suit l\u2019alerte maximise vos chances d\u2019obtenir le prix affiché. Passez commande rapidement et contactez la compagnie si le tarif change avant l\u2019émission." },
 ];
 
 /* ─── COMPONENTS ─── */
@@ -313,7 +315,7 @@ export default function Landing() {
         <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-[var(--color-ink)] text-center mb-12">
           Comment ça marche ?
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 max-w-4xl mx-auto">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 max-w-5xl mx-auto">
           {[
             {
               num: "1",
@@ -322,13 +324,18 @@ export default function Landing() {
             },
             {
               num: "2",
-              title: "Vous recevez les bons plans sur Telegram",
-              desc: "Prix, dates, lien direct pour réserver. Rien à faire, tout arrive automatiquement.",
+              title: "L\u2019algorithme détecte l\u2019anomalie de prix",
+              desc: "Dès qu\u2019un tarif chute sous le prix habituel, notre système le signale. Pour Ryanair, Transavia et Vueling, la vérification a lieu toutes les 20 minutes.",
             },
             {
               num: "3",
-              title: "Vous réservez, vous économisez",
-              desc: "Jusqu\u2019à -70% sur vos vols, parfois plus avec les erreurs de prix des compagnies.",
+              title: "Vous recevez l\u2019alerte sur Telegram",
+              desc: "Prix, dates, lien direct pour réserver. L\u2019alerte arrive dans les minutes qui suivent la détection \u2014 pas le lendemain.",
+            },
+            {
+              num: "4",
+              title: "Vous réservez avant que ça remonte",
+              desc: "Les erreurs de prix disparaissent souvent en quelques heures. L\u2019avance qu\u2019on vous donne, c\u2019est ça qui fait la différence.",
             },
           ].map((step, i) => (
             <motion.div
