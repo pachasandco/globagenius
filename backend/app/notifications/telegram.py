@@ -254,6 +254,11 @@ def format_grouped_flight_alerts(
             if airline:
                 lines.append(f"✈️ {airline}")
 
+            # Cross-airline comparison context (Tier 1 only)
+            competitor_ctx = o.get("competitor_context", "").strip()
+            if competitor_ctx:
+                lines.append(f"📊 {competitor_ctx}")
+
             booking_url = o.get("booking_url", "").strip()
             if booking_url:
                 lines.append(f"[🔗 Voir le vol]({booking_url})")
