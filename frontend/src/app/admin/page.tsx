@@ -35,9 +35,10 @@ interface RouteRow {
 }
 
 const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
-  ryanair:      { label: "Ryanair",      color: "bg-blue-100 text-blue-800" },
-  transavia:    { label: "Transavia",    color: "bg-green-100 text-green-800" },
-  travelpayouts:{ label: "Travelpayouts",color: "bg-purple-100 text-purple-800" },
+  ryanair:      { label: "Ryanair",   color: "bg-blue-100 text-blue-800" },
+  transavia:    { label: "Transavia", color: "bg-green-100 text-green-800" },
+  vueling:      { label: "Vueling",   color: "bg-yellow-100 text-yellow-800" },
+  travelpayouts:{ label: "Agrégateur",color: "bg-purple-100 text-purple-800" },
 };
 
 export default function AdminPage() {
