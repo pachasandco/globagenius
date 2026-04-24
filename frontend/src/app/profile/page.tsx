@@ -1,189 +1,121 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getPreferences, updatePreferences, changePassword } from "@/lib/api";
 
-const MONTH_LABELS = [
-  "", "Janv.", "Févr.", "Mars", "Avr.", "Mai", "Juin",
-  "Juil.", "Août", "Sept.", "Oct.", "Nov.", "Déc.",
+// Tier 1 routes — scraped every 20 min via Ryanair/Transavia direct APIs (CDG + ORY only)
+const TIER1_ROUTES: [string, string][] = [
+  ["CDG","RAK"],["CDG","CMN"],["CDG","AGA"],["CDG","FEZ"],["CDG","TNG"],
+  ["ORY","RAK"],["ORY","CMN"],["ORY","AGA"],
+  ["CDG","LIS"],["CDG","OPO"],["CDG","FAO"],
+  ["ORY","LIS"],["ORY","OPO"],
+  ["CDG","BCN"],["CDG","MAD"],["CDG","SVQ"],["CDG","VLC"],["CDG","AGP"],
+  ["ORY","BCN"],["ORY","AGP"],
+  ["CDG","FCO"],["CDG","CIA"],["CDG","BGY"],["CDG","NAP"],["CDG","BRI"],["CDG","PMO"],
+  ["ORY","FCO"],["ORY","NAP"],
+  ["CDG","ATH"],["CDG","HER"],["CDG","RHO"],["CDG","SKG"],
+  ["ORY","ATH"],["ORY","HER"],
+  ["CDG","TFS"],["CDG","LPA"],["CDG","ACE"],["CDG","FUE"],
+  ["ORY","TFS"],["ORY","LPA"],
+  ["CDG","TUN"],["CDG","MIR"],
+  ["ORY","TUN"],["ORY","ALG"],
+  ["CDG","DUB"],["CDG","STN"],
+  ["CDG","KRK"],["CDG","WRO"],["CDG","BUD"],
 ];
 
-type Wishlist = {
-  id: string;
-  origin: string;
-  destination: string;
-  max_price: number | null;
-  month: number | null;
-  label: string | null;
-  active: boolean;
+const TIER1_SET = new Set(TIER1_ROUTES.map(([o, d]) => `${o}:${d}`));
+
+const IATA_TO_CITY: Record<string, string> = {
+  RAK:"Marrakech", CMN:"Casablanca", AGA:"Agadir", FEZ:"Fès", TNG:"Tanger",
+  LIS:"Lisbonne", OPO:"Porto", FAO:"Faro",
+  BCN:"Barcelone", MAD:"Madrid", SVQ:"Séville", VLC:"Valence", AGP:"Malaga",
+  FCO:"Rome", CIA:"Rome Ciampino", BGY:"Milan Bergame", NAP:"Naples", BRI:"Bari", PMO:"Palerme",
+  ATH:"Athènes", HER:"Héraklion", RHO:"Rhodes", SKG:"Thessalonique",
+  TFS:"Ténérife", LPA:"Gran Canaria", ACE:"Lanzarote", FUE:"Fuerteventura",
+  TUN:"Tunis", MIR:"Monastir", ALG:"Alger",
+  DUB:"Dublin", STN:"Londres Stansted",
+  KRK:"Cracovie", WRO:"Wrocław", BUD:"Budapest",
+  // Long-courrier (Travelpayouts only)
+  JFK:"New York", YUL:"Montréal", CUN:"Cancún", PUJ:"Punta Cana",
+  BKK:"Bangkok", NRT:"Tokyo", DXB:"Dubaï", MLE:"Maldives",
+  MRU:"Maurice", RUN:"La Réunion", PPT:"Papeete",
+  GIG:"Rio de Janeiro", MIA:"Miami", LAX:"Los Angeles", HKG:"Hong Kong",
+  IST:"Istanbul", TLV:"Tel Aviv", CAI:"Le Caire",
+  AMS:"Amsterdam", BER:"Berlin", PRG:"Prague", VIE:"Vienne",
+  WAW:"Varsovie", CPH:"Copenhague", ZRH:"Zurich", BRU:"Bruxelles",
 };
 
-function WishlistManager({ userId, apiUrl }: { userId: string; apiUrl: string }) {
-  const [wishlists, setWishlists] = useState<Wishlist[]>([]);
-  const [origin, setOrigin] = useState("");
-  const [destination, setDestination] = useState("");
-  const [maxPrice, setMaxPrice] = useState("");
-  const [month, setMonth] = useState("");
-  const [label, setLabel] = useState("");
-  const [adding, setAdding] = useState(false);
-  const [wlError, setWlError] = useState("");
+// All destinations monitored via Travelpayouts aggregator (every 2h) for any MVP airport
+const TP_DESTINATIONS = [
+  "RAK","CMN","AGA","LIS","OPO","BCN","MAD","AGP","FCO","NAP","ATH","HER",
+  "TFS","LPA","TUN","DUB","BUD","KRK","IST","TLV","CAI",
+  "JFK","YUL","CUN","PUJ","BKK","NRT","DXB","MLE","MRU","RUN","GIG","MIA","LAX","HKG",
+  "AMS","BER","PRG","VIE","WAW","CPH","ZRH","BRU",
+];
 
-  const token = () => localStorage.getItem("gg_token");
-
-  const loadWishlists = useCallback(async () => {
-    try {
-      const res = await fetch(`${apiUrl}/api/users/${userId}/wishlists`, {
-        headers: { Authorization: `Bearer ${token()}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setWishlists(data);
-      }
-    } catch {}
-  }, [userId, apiUrl]);
-
-  useEffect(() => {
-    if (userId) loadWishlists();
-  }, [userId, loadWishlists]);
-
-  async function handleAdd() {
-    const o = origin.trim().toUpperCase();
-    const d = destination.trim().toUpperCase();
-    if (!/^[A-Z]{3}$/.test(o) || !/^[A-Z]{3}$/.test(d)) {
-      setWlError("Les codes IATA doivent faire 3 lettres (ex: CDG, BKK)");
-      return;
-    }
-    if (o === d) {
-      setWlError("L'origine et la destination doivent être différentes");
-      return;
-    }
-    setAdding(true);
-    setWlError("");
-    try {
-      const body: Record<string, unknown> = { origin: o, destination: d };
-      if (maxPrice) body.max_price = parseInt(maxPrice, 10);
-      if (month) body.month = parseInt(month, 10);
-      if (label.trim()) body.label = label.trim();
-      const res = await fetch(`${apiUrl}/api/users/${userId}/wishlists`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token()}`,
-        },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Erreur lors de l'ajout");
-      }
-      setOrigin(""); setDestination(""); setMaxPrice(""); setMonth(""); setLabel("");
-      await loadWishlists();
-    } catch (e) {
-      setWlError(e instanceof Error ? e.message : "Erreur lors de l'ajout");
-    } finally {
-      setAdding(false);
-    }
-  }
-
-  async function handleDelete(id: string) {
-    try {
-      await fetch(`${apiUrl}/api/users/${userId}/wishlists/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token()}` },
-      });
-      setWishlists((prev) => prev.filter((w) => w.id !== id));
-    } catch {}
-  }
+function CoverageRecap({ selectedAirports }: { selectedAirports: string[] }) {
+  if (selectedAirports.length === 0) return null;
 
   return (
     <div className="mb-12">
-      <h2 className="text-xl font-semibold mb-1">Destinations souhaitées</h2>
+      <h2 className="text-xl font-semibold mb-1">Destinations surveillées</h2>
       <p className="text-gray-400 text-sm mb-6">
-        Recevez une alerte dès qu'un vol vers votre destination atteint votre prix cible,
-        quel que soit votre seuil habituel.
+        Récapitulatif des routes actives selon votre sélection d'aéroports.
       </p>
 
-      {wishlists.length > 0 && (
-        <div className="space-y-2 mb-6">
-          {wishlists.map((wl) => (
-            <div key={wl.id} className="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-200">
-              <span className="text-lg">❤️</span>
-              <div className="flex-1 min-w-0">
-                <span className="font-semibold text-sm">
-                  {wl.origin} → {wl.destination}
+      <div className="space-y-4">
+        {selectedAirports.map((ap) => {
+          const realtime = TIER1_ROUTES
+            .filter(([o]) => o === ap)
+            .map(([, d]) => d);
+
+          const tpOnly = TP_DESTINATIONS.filter(
+            (d) => !TIER1_SET.has(`${ap}:${d}`)
+          );
+
+          return (
+            <div key={ap} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                <span className="font-bold text-sm">{ap}</span>
+                <span className="text-xs text-gray-400">
+                  {realtime.length} temps réel · {tpOnly.length} Travelpayouts
                 </span>
-                {wl.label && (
-                  <span className="ml-2 text-xs text-gray-400">{wl.label}</span>
-                )}
-                <div className="text-xs text-gray-400 mt-0.5">
-                  {wl.max_price != null ? `≤ ${wl.max_price}€` : "Tout prix"}
-                  {wl.month ? ` · ${MONTH_LABELS[wl.month]}` : " · Toute l'année"}
+              </div>
+
+              {realtime.length > 0 && (
+                <div className="px-4 py-3 border-b border-gray-100">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <span className="inline-block w-2 h-2 rounded-full bg-green-400" />
+                    <span className="text-xs font-semibold text-green-700">Temps réel — toutes les 20 min</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {realtime.map((d) => (
+                      <span key={d} className="px-2 py-0.5 bg-green-50 border border-green-100 rounded-full text-xs text-green-800">
+                        {d} · {IATA_TO_CITY[d] ?? d}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="px-4 py-3">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <span className="inline-block w-2 h-2 rounded-full bg-blue-400" />
+                  <span className="text-xs font-semibold text-blue-700">Travelpayouts — toutes les 2h</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {tpOnly.map((d) => (
+                    <span key={d} className="px-2 py-0.5 bg-blue-50 border border-blue-100 rounded-full text-xs text-blue-800">
+                      {d} · {IATA_TO_CITY[d] ?? d}
+                    </span>
+                  ))}
                 </div>
               </div>
-              <button
-                onClick={() => handleDelete(wl.id)}
-                className="text-gray-300 hover:text-red-400 transition-colors text-sm px-2"
-                title="Supprimer"
-              >
-                ✕
-              </button>
             </div>
-          ))}
-        </div>
-      )}
-
-      <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <input
-            value={origin}
-            onChange={(e) => setOrigin(e.target.value.toUpperCase())}
-            maxLength={3}
-            placeholder="Départ (CDG)"
-            className="px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B47] uppercase"
-          />
-          <input
-            value={destination}
-            onChange={(e) => setDestination(e.target.value.toUpperCase())}
-            maxLength={3}
-            placeholder="Arrivée (BKK)"
-            className="px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B47] uppercase"
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <input
-            value={maxPrice}
-            onChange={(e) => setMaxPrice(e.target.value.replace(/\D/g, ""))}
-            placeholder="Prix max (€) — optionnel"
-            className="px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B47]"
-          />
-          <select
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B47] bg-white"
-          >
-            <option value="">Tout l'année</option>
-            {MONTH_LABELS.slice(1).map((m, i) => (
-              <option key={i + 1} value={String(i + 1)}>{m}</option>
-            ))}
-          </select>
-        </div>
-        <input
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          maxLength={80}
-          placeholder="Libellé (ex: Tokyo été) — optionnel"
-          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B47]"
-        />
-        {wlError && <p className="text-xs text-red-500">{wlError}</p>}
-        <button
-          onClick={handleAdd}
-          disabled={adding || !origin || !destination}
-          className="w-full bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold py-2 rounded-lg text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {adding ? "Ajout en cours..." : "Ajouter cette destination"}
-        </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -664,10 +596,8 @@ export default function ProfilePage() {
           )}
         </div>
 
-        {/* ── Wishlist destinations ── */}
-        {userId && (
-          <WishlistManager userId={userId} apiUrl={API_URL} />
-        )}
+        {/* ── Destinations surveillées ── */}
+        <CoverageRecap selectedAirports={airports} />
 
         {/* Save Button */}
         <button
