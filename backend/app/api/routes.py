@@ -101,8 +101,9 @@ def _is_premium_user(user: dict | None) -> bool:
 def _get_user_tier(user_id: str | None) -> str:
     """Return 'premium' or 'free' for a user.
 
-    Priority 1: active premium_grants row (manual admin grant, can have expiry)
-    Priority 2: stripe_customer_id on user_preferences (Stripe subscriber)
+    Priority 1: active premium_grants row (manual admin grant, optional expiry)
+    Priority 2: premium_expires_at on user_preferences (set by Stripe webhook +
+                refreshed daily by job_sync_stripe_subscriptions)
     Fallback: 'free'
     """
     if not user_id or not db:
@@ -129,21 +130,24 @@ def _get_user_tier(user_id: str | None) -> str:
                 pass
     except Exception:
         pass
-    # Priority 2: stripe subscription (customer_id alone is not enough —
-    # a user may have started checkout without completing payment)
+    # Priority 2: Stripe subscription — check premium_expires_at written by
+    # webhook + refreshed daily by job_sync_stripe_subscriptions.
     try:
         row = (
             db.table("user_preferences")
-            .select("stripe_customer_id,stripe_subscription_id")
+            .select("premium_expires_at")
             .eq("user_id", user_id)
             .execute()
         )
-        if (
-            row.data
-            and row.data[0].get("stripe_customer_id")
-            and row.data[0].get("stripe_subscription_id")
-        ):
-            return "premium"
+        if row.data:
+            expires_at = row.data[0].get("premium_expires_at")
+            if expires_at:
+                try:
+                    exp = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+                    if exp > datetime.now(timezone.utc):
+                        return "premium"
+                except Exception:
+                    pass
     except Exception:
         pass
     return "free"
@@ -883,18 +887,47 @@ async def stripe_webhook(request: Request):
     if event_type == "checkout.session.completed":
         customer_id = data.get("customer")
         subscription_id = data.get("subscription")
-        if db and customer_id:
+        if db and customer_id and subscription_id:
+            # Fetch current_period_end from the subscription to set exact expiry
+            premium_expires_at = None
+            try:
+                stripe.api_key = settings.STRIPE_SECRET_KEY
+                sub = stripe.Subscription.retrieve(subscription_id)
+                period_end = sub.get("current_period_end")
+                if period_end:
+                    from datetime import datetime, timezone
+                    premium_expires_at = datetime.fromtimestamp(period_end, tz=timezone.utc).isoformat()
+            except Exception as e:
+                logger.warning(f"Could not fetch subscription period_end: {e}")
+
             db.table("user_preferences").update({
                 "stripe_subscription_id": subscription_id,
                 "is_premium": True,
+                **({"premium_expires_at": premium_expires_at} if premium_expires_at else {}),
             }).eq("stripe_customer_id", customer_id).execute()
-            logger.info(f"Premium activated for customer {customer_id}")
+            logger.info(f"Premium activated for customer {customer_id} expires={premium_expires_at}")
+
+    elif event_type == "customer.subscription.updated":
+        # Renewal or plan change — update the expiry date
+        customer_id = data.get("customer")
+        period_end = data.get("current_period_end")
+        status = data.get("status", "")
+        if db and customer_id and period_end and status in ("active", "trialing"):
+            from datetime import datetime, timezone
+            expires_at = datetime.fromtimestamp(period_end, tz=timezone.utc).isoformat()
+            db.table("user_preferences").update({
+                "premium_expires_at": expires_at,
+                "is_premium": True,
+            }).eq("stripe_customer_id", customer_id).execute()
+            logger.info(f"Subscription renewed for customer {customer_id} until {expires_at}")
 
     elif event_type in ("customer.subscription.deleted", "customer.subscription.paused"):
         customer_id = data.get("customer")
         if db and customer_id:
+            from datetime import datetime, timezone
             db.table("user_preferences").update({
                 "is_premium": False,
+                "premium_expires_at": datetime.now(timezone.utc).isoformat(),
             }).eq("stripe_customer_id", customer_id).execute()
             logger.info(f"Premium deactivated for customer {customer_id}")
 
