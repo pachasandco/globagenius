@@ -1,9 +1,193 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getPreferences, updatePreferences, changePassword } from "@/lib/api";
+
+const MONTH_LABELS = [
+  "", "Janv.", "Févr.", "Mars", "Avr.", "Mai", "Juin",
+  "Juil.", "Août", "Sept.", "Oct.", "Nov.", "Déc.",
+];
+
+type Wishlist = {
+  id: string;
+  origin: string;
+  destination: string;
+  max_price: number | null;
+  month: number | null;
+  label: string | null;
+  active: boolean;
+};
+
+function WishlistManager({ userId, apiUrl }: { userId: string; apiUrl: string }) {
+  const [wishlists, setWishlists] = useState<Wishlist[]>([]);
+  const [origin, setOrigin] = useState("");
+  const [destination, setDestination] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
+  const [month, setMonth] = useState("");
+  const [label, setLabel] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [wlError, setWlError] = useState("");
+
+  const token = () => localStorage.getItem("gg_token");
+
+  const loadWishlists = useCallback(async () => {
+    try {
+      const res = await fetch(`${apiUrl}/api/users/${userId}/wishlists`, {
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setWishlists(data);
+      }
+    } catch {}
+  }, [userId, apiUrl]);
+
+  useEffect(() => {
+    if (userId) loadWishlists();
+  }, [userId, loadWishlists]);
+
+  async function handleAdd() {
+    const o = origin.trim().toUpperCase();
+    const d = destination.trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(o) || !/^[A-Z]{3}$/.test(d)) {
+      setWlError("Les codes IATA doivent faire 3 lettres (ex: CDG, BKK)");
+      return;
+    }
+    if (o === d) {
+      setWlError("L'origine et la destination doivent être différentes");
+      return;
+    }
+    setAdding(true);
+    setWlError("");
+    try {
+      const body: Record<string, unknown> = { origin: o, destination: d };
+      if (maxPrice) body.max_price = parseInt(maxPrice, 10);
+      if (month) body.month = parseInt(month, 10);
+      if (label.trim()) body.label = label.trim();
+      const res = await fetch(`${apiUrl}/api/users/${userId}/wishlists`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token()}`,
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Erreur lors de l'ajout");
+      }
+      setOrigin(""); setDestination(""); setMaxPrice(""); setMonth(""); setLabel("");
+      await loadWishlists();
+    } catch (e) {
+      setWlError(e instanceof Error ? e.message : "Erreur lors de l'ajout");
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    try {
+      await fetch(`${apiUrl}/api/users/${userId}/wishlists/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      setWishlists((prev) => prev.filter((w) => w.id !== id));
+    } catch {}
+  }
+
+  return (
+    <div className="mb-12">
+      <h2 className="text-xl font-semibold mb-1">Destinations souhaitées</h2>
+      <p className="text-gray-400 text-sm mb-6">
+        Recevez une alerte dès qu'un vol vers votre destination atteint votre prix cible,
+        quel que soit votre seuil habituel.
+      </p>
+
+      {wishlists.length > 0 && (
+        <div className="space-y-2 mb-6">
+          {wishlists.map((wl) => (
+            <div key={wl.id} className="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-200">
+              <span className="text-lg">❤️</span>
+              <div className="flex-1 min-w-0">
+                <span className="font-semibold text-sm">
+                  {wl.origin} → {wl.destination}
+                </span>
+                {wl.label && (
+                  <span className="ml-2 text-xs text-gray-400">{wl.label}</span>
+                )}
+                <div className="text-xs text-gray-400 mt-0.5">
+                  {wl.max_price != null ? `≤ ${wl.max_price}€` : "Tout prix"}
+                  {wl.month ? ` · ${MONTH_LABELS[wl.month]}` : " · Toute l'année"}
+                </div>
+              </div>
+              <button
+                onClick={() => handleDelete(wl.id)}
+                className="text-gray-300 hover:text-red-400 transition-colors text-sm px-2"
+                title="Supprimer"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <input
+            value={origin}
+            onChange={(e) => setOrigin(e.target.value.toUpperCase())}
+            maxLength={3}
+            placeholder="Départ (CDG)"
+            className="px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B47] uppercase"
+          />
+          <input
+            value={destination}
+            onChange={(e) => setDestination(e.target.value.toUpperCase())}
+            maxLength={3}
+            placeholder="Arrivée (BKK)"
+            className="px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B47] uppercase"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <input
+            value={maxPrice}
+            onChange={(e) => setMaxPrice(e.target.value.replace(/\D/g, ""))}
+            placeholder="Prix max (€) — optionnel"
+            className="px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B47]"
+          />
+          <select
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B47] bg-white"
+          >
+            <option value="">Tout l'année</option>
+            {MONTH_LABELS.slice(1).map((m, i) => (
+              <option key={i + 1} value={String(i + 1)}>{m}</option>
+            ))}
+          </select>
+        </div>
+        <input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          maxLength={80}
+          placeholder="Libellé (ex: Tokyo été) — optionnel"
+          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B47]"
+        />
+        {wlError && <p className="text-xs text-red-500">{wlError}</p>}
+        <button
+          onClick={handleAdd}
+          disabled={adding || !origin || !destination}
+          className="w-full bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold py-2 rounded-lg text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {adding ? "Ajout en cours..." : "Ajouter cette destination"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const AIRPORTS = [
   { code: "CDG", label: "Paris Charles de Gaulle" },
@@ -38,6 +222,8 @@ export default function ProfilePage() {
   const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const router = useRouter();
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -165,6 +351,28 @@ export default function ProfilePage() {
       setError(err instanceof Error ? err.message : "Erreur lors de la modification du mot de passe");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDeleteAccount() {
+    setDeleting(true);
+    setError("");
+    try {
+      const token = localStorage.getItem("gg_token");
+      const res = await fetch(`${API_URL}/api/users/${userId}/account`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Erreur lors de la suppression");
+      }
+      localStorage.clear();
+      router.push("/");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur lors de la suppression du compte");
+      setDeleting(false);
+      setShowDeleteConfirm(false);
     }
   }
 
@@ -456,6 +664,11 @@ export default function ProfilePage() {
           )}
         </div>
 
+        {/* ── Wishlist destinations ── */}
+        {userId && (
+          <WishlistManager userId={userId} apiUrl={API_URL} />
+        )}
+
         {/* Save Button */}
         <button
           onClick={handleSave}
@@ -464,6 +677,44 @@ export default function ProfilePage() {
         >
           {saving ? "Enregistrement..." : "Enregistrer les modifications"}
         </button>
+
+        {/* ── Danger zone ── */}
+        <div className="mt-16 pt-8 border-t border-gray-200">
+          <h2 className="text-base font-semibold text-gray-500 mb-1">Zone de danger</h2>
+          <p className="text-gray-400 text-sm mb-4">
+            La suppression de votre compte est irréversible. Toutes vos données seront effacées.
+          </p>
+
+          {!showDeleteConfirm ? (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="px-5 py-2.5 border border-red-200 text-red-500 text-sm font-semibold rounded-xl hover:bg-red-50 transition-colors"
+            >
+              Supprimer mon compte
+            </button>
+          ) : (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-5 space-y-4">
+              <p className="text-sm text-red-700 font-medium">
+                Êtes-vous sûr ? Cette action supprimera définitivement votre compte, vos préférences et vos alertes.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 py-2.5 border border-gray-200 text-gray-600 text-sm font-semibold rounded-xl hover:bg-gray-50 transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleDeleteAccount}
+                  disabled={deleting}
+                  className="flex-1 py-2.5 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {deleting ? "Suppression..." : "Oui, supprimer définitivement"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

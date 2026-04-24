@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Request
 from app.db import db
 from app.config import settings
@@ -11,7 +12,6 @@ bot_router = APIRouter()
 @bot_router.post("/api/telegram/webhook")
 async def telegram_webhook(request: Request):
     """Handle incoming Telegram messages (webhook mode)."""
-    # Verify Telegram secret token
     from app.config import settings
     if settings.TELEGRAM_WEBHOOK_SECRET:
         header_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
@@ -22,6 +22,13 @@ async def telegram_webhook(request: Request):
         return {"ok": True}
 
     data = await request.json()
+
+    # Inline-button callback
+    callback = data.get("callback_query")
+    if callback:
+        await _handle_callback(callback)
+        return {"ok": True}
+
     message = data.get("message", {})
     text = message.get("text", "")
     chat = message.get("chat", {})
@@ -36,10 +43,8 @@ async def telegram_webhook(request: Request):
         token = parts[1] if len(parts) > 1 else None
 
         if token:
-            # User came from the onboarding deep link — link their account
             await _link_account(chat_id, token, chat)
         else:
-            # Direct /start without token
             await _send_welcome(chat_id)
 
     elif text == "/help":
@@ -49,6 +54,92 @@ async def telegram_webhook(request: Request):
         await _send_status(chat_id)
 
     return {"ok": True}
+
+
+async def _handle_callback(callback: dict):
+    """Dispatch inline-keyboard button presses."""
+    from app.notifications.telegram import _get_bot
+
+    bot = _get_bot()
+    callback_id = callback.get("id")
+    chat_id = callback.get("message", {}).get("chat", {}).get("id")
+    data = callback.get("data", "")
+
+    if not bot or not callback_id or not chat_id:
+        return
+
+    if data.startswith("pause:"):
+        user_id = data[len("pause:"):]
+        await _pause_alerts(bot, callback_id, chat_id, user_id)
+
+    elif data.startswith("unsub:"):
+        user_id = data[len("unsub:"):]
+        await _unsubscribe(bot, callback_id, chat_id, user_id)
+
+    else:
+        # Unknown callback — just ack it silently
+        try:
+            await bot.answer_callback_query(callback_query_id=callback_id)
+        except Exception:
+            pass
+
+
+async def _pause_alerts(bot, callback_id: str, chat_id: int, user_id: str):
+    """Mute alerts for 24h and confirm to the user."""
+    pause_until = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    try:
+        db.table("user_preferences").update({
+            "alerts_paused_until": pause_until,
+        }).eq("user_id", user_id).execute()
+        await bot.answer_callback_query(
+            callback_query_id=callback_id,
+            text="Alertes mises en pause pour 24h ⏸",
+            show_alert=False,
+        )
+        await bot.send_message(
+            chat_id=chat_id,
+            text=(
+                "⏸ Alertes mises en pause pour 24h.\n\n"
+                "Tu recevras à nouveau des deals demain. "
+                f"Pour réactiver maintenant, va dans ton profil : "
+                f"{settings.FRONTEND_URL}/profile"
+            ),
+        )
+    except Exception as e:
+        logger.warning(f"Failed to pause alerts for {user_id}: {e}")
+        try:
+            await bot.answer_callback_query(callback_query_id=callback_id, text="Erreur, réessaie.")
+        except Exception:
+            pass
+
+
+async def _unsubscribe(bot, callback_id: str, chat_id: int, user_id: str):
+    """Disconnect Telegram for this user and confirm."""
+    try:
+        db.table("user_preferences").update({
+            "telegram_connected": False,
+            "telegram_chat_id": None,
+            "alerts_paused_until": None,
+        }).eq("user_id", user_id).execute()
+        await bot.answer_callback_query(
+            callback_query_id=callback_id,
+            text="Désabonnement effectué 🔕",
+            show_alert=False,
+        )
+        await bot.send_message(
+            chat_id=chat_id,
+            text=(
+                "🔕 Tu ne recevras plus d'alertes GlobeGenius.\n\n"
+                "Pour te réabonner à tout moment, reconnecte ton compte depuis : "
+                f"{settings.FRONTEND_URL}/profile"
+            ),
+        )
+    except Exception as e:
+        logger.warning(f"Failed to unsubscribe {user_id}: {e}")
+        try:
+            await bot.answer_callback_query(callback_query_id=callback_id, text="Erreur, réessaie.")
+        except Exception:
+            pass
 
 
 async def _link_account(chat_id: int, token: str, chat: dict):
