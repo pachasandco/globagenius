@@ -216,23 +216,29 @@ export default function AdminPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 text-left text-xs text-gray-400">
-                    <th className="pb-2">Date</th>
-                    <th className="pb-2">Type</th>
-                    <th className="pb-2">Items</th>
-                    <th className="pb-2">Erreurs</th>
-                    <th className="pb-2">Duree</th>
-                    <th className="pb-2">Status</th>
+                    <th className="pb-2 pr-4">Date</th>
+                    <th className="pb-2 pr-4">Source</th>
+                    <th className="pb-2 pr-4">Vols</th>
+                    <th className="pb-2 pr-4">Erreurs</th>
+                    <th className="pb-2 pr-4">Durée</th>
+                    <th className="pb-2">Statut</th>
                   </tr>
                 </thead>
                 <tbody>
                   {status.recent_scrapes.map(s => (
-                    <tr key={s.id} className="border-b border-gray-50">
-                      <td className="py-2 text-xs">{new Date(s.started_at).toLocaleString("fr-FR")}</td>
-                      <td className="py-2">{s.type}</td>
-                      <td className="py-2 font-bold">{s.items_count}</td>
-                      <td className="py-2">{s.errors_count > 0 ? <span className="text-red-500">{s.errors_count}</span> : "0"}</td>
-                      <td className="py-2 text-xs">{s.duration_ms ? `${Math.round(s.duration_ms / 1000)}s` : "-"}</td>
-                      <td className="py-2"><span className={`text-xs px-2 py-0.5 rounded-full ${s.status === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{s.status}</span></td>
+                    <tr key={s.id} className="border-b border-gray-50 hover:bg-gray-50">
+                      <td className="py-2 pr-4 text-xs whitespace-nowrap">
+                        {new Date(s.started_at).toLocaleString("fr-FR", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" })}
+                      </td>
+                      <td className="py-2 pr-4 text-xs font-medium">{s.source}</td>
+                      <td className="py-2 pr-4 font-bold">{s.items_count}</td>
+                      <td className="py-2 pr-4">{s.errors_count > 0 ? <span className="text-red-500 font-semibold">{s.errors_count}</span> : <span className="text-gray-300">0</span>}</td>
+                      <td className="py-2 pr-4 text-xs text-gray-400">{s.duration_ms ? `${Math.round(s.duration_ms / 1000)}s` : "—"}</td>
+                      <td className="py-2">
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${s.status === "success" ? "bg-green-50 text-green-700" : s.status === "partial" ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-700"}`}>
+                          {s.status}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

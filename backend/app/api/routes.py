@@ -203,7 +203,7 @@ def status():
         db.table("scrape_logs")
         .select("*")
         .order("started_at", desc=True)
-        .limit(10)
+        .limit(50)
         .execute()
     )
 
