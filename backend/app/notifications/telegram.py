@@ -1,5 +1,7 @@
 import logging
+import secrets
 from datetime import datetime
+from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from app.config import settings
 
@@ -10,6 +12,47 @@ _FR_MONTHS_SHORT = ["", "janv", "févr", "mars", "avr", "mai", "juin",
 
 _FR_MONTHS_LONG = ["", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
                    "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
+
+
+def _add_utms(url: str, origin: str, dest: str) -> str:
+    """Append UTM parameters to a URL without clobbering existing query params."""
+    if not url or url == "N/A":
+        return url
+    parsed = urlparse(url)
+    existing = parse_qs(parsed.query, keep_blank_values=True)
+    existing.update({
+        "utm_source": ["telegram"],
+        "utm_medium": ["alert"],
+        "utm_campaign": ["deal"],
+        "utm_content": [f"{origin}-{dest}"],
+    })
+    new_query = urlencode({k: v[0] for k, v in existing.items()})
+    return urlunparse(parsed._replace(query=new_query))
+
+
+def _make_redirect_token(
+    user_id: str | None,
+    alert_key: str,
+    origin: str,
+    dest: str,
+    url: str,
+) -> str:
+    """Persist a short opaque token → URL mapping and return the tracking URL."""
+    from app.db import db
+    token = secrets.token_urlsafe(12)
+    if db:
+        try:
+            db.table("alert_redirect_tokens").insert({
+                "token": token,
+                "user_id": user_id,
+                "alert_key": alert_key,
+                "origin": origin,
+                "destination": dest,
+                "url": url,
+            }).execute()
+        except Exception:
+            return _add_utms(url, origin, dest)
+    return f"{settings.FRONTEND_URL}/r/{token}"
 
 
 def _get_bot() -> Bot | None:
@@ -169,6 +212,9 @@ def format_grouped_flight_alerts(
     destination_iata: str,
     offers: list[dict],
     tier: str = "premium",
+    user_id: str | None = None,
+    alert_key: str | None = None,
+    origin_iata: str | None = None,
 ) -> str:
     """Format a grouped Telegram alert for multiple flight offers to one destination.
 
@@ -261,7 +307,13 @@ def format_grouped_flight_alerts(
 
             booking_url = o.get("booking_url", "").strip()
             if booking_url:
-                lines.append(f"[🔗 Voir le vol]({booking_url})")
+                if user_id and alert_key and origin_iata:
+                    tracked = _make_redirect_token(
+                        user_id, alert_key, origin_iata, destination_iata, booking_url
+                    )
+                else:
+                    tracked = _add_utms(booking_url, origin_iata or "", destination_iata)
+                lines.append(f"[🔗 Voir le vol]({tracked})")
 
             # Hotel CTA only for high-value deals
             if disc >= 40:
@@ -271,7 +323,8 @@ def format_grouped_flight_alerts(
                     o["return_date"],
                     marker=settings.TRAVELPAYOUTS_MARKER or None,
                 )
-                lines.append(f"[🏨 Voir les hôtels]({hotel_url})")
+                hotel_tracked = _add_utms(hotel_url, origin_iata or "", destination_iata)
+                lines.append(f"[🏨 Voir les hôtels]({hotel_tracked})")
 
             lines.append("")  # Spacing between offers
 
@@ -302,13 +355,18 @@ async def send_grouped_flight_alerts(
     offers: list[dict],
     tier: str = "premium",
     user_id: str | None = None,
+    alert_key: str | None = None,
+    origin_iata: str | None = None,
 ) -> bool:
     """Send a grouped Telegram alert containing multiple flight offers for one destination."""
     bot = _get_bot()
     if not bot:
         logger.warning("Telegram bot not configured, skipping grouped flight alert")
         return False
-    msg = format_grouped_flight_alerts(origin_city, dest_city, destination_iata, offers, tier)
+    msg = format_grouped_flight_alerts(
+        origin_city, dest_city, destination_iata, offers, tier,
+        user_id=user_id, alert_key=alert_key, origin_iata=origin_iata,
+    )
 
     # Inline keyboard — quick actions without leaving Telegram
     reply_markup = None

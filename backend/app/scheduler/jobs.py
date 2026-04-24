@@ -769,6 +769,8 @@ async def _dispatch_grouped_flight_alerts(
                         offers=offers,
                         tier=group_tier,
                         user_id=user_id,
+                        alert_key=keys_to_store[0] if keys_to_store else None,
+                        origin_iata=grp_origin,
                     )
                     if success:
                         logger.info(f"✅ Sent {len(offers)} flight alerts to {origin_city}→{dest_city} for user {user_id}")

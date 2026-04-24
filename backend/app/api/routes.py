@@ -6,6 +6,7 @@ import logging
 import stripe
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, field_validator
 import bcrypt
@@ -1312,3 +1313,97 @@ def delete_wishlist(
     if not resp.data:
         raise HTTPException(status_code=404, detail="Wishlist introuvable")
     return {"ok": True}
+
+
+# ── CLICK TRACKING ──────────────────────────────────────────────────────────
+
+@router.get("/r/{token}")
+def redirect_tracking(token: str):
+    """Redirect a tracked alert link and record the click."""
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    resp = db.table("alert_redirect_tokens").select("url,clicked_at,click_count").eq("token", token).maybe_single().execute()
+    row = resp.data if resp else None
+    if not row:
+        raise HTTPException(status_code=404, detail="Lien introuvable")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        db.table("alert_redirect_tokens").update({
+            "clicked_at": row.get("clicked_at") or now_iso,
+            "click_count": (row.get("click_count") or 0) + 1,
+        }).eq("token", token).execute()
+    except Exception:
+        pass
+
+    url = row["url"]
+    return RedirectResponse(url=url, status_code=302)
+
+
+@router.get("/api/admin/ctr")
+def admin_ctr(request: Request, days: int = 30):
+    """Click-through rate dashboard for Telegram alerts."""
+    _require_admin(request)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+    # Total alerts sent in window
+    sent_resp = (
+        db.table("sent_alerts")
+        .select("destination,alert_type", count="exact")
+        .gte("sent_at", since)
+        .execute()
+    )
+    total_sent = sent_resp.count or 0
+
+    # Clicks recorded (tokens created in window)
+    tokens_resp = (
+        db.table("alert_redirect_tokens")
+        .select("destination,origin,click_count,clicked_at")
+        .gte("created_at", since)
+        .execute()
+    )
+    tokens = tokens_resp.data or []
+
+    total_tokens = len(tokens)
+    total_clicked = sum(1 for t in tokens if t.get("click_count", 0) > 0)
+    total_clicks = sum(t.get("click_count", 0) for t in tokens)
+
+    ctr = round(total_clicked / total_tokens * 100, 1) if total_tokens > 0 else 0.0
+
+    # CTR per destination (top 10)
+    by_dest: dict[str, dict] = {}
+    for t in tokens:
+        dest = t.get("destination") or "?"
+        entry = by_dest.setdefault(dest, {"tokens": 0, "clicked": 0, "clicks": 0})
+        entry["tokens"] += 1
+        if t.get("click_count", 0) > 0:
+            entry["clicked"] += 1
+            entry["clicks"] += t["click_count"]
+
+    top_destinations = sorted(
+        [
+            {
+                "destination": dest,
+                "tokens": v["tokens"],
+                "clicked": v["clicked"],
+                "clicks": v["clicks"],
+                "ctr": round(v["clicked"] / v["tokens"] * 100, 1) if v["tokens"] else 0,
+            }
+            for dest, v in by_dest.items()
+        ],
+        key=lambda x: x["ctr"],
+        reverse=True,
+    )[:10]
+
+    return {
+        "period_days": days,
+        "total_sent": total_sent,
+        "total_links_generated": total_tokens,
+        "total_links_clicked": total_clicked,
+        "total_clicks": total_clicks,
+        "ctr_pct": ctr,
+        "top_destinations": top_destinations,
+    }
