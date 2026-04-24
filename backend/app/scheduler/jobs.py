@@ -18,7 +18,7 @@ from app.analysis.velocity_detector import save_snapshot, detect_velocity_drop, 
 from app.analysis.cross_airline_comparator import compare_cross_airline, format_competitor_context
 from app.scraper.reverify import reverify_flight_price
 from app.notifications.aviasales import build_aviasales_url
-from app.notifications.dedup import compute_alert_key
+from app.notifications.dedup import compute_alert_key, ALERT_INHIBIT_HOURS
 from app.notifications.telegram import (
     send_deal_alert,
     send_flight_deal_alert,
@@ -596,11 +596,19 @@ async def _dispatch_grouped_flight_alerts(
                     keys_to_check = [k for (k, _, _, _) in candidates if k]
                     if keys_to_check:
                         try:
+                            # Inhibit re-alerts for the same itinerary within
+                            # ALERT_INHIBIT_HOURS — blocks Travelpayouts from
+                            # re-sending a deal already dispatched via Tier 1.
+                            inhibit_since = (
+                                datetime.now(timezone.utc)
+                                - timedelta(hours=ALERT_INHIBIT_HOURS)
+                            ).isoformat()
                             sent_resp = (
                                 db.table("sent_alerts")
                                 .select("alert_key")
                                 .eq("user_id", user_id)
                                 .in_("alert_key", keys_to_check)
+                                .gte("created_at", inhibit_since)
                                 .execute()
                             )
                             for row in (sent_resp.data or []):
