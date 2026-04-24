@@ -8,6 +8,7 @@ import logging
 from app.scraper.tier1_routes import get_tier1_routes_for_airport
 from app.scraper.tier1_ryanair import scrape_route as scrape_ryanair, is_demoted as ryanair_demoted
 from app.scraper.tier1_transavia import scrape_route as scrape_transavia, is_demoted as transavia_demoted
+from app.scraper.tier1_vueling import scrape_route as scrape_vueling, is_demoted as vueling_demoted
 from app.scraper.travelpayouts_flights import scrape_flights_for_route
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,10 @@ def scrape_tier1_airport(origin: str) -> list[dict]:
             elif airline == "transavia":
                 if not transavia_demoted(orig, dest):
                     flights = scrape_transavia(orig, dest)
+                    route_flights.extend(flights)
+            elif airline == "vueling":
+                if not vueling_demoted(orig, dest):
+                    flights = scrape_vueling(orig, dest)
                     route_flights.extend(flights)
 
         # If all direct scrapers failed / demoted → Travelpayouts fallback

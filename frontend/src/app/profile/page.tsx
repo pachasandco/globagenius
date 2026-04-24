@@ -5,14 +5,15 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getPreferences, updatePreferences, changePassword } from "@/lib/api";
 
-// Tier 1 routes — scraped every 20 min via Ryanair/Transavia direct APIs (CDG + ORY only)
+// Tier 1 routes — scraped every 20 min via Ryanair/Transavia/Vueling direct APIs (CDG + ORY only)
 const TIER1_ROUTES: [string, string][] = [
   ["CDG","RAK"],["CDG","CMN"],["CDG","AGA"],["CDG","FEZ"],["CDG","TNG"],
   ["ORY","RAK"],["ORY","CMN"],["ORY","AGA"],
   ["CDG","LIS"],["CDG","OPO"],["CDG","FAO"],
   ["ORY","LIS"],["ORY","OPO"],
   ["CDG","BCN"],["CDG","MAD"],["CDG","SVQ"],["CDG","VLC"],["CDG","AGP"],
-  ["ORY","BCN"],["ORY","AGP"],
+  ["CDG","IBZ"],["CDG","PMI"],["CDG","ALC"],
+  ["ORY","BCN"],["ORY","MAD"],["ORY","AGP"],["ORY","PMI"],["ORY","IBZ"],["ORY","ALC"],
   ["CDG","FCO"],["CDG","CIA"],["CDG","BGY"],["CDG","NAP"],["CDG","BRI"],["CDG","PMO"],
   ["ORY","FCO"],["ORY","NAP"],
   ["CDG","ATH"],["CDG","HER"],["CDG","RHO"],["CDG","SKG"],
@@ -31,6 +32,7 @@ const IATA_TO_CITY: Record<string, string> = {
   RAK:"Marrakech", CMN:"Casablanca", AGA:"Agadir", FEZ:"Fès", TNG:"Tanger",
   LIS:"Lisbonne", OPO:"Porto", FAO:"Faro",
   BCN:"Barcelone", MAD:"Madrid", SVQ:"Séville", VLC:"Valence", AGP:"Malaga",
+  IBZ:"Ibiza", PMI:"Palma de Majorque", ALC:"Alicante",
   FCO:"Rome", CIA:"Rome Ciampino", BGY:"Milan Bergame", NAP:"Naples", BRI:"Bari", PMO:"Palerme",
   ATH:"Athènes", HER:"Héraklion", RHO:"Rhodes", SKG:"Thessalonique",
   TFS:"Ténérife", LPA:"Gran Canaria", ACE:"Lanzarote", FUE:"Fuerteventura",

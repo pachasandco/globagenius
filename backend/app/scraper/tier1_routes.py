@@ -2,14 +2,14 @@
 
 Criteria for Tier 1:
 - High search volume from CDG/ORY
-- Served by Ryanair or Transavia (direct endpoint available)
+- Served by Ryanair, Transavia, or Vueling (direct endpoint available)
 - Historical mistake fare activity (CDG→NYC, CDG→BKK excluded: not LCC)
 
 Tier 1 uses direct airline endpoints for near-real-time prices.
 Tier 2 (all other routes) uses Travelpayouts cache.
 
 Each entry: (origin, destination, airlines)
-  airlines: list of scrapers to use — "ryanair", "transavia"
+  airlines: list of scrapers to use — "ryanair", "transavia", "vueling"
 """
 
 TIER1_ROUTES: list[tuple[str, str, list[str]]] = [
@@ -30,14 +30,21 @@ TIER1_ROUTES: list[tuple[str, str, list[str]]] = [
     ("ORY", "LIS", ["transavia"]),
     ("ORY", "OPO", ["transavia"]),
 
-    # Espagne
-    ("CDG", "BCN", ["ryanair", "transavia"]),  # Barcelone
-    ("CDG", "MAD", ["ryanair"]),               # Madrid
-    ("CDG", "SVQ", ["ryanair"]),               # Séville
-    ("CDG", "VLC", ["ryanair"]),               # Valence
-    ("CDG", "AGP", ["ryanair"]),               # Malaga
-    ("ORY", "BCN", ["transavia"]),
-    ("ORY", "AGP", ["transavia"]),
+    # Espagne (Ryanair + Transavia + Vueling)
+    ("CDG", "BCN", ["ryanair", "transavia", "vueling"]),  # Barcelone
+    ("CDG", "MAD", ["ryanair", "vueling"]),               # Madrid
+    ("CDG", "SVQ", ["ryanair", "vueling"]),               # Séville
+    ("CDG", "VLC", ["ryanair", "vueling"]),               # Valence
+    ("CDG", "AGP", ["ryanair", "vueling"]),               # Malaga
+    ("CDG", "IBZ", ["vueling"]),                          # Ibiza
+    ("CDG", "PMI", ["vueling"]),                          # Palma de Majorque
+    ("CDG", "ALC", ["vueling"]),                          # Alicante
+    ("ORY", "BCN", ["transavia", "vueling"]),             # Barcelone
+    ("ORY", "MAD", ["vueling"]),                          # Madrid
+    ("ORY", "AGP", ["transavia", "vueling"]),             # Malaga
+    ("ORY", "PMI", ["vueling"]),                          # Palma de Majorque
+    ("ORY", "IBZ", ["vueling"]),                          # Ibiza
+    ("ORY", "ALC", ["vueling"]),                          # Alicante
 
     # Italie
     ("CDG", "FCO", ["ryanair"]),               # Rome
