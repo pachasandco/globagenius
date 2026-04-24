@@ -65,7 +65,7 @@ function CoverageRecap({ selectedAirports }: { selectedAirports: string[] }) {
         Récapitulatif des routes actives selon votre sélection d'aéroports.
       </p>
       <div className="mb-6 p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-800 leading-relaxed">
-        Sur les destinations Travelpayouts, il peut exister un décalage de quelques heures entre le moment où la compagnie aérienne affiche le prix et celui où vous recevez l'alerte. Les destinations en temps réel (CDG, ORY) sont mises à jour toutes les 20 minutes directement depuis les compagnies.
+        Sur certaines destinations, l'alerte peut arriver avec quelques heures de décalage par rapport au moment où la compagnie affiche le prix. Pour Paris CDG et Orly, les prix sont vérifiés toutes les 20 minutes — vous êtes alerté quasi instantanément.
       </div>
 
       <div className="space-y-4">
@@ -83,7 +83,7 @@ function CoverageRecap({ selectedAirports }: { selectedAirports: string[] }) {
               <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
                 <span className="font-bold text-sm">{ap}</span>
                 <span className="text-xs text-gray-400">
-                  {realtime.length} temps réel · {tpOnly.length} Travelpayouts
+                  {realtime.length} instantané{realtime.length > 1 ? "s" : ""} · {tpOnly.length} régulier{tpOnly.length > 1 ? "s" : ""}
                 </span>
               </div>
 
@@ -91,7 +91,7 @@ function CoverageRecap({ selectedAirports }: { selectedAirports: string[] }) {
                 <div className="px-4 py-3 border-b border-gray-100">
                   <div className="flex items-center gap-1.5 mb-2">
                     <span className="inline-block w-2 h-2 rounded-full bg-green-400" />
-                    <span className="text-xs font-semibold text-green-700">Temps réel — toutes les 20 min</span>
+                    <span className="text-xs font-semibold text-green-700">Alertes instantanées — prix vérifiés toutes les 20 min</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {realtime.map((d) => (
@@ -106,7 +106,7 @@ function CoverageRecap({ selectedAirports }: { selectedAirports: string[] }) {
               <div className="px-4 py-3">
                 <div className="flex items-center gap-1.5 mb-2">
                   <span className="inline-block w-2 h-2 rounded-full bg-blue-400" />
-                  <span className="text-xs font-semibold text-blue-700">Travelpayouts — toutes les 2h</span>
+                  <span className="text-xs font-semibold text-blue-700">Alertes régulières — prix vérifiés toutes les 2h</span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {tpOnly.map((d) => (
