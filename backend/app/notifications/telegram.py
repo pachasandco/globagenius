@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from telegram import Bot
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -301,6 +301,7 @@ async def send_grouped_flight_alerts(
     destination_iata: str,
     offers: list[dict],
     tier: str = "premium",
+    user_id: str | None = None,
 ) -> bool:
     """Send a grouped Telegram alert containing multiple flight offers for one destination."""
     bot = _get_bot()
@@ -308,8 +309,24 @@ async def send_grouped_flight_alerts(
         logger.warning("Telegram bot not configured, skipping grouped flight alert")
         return False
     msg = format_grouped_flight_alerts(origin_city, dest_city, destination_iata, offers, tier)
+
+    # Inline keyboard — quick actions without leaving Telegram
+    reply_markup = None
+    if user_id:
+        reply_markup = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("⏸ Pause 24h", callback_data=f"pause:{user_id}"),
+                InlineKeyboardButton("🔕 Se désabonner", callback_data=f"unsub:{user_id}"),
+            ]
+        ])
+
     try:
-        await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+        await bot.send_message(
+            chat_id=chat_id,
+            text=msg,
+            parse_mode="Markdown",
+            reply_markup=reply_markup,
+        )
         return True
     except Exception as e:
         logger.error(f"Failed to send grouped flight alert to {chat_id}: {e}")

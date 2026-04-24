@@ -404,7 +404,7 @@ async def _dispatch_grouped_flight_alerts(
     try:
         prefs_resp = (
             db.table("user_preferences")
-            .select("user_id,telegram_chat_id,telegram_connected,airport_codes,min_discount")
+            .select("user_id,telegram_chat_id,telegram_connected,airport_codes,min_discount,alerts_paused_until")
             .eq("telegram_connected", True)
             .execute()
         )
@@ -412,6 +412,27 @@ async def _dispatch_grouped_flight_alerts(
     except Exception as e:
         logger.warning(f"Failed to fetch user preferences: {e}")
         return
+
+    # Bulk-fetch active wishlists for all routes present in this batch
+    # keyed by user_id → list of {origin, destination, max_price, month}
+    wishlists_by_user: dict[str, list[dict]] = {}
+    try:
+        route_origins = list({o for (o, _) in groups.keys()})
+        wl_resp = (
+            db.table("destination_wishlists")
+            .select("user_id,origin,destination,max_price,month")
+            .eq("active", True)
+            .in_("origin", route_origins)
+            .execute()
+        )
+        for wl in (wl_resp.data or []):
+            if not isinstance(wl, dict):
+                continue
+            uid = wl.get("user_id")
+            if uid:
+                wishlists_by_user.setdefault(uid, []).append(wl)
+    except Exception as e:
+        logger.warning(f"Failed to fetch destination_wishlists: {e}")
 
     # Filter: keep only users who track at least one of the origin airports
     subs = []
@@ -436,11 +457,15 @@ async def _dispatch_grouped_flight_alerts(
     if not subs:
         return
 
-    # Build min_discount lookup from the preferences we already fetched
+    # Build per-user lookups from the preferences we already fetched
     prefs_by_user: dict[str, int] = {}
+    paused_until_by_user: dict[str, str] = {}
     for pref in all_prefs:
         if isinstance(pref, dict) and pref.get("user_id"):
-            prefs_by_user[pref["user_id"]] = pref.get("min_discount", 20)
+            uid = pref["user_id"]
+            prefs_by_user[uid] = pref.get("min_discount", 20)
+            if pref.get("alerts_paused_until"):
+                paused_until_by_user[uid] = pref["alerts_paused_until"]
 
     for sub in subs:
         if not isinstance(sub, dict):
@@ -456,6 +481,17 @@ async def _dispatch_grouped_flight_alerts(
             # Free tier: fixed at 30% min discount, no customization
             # Premium users can set their own threshold via min_discount preference
             user_min = 30 if sub_tier == "free" else (prefs_by_user.get(user_id, 20) if user_id else 20)
+
+            # Pause gate — skip entirely if alerts are muted
+            if user_id and user_id in paused_until_by_user:
+                paused_ts = paused_until_by_user[user_id]
+                try:
+                    paused_dt = datetime.fromisoformat(paused_ts.replace("Z", "+00:00"))
+                    if datetime.now(timezone.utc) < paused_dt:
+                        continue
+                except (ValueError, TypeError):
+                    pass
+
             sub_origin = sub.get("airport_code")
             chat_id = sub.get("chat_id")
             if not sub_origin or chat_id is None:
@@ -519,15 +555,51 @@ async def _dispatch_grouped_flight_alerts(
                         continue
                     # Within quota — let the deal through (no discount filter for long-haul free)
 
-                # Build candidate list after min_discount + tier filter
+                # Wishlist matching: check if this (origin, destination) is in any
+                # of the user's active wishlists — bypass standard discount gates
+                # and use the price target instead.
+                user_wishlists = wishlists_by_user.get(user_id, []) if user_id else []
+                matching_wl = None
+                for wl in user_wishlists:
+                    if wl.get("origin") == grp_origin and wl.get("destination") == grp_dest:
+                        # Month filter: if the wishlist specifies a month, the
+                        # departure must fall in that month.
+                        wl_month = wl.get("month")
+                        if wl_month is not None:
+                            # Check against the cheapest flight's departure date
+                            best_flight = min(
+                                flight_tuples,
+                                key=lambda t: t[0].get("price", 9999),
+                                default=None,
+                            )
+                            if best_flight:
+                                try:
+                                    dep_month = datetime.fromisoformat(
+                                        best_flight[0]["departure_date"]
+                                    ).month
+                                    if dep_month != wl_month:
+                                        continue
+                                except (ValueError, KeyError, TypeError):
+                                    continue
+                        matching_wl = wl
+                        break
+
+                # Build candidate list — wishlist path OR standard discount+tier filter
                 candidates: list[tuple[str | None, dict, object, str]] = []
                 for flight, anomaly, tier in flight_tuples:
-                    if anomaly.discount_pct < user_min:
-                        continue
-                    # Free tier gates:
-                    # D4a: block ≥40% discount
-                    if sub_tier == "free" and anomaly.discount_pct >= 40:
-                        continue
+                    if matching_wl is not None:
+                        # Wishlist path: only gate on max_price (if set)
+                        max_price = matching_wl.get("max_price")
+                        if max_price is not None and flight.get("price", 9999) > max_price:
+                            continue
+                    else:
+                        # Standard path: min_discount + free-tier gates
+                        if anomaly.discount_pct < user_min:
+                            continue
+                        # Free tier gates:
+                        # D4a: block ≥40% discount
+                        if sub_tier == "free" and anomaly.discount_pct >= 40:
+                            continue
                     key = None
                     if user_id:
                         key = compute_alert_key(
@@ -570,7 +642,8 @@ async def _dispatch_grouped_flight_alerts(
                     continue
 
                 # Free tier: weekly quota gate (max 3 alerts/week)
-                if sub_tier == "free" and weekly_sent_count >= FREE_TIER_WEEKLY_LIMIT:
+                # Wishlist matches bypass the quota — the user explicitly asked for this route.
+                if sub_tier == "free" and matching_wl is None and weekly_sent_count >= FREE_TIER_WEEKLY_LIMIT:
                     if chat_id is not None:
                         try:
                             from app.notifications.telegram import _get_bot
@@ -676,6 +749,7 @@ async def _dispatch_grouped_flight_alerts(
                         destination_iata=grp_dest,
                         offers=offers,
                         tier=group_tier,
+                        user_id=user_id,
                     )
                     if success:
                         logger.info(f"✅ Sent {len(offers)} flight alerts to {origin_city}→{dest_city} for user {user_id}")

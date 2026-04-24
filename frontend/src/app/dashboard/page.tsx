@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getFlightDeals, getPipelineStatus, type FlightDeal, type PipelineStatus } from "@/lib/api";
 
-function FlightDealCard({ deal }: { deal: FlightDeal }) {
+function FlightDealCard({ deal, wishlisted }: { deal: FlightDeal; wishlisted?: boolean }) {
   const days = deal.trip_duration_days ?? Math.round(
     (new Date(deal.return_date).getTime() - new Date(deal.departure_date).getTime()) / 86400000
   );
@@ -30,6 +30,9 @@ function FlightDealCard({ deal }: { deal: FlightDeal }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {wishlisted && (
+            <span title="Dans votre wishlist" className="text-base leading-none">❤️</span>
+          )}
           {isPremium && (
             <span className="bg-amber-400 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full">PREMIUM</span>
           )}
@@ -86,6 +89,8 @@ function FlightDealCard({ deal }: { deal: FlightDeal }) {
   );
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 export default function Dashboard() {
   const [freeDeals, setFreeDeals] = useState<FlightDeal[]>([]);
   const [premiumDeals, setPremiumDeals] = useState<FlightDeal[]>([]);
@@ -93,6 +98,23 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"free" | "premium">("free");
+  // Set of "ORIGIN:DESTINATION" strings the user has wishlisted
+  const [wishlistRoutes, setWishlistRoutes] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const userId = localStorage.getItem("gg_user_id");
+    const token = localStorage.getItem("gg_token");
+    if (userId && token) {
+      fetch(`${API_URL}/api/users/${userId}/wishlists`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((r) => r.ok ? r.json() : [])
+        .then((data: Array<{ origin: string; destination: string }>) => {
+          setWishlistRoutes(new Set(data.map((w) => `${w.origin}:${w.destination}`)));
+        })
+        .catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -233,7 +255,11 @@ export default function Dashboard() {
         {!loading && !error && deals.length > 0 && (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {deals.map((deal) => (
-              <FlightDealCard key={deal.id} deal={deal} />
+              <FlightDealCard
+                key={deal.id}
+                deal={deal}
+                wishlisted={wishlistRoutes.has(`${deal.origin}:${deal.destination}`)}
+              />
             ))}
           </div>
         )}

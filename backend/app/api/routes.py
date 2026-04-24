@@ -1087,3 +1087,155 @@ def admin_reset_prefs(user_id: str, request: Request):
     }
     resp = db.table("user_preferences").update(defaults).eq("user_id", user_id).execute()
     return {"ok": True, "reset": bool(resp.data)}
+
+
+# ---------------------------------------------------------------------------
+# Destination Wishlists
+# ---------------------------------------------------------------------------
+
+IATA_RE = re.compile(r"^[A-Z]{3}$")
+
+
+class WishlistCreateRequest(BaseModel):
+    origin: str
+    destination: str
+    max_price: int | None = None
+    month: int | None = None
+    label: str | None = None
+
+    @field_validator("origin", "destination")
+    @classmethod
+    def validate_iata(cls, v: str) -> str:
+        v = v.strip().upper()
+        if not IATA_RE.match(v):
+            raise ValueError("Code IATA invalide (3 lettres majuscules)")
+        return v
+
+    @field_validator("max_price")
+    @classmethod
+    def validate_max_price(cls, v: int | None) -> int | None:
+        if v is not None and (v < 0 or v > 9999):
+            raise ValueError("max_price doit être entre 0 et 9999")
+        return v
+
+    @field_validator("month")
+    @classmethod
+    def validate_month(cls, v: int | None) -> int | None:
+        if v is not None and v not in range(1, 13):
+            raise ValueError("month doit être entre 1 et 12")
+        return v
+
+    @field_validator("label")
+    @classmethod
+    def validate_label(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip()[:80]
+        return v or None
+
+
+@router.get("/api/users/{user_id}/wishlists")
+def get_wishlists(
+    user_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    if current_user.get("sub") != user_id:
+        raise HTTPException(status_code=403, detail="Accès refusé")
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    resp = (
+        db.table("destination_wishlists")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("active", True)
+        .order("created_at", desc=False)
+        .execute()
+    )
+    return {"wishlists": resp.data or []}
+
+
+@router.post("/api/users/{user_id}/wishlists", status_code=201)
+def create_wishlist(
+    user_id: str,
+    req: WishlistCreateRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    if current_user.get("sub") != user_id:
+        raise HTTPException(status_code=403, detail="Accès refusé")
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    # Cap: 10 active wishlists per user
+    count_resp = (
+        db.table("destination_wishlists")
+        .select("id", count="exact")
+        .eq("user_id", user_id)
+        .eq("active", True)
+        .execute()
+    )
+    if (count_resp.count or 0) >= 10:
+        raise HTTPException(status_code=422, detail="Maximum 10 destinations en wishlist")
+
+    if req.origin == req.destination:
+        raise HTTPException(status_code=422, detail="Origine et destination identiques")
+
+    row = {
+        "user_id": user_id,
+        "origin": req.origin,
+        "destination": req.destination,
+        "max_price": req.max_price,
+        "month": req.month,
+        "label": req.label,
+        "active": True,
+    }
+    try:
+        resp = db.table("destination_wishlists").insert(row).execute()
+    except Exception as exc:
+        # Unique constraint violation = entry already exists
+        if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+            raise HTTPException(status_code=409, detail="Cette destination est déjà dans votre wishlist")
+        raise HTTPException(status_code=500, detail="Erreur lors de la création")
+    return {"wishlist": resp.data[0] if resp.data else row}
+
+
+@router.delete("/api/users/{user_id}/account", status_code=200)
+def delete_account(
+    user_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    if current_user.get("sub") != user_id:
+        raise HTTPException(status_code=403, detail="Accès refusé")
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    # Disconnect Telegram before deleting so the bot can't send stale alerts
+    try:
+        db.table("user_preferences").update({
+            "telegram_connected": False,
+            "telegram_chat_id": None,
+        }).eq("user_id", user_id).execute()
+    except Exception:
+        pass
+    # Delete user row — cascades wipe preferences, wishlists, sent_alerts, etc.
+    db.table("users").delete().eq("id", user_id).execute()
+    return {"ok": True}
+
+
+@router.delete("/api/users/{user_id}/wishlists/{wishlist_id}", status_code=200)
+def delete_wishlist(
+    user_id: str,
+    wishlist_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    if current_user.get("sub") != user_id:
+        raise HTTPException(status_code=403, detail="Accès refusé")
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    resp = (
+        db.table("destination_wishlists")
+        .delete()
+        .eq("id", wishlist_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not resp.data:
+        raise HTTPException(status_code=404, detail="Wishlist introuvable")
+    return {"ok": True}
