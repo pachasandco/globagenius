@@ -496,17 +496,25 @@ async def _dispatch_grouped_flight_alerts(
                 paused_until_by_user[uid] = pref["alerts_paused_until"]
             flight_range_by_user[uid] = pref.get("flight_range") or "all"
 
+    # Track teasers already sent this run to avoid spamming one per destination
+    teaser_sent_quota: set[str] = set()
+    teaser_sent_premium: set[str] = set()
+    teaser_sent_longhaul: set[str] = set()
+
     for sub in subs:
         if not isinstance(sub, dict):
             continue
         try:
             user_id = sub.get("user_id")
-            # Resolve tier first — needed by all subsequent gates
+            # Resolve tier first — needed by all subsequent gates.
+            # On error, default to "free" but mark tier_error so teasers are suppressed.
+            tier_error = False
             try:
                 sub_tier = _get_user_tier(user_id) if user_id else "free"
             except Exception as e:
                 logger.warning(f"Failed to resolve tier for {user_id}: {e}")
                 sub_tier = "free"
+                tier_error = True
             # Free tier: fixed at 30% min discount, no customization
             # Premium users can set their own threshold via min_discount preference
             user_min = 30 if sub_tier == "free" else (prefs_by_user.get(user_id, 20) if user_id else 20)
@@ -566,29 +574,31 @@ async def _dispatch_grouped_flight_alerts(
                 # Free tier: long-haul — 1 per week allowed, block after quota
                 if sub_tier == "free" and is_long_haul(grp_dest):
                     if weekly_longhual_sent_count >= FREE_TIER_LONGHUAL_LIMIT:
-                        # Quota exhausted — send teaser and skip
-                        best = max(flight_tuples, key=lambda t: t[1].discount_pct, default=None)
-                        if best and chat_id is not None:
-                            flight_b, anomaly_b, _ = best
-                            dest_city_b = IATA_TO_CITY.get(grp_dest, grp_dest)
-                            try:
-                                from app.notifications.telegram import _get_bot
-                                bot = _get_bot()
-                                if bot:
-                                    await bot.send_message(
-                                        chat_id=chat_id,
-                                        text=(
-                                            f"🔒 Deal long-courrier détecté\n\n"
-                                            f"🌍 {IATA_TO_CITY.get(grp_origin, grp_origin)} → {dest_city_b}\n"
-                                            f"💰 À partir de {int(flight_b['price'])}€  ·  "
-                                            f"-{int(anomaly_b.discount_pct)}%\n\n"
-                                            f"Tu as déjà reçu ton alerte long-courrier de la semaine.\n"
-                                            f"💎 Premium = alertes illimitées en temps réel\n"
-                                            f"👉 {settings.FRONTEND_URL}/premium"
-                                        ),
-                                    )
-                            except Exception:
-                                pass
+                        # Quota exhausted — send teaser once per run, then skip silently
+                        if not tier_error and user_id not in teaser_sent_longhaul and chat_id is not None:
+                            teaser_sent_longhaul.add(user_id)
+                            best = max(flight_tuples, key=lambda t: t[1].discount_pct, default=None)
+                            if best:
+                                flight_b, anomaly_b, _ = best
+                                dest_city_b = IATA_TO_CITY.get(grp_dest, grp_dest)
+                                try:
+                                    from app.notifications.telegram import _get_bot
+                                    bot = _get_bot()
+                                    if bot:
+                                        await bot.send_message(
+                                            chat_id=chat_id,
+                                            text=(
+                                                f"🔒 Deal long-courrier détecté\n\n"
+                                                f"🌍 {IATA_TO_CITY.get(grp_origin, grp_origin)} → {dest_city_b}\n"
+                                                f"💰 À partir de {int(flight_b['price'])}€  ·  "
+                                                f"-{int(anomaly_b.discount_pct)}%\n\n"
+                                                f"Tu as déjà reçu ton alerte long-courrier de la semaine.\n"
+                                                f"💎 Premium = alertes illimitées en temps réel\n"
+                                                f"👉 {settings.FRONTEND_URL}/premium"
+                                            ),
+                                        )
+                                except Exception:
+                                    pass
                         continue
                     # Within quota — let the deal through (no discount filter for long-haul free)
 
@@ -650,13 +660,14 @@ async def _dispatch_grouped_flight_alerts(
                     candidates.append((key, flight, anomaly, tier))
 
                 if not candidates:
-                    # Free tier: if deals were blocked by ≥40% gate, send teaser
-                    if sub_tier == "free" and chat_id is not None:
+                    # Free tier: if deals were blocked by ≥40% gate, send teaser once per run
+                    if sub_tier == "free" and not tier_error and chat_id is not None and user_id not in teaser_sent_premium:
                         blocked = [
                             (f, a) for f, a, _ in flight_tuples
                             if a.discount_pct >= 40
                         ]
                         if blocked:
+                            teaser_sent_premium.add(user_id)
                             best_f, best_a = max(blocked, key=lambda x: x[1].discount_pct)
                             dest_city_b = IATA_TO_CITY.get(grp_dest, grp_dest)
                             try:
@@ -681,7 +692,9 @@ async def _dispatch_grouped_flight_alerts(
                 # Free tier: weekly quota gate (max 3 alerts/week)
                 # Wishlist matches bypass the quota — the user explicitly asked for this route.
                 if sub_tier == "free" and matching_wl is None and weekly_sent_count >= FREE_TIER_WEEKLY_LIMIT:
-                    if chat_id is not None:
+                    # Send teaser once per run — not once per destination
+                    if not tier_error and chat_id is not None and user_id not in teaser_sent_quota:
+                        teaser_sent_quota.add(user_id)
                         try:
                             from app.notifications.telegram import _get_bot
                             bot = _get_bot()
