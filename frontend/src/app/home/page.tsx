@@ -328,7 +328,7 @@ export default function HomePage() {
               <p className="text-sm text-[#0A1F3D]/70">
                 Tous les deals -30% et plus, erreurs de prix incluses. Alertes Telegram instantanées.
                 <span className="font-semibold"> 29€/an</span> <span className="line-through text-[#0A1F3D]/40">59€</span> — soit 2,42€/mois.
-                <span className="block mt-1 text-xs text-[#16A34A]">✅ Satisfait ou remboursé 14 jours</span>
+                <span className="block mt-1 text-xs text-[#16A34A]">✅ Satisfait ou remboursé 30 jours</span>
               </p>
             </div>
             <button

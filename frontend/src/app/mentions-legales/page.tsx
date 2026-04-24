@@ -69,7 +69,7 @@ export default function MentionsLegales() {
           <section>
             <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#0A1F3D]">Liens affiliés</h2>
             <p>
-              Globe Genius participe au programme d&apos;affiliation Travelpayouts. Les liens de réservation vers Aviasales et Booking.com contiennent un identifiant affilié. Globe Genius perçoit une commission sur les réservations effectuées via ces liens, sans surcoût pour l&apos;utilisateur.
+              Globe Genius participe au programme d&apos;affiliation Travelpayouts. Les liens de réservation vers Aviasales et Booking.com contiennent un identifiant affilié. Globe Genius perçoit une commission sur les réservations effectuées via ces liens, sans surcoût pour l&apos;utilisateur. Les liens d’alerte Telegram passent par une URL courte (globegenius.app/r/…) qui enregistre le clic avant de rediriger vers la compagnie aérienne. Aucune donnée personnelle supplémentaire n’est collectée lors de ce passage.
             </p>
           </section>
 

@@ -90,6 +90,7 @@ export default function Confidentialite() {
               <li><strong>Stripe :</strong> traitement des paiements (soumis à la <a href="https://stripe.com/privacy" className="text-[#FF6B47] hover:underline" target="_blank" rel="noopener noreferrer">politique de confidentialité Stripe</a>)</li>
               <li><strong>Telegram :</strong> envoi des alertes (soumis à la <a href="https://telegram.org/privacy" className="text-[#FF6B47] hover:underline" target="_blank" rel="noopener noreferrer">politique de confidentialité Telegram</a>)</li>
               <li><strong>Travelpayouts/Aviasales :</strong> données de prix des vols et liens affiliés</li>
+              <li><strong>Liens de rédirection (globegenius.app/r/…) :</strong> chaque lien d’alerte Telegram passe par un identifiant court qui nous permet de mesurer si le lien a été cliqué. Nous enregistrons uniquement la destination, le fait qu’un clic a eu lieu et l’heure. Aucune donnée de navigation tierce n’est collectée.</li>
             </ul>
           </section>
 
