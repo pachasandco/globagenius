@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from app.config import settings, IATA_TO_CITY
 from app.db import db
 from app.scraper.travelpayouts_flights import scrape_all_flights
+from app.scraper.tier1_scraper import scrape_all_tier1
 from app.analysis.baselines import compute_baseline, compute_baselines_by_bucket, MIN_SAMPLE_COUNT
 from app.scraper.travelpayouts import get_prices_for_dates
 from app.scraper.travelpayouts_flights import _normalize_priced_entry
@@ -72,6 +73,16 @@ def get_scheduler_jobs() -> list[dict]:
             "trigger": "cron",
             "hour": 9,
         },
+        # ── TIER 1 : toutes les 20 min (CDG + ORY via endpoints directs LCC) ──
+        # Ryanair + Transavia directs → données quasi temps-réel pour les routes chaudes.
+        # Polling intensif justifié : ces routes contiennent les mistake fares éphémères.
+        *[{
+            "id": f"scrape_tier1_{h:02d}h{m:02d}",
+            "func": job_scrape_tier1,
+            "trigger": "cron",
+            "hour": h,
+            "minute": m,
+        } for h in range(24) for m in [0, 20, 40]],
         # ── DESTINATION SELECTOR : 1x/semaine le lundi a 3h ──
         # Requête Travelpayouts + scoring saisonnier → met à jour priority_destinations en DB
         {
@@ -182,31 +193,35 @@ async def _analyze_new_flights(flights: list[dict]):
             counters["rejected_stops"] += 1
             continue
 
-        # Lookup baseline for this (route, bucket)
-        route_key = f"{flight['origin']}-{flight['destination']}-bucket_{bucket}"
-        baseline_resp = (
-            db.table("price_baselines")
-            .select("*")
-            .eq("route_key", route_key)
-            .eq("type", "flight")
-            .execute()
-        )
+        # Lookup baseline — 3-level cascade (most specific → least specific):
+        # 1. Seasonal: route + bucket + departure_month + lead_time  (best quality)
+        # 2. Legacy:   route + bucket                                (fallback)
+        # 3. Dest-wide: any origin + bucket                         (cold-start)
+        from app.analysis.baselines import lead_time_bucket as _lt_bucket
+        dep_date = flight.get("departure_date") or flight.get("departure_at", "")[:10]
+        scraped_at = flight.get("scraped_at", "")
+        try:
+            month_str = f"m{int(dep_date[5:7]):02d}"
+        except (ValueError, IndexError):
+            month_str = "m00"
+        lt_label = _lt_bucket(dep_date, scraped_at)
+
+        seasonal_key = f"{flight['origin']}-{flight['destination']}-bucket_{bucket}-{month_str}-{lt_label}"
+        legacy_key   = f"{flight['origin']}-{flight['destination']}-bucket_{bucket}"
+        dest_key     = f"*-{flight['destination']}-bucket_{bucket}"
 
         baseline = None
-        if baseline_resp.data:
-            baseline = baseline_resp.data[0]
-        else:
-            # FALLBACK: Try destination-wide baseline (any origin → destination)
-            dest_route_key = f"*-{flight['destination']}-bucket_{bucket}"
-            dest_resp = (
+        for rk in (seasonal_key, legacy_key, dest_key):
+            resp = (
                 db.table("price_baselines")
                 .select("*")
-                .eq("route_key", dest_route_key)
+                .eq("route_key", rk)
                 .eq("type", "flight")
                 .execute()
             )
-            if dest_resp.data:
-                baseline = dest_resp.data[0]
+            if resp.data:
+                baseline = resp.data[0]
+                break
 
         if not baseline:
             counters["rejected_no_baseline"] += 1
@@ -616,7 +631,7 @@ async def job_recalculate_baselines():
     for offset in range(0, 10000, page_size):
         page = (
             db.table("raw_flights")
-            .select("origin, destination, price, scraped_at, trip_duration_days, stops, duration_minutes")
+            .select("origin, destination, price, scraped_at, trip_duration_days, stops, duration_minutes, departure_date")
             .gte("scraped_at", thirty_days_ago)
             .not_.is_("trip_duration_days", "null")
             .order("scraped_at", desc=True)
@@ -726,6 +741,74 @@ async def job_daily_admin_report():
 
     if qual_rate < 5 and total_scraped > 0:
         await send_admin_alert(f"Taux qualification bas : {qual_rate}%")
+
+
+async def job_scrape_tier1():
+    """Tier 1 scrape — Ryanair + Transavia direct endpoints, every 20 min.
+
+    Covers hot routes from CDG/ORY with near-real-time prices.
+    Results are inserted into raw_flights exactly like the Travelpayouts scrape,
+    so the same qualification pipeline handles them automatically."""
+    logger.info("Starting Tier 1 scrape (Ryanair + Transavia direct)")
+    if not db:
+        return
+
+    flights, errors = await scrape_all_tier1()
+
+    if not flights:
+        logger.info("Tier 1 scrape: no flights returned")
+        return
+
+    inserted = 0
+    skipped = 0
+    for flight in flights:
+        try:
+            result = (
+                db.table("raw_flights")
+                .upsert(flight, on_conflict="hash")
+                .execute()
+            )
+            if result.data:
+                inserted += 1
+            else:
+                skipped += 1
+        except Exception as e:
+            logger.warning(f"Tier1 insert error: {e}")
+
+    logger.info(
+        f"Tier 1 scrape done: {inserted} inserted, {skipped} skipped (dupes), {errors} errors"
+    )
+
+    # Run qualification pipeline immediately on fresh Tier 1 data
+    # so mistake fares trigger alerts within minutes, not at the next 2h window.
+    if inserted > 0:
+        await job_qualify_and_alert()
+
+
+async def job_qualify_and_alert():
+    """Run the qualification + alert dispatch pipeline on flights scraped in the last 30 min.
+
+    Called by job_scrape_tier1 after each Tier 1 scrape so mistake fares trigger
+    alerts within minutes rather than waiting for the next 2h Travelpayouts window."""
+    logger.info("Running qualification + alert pipeline (Tier 1 trigger)")
+    if not db:
+        return
+
+    now = datetime.now(timezone.utc)
+    thirty_min_ago = (now - timedelta(minutes=30)).isoformat()
+
+    resp = (
+        db.table("raw_flights")
+        .select("*")
+        .gte("scraped_at", thirty_min_ago)
+        .execute()
+    )
+    flights = resp.data or []
+    if not flights:
+        return
+
+    logger.info(f"Qualify pipeline (Tier 1): {len(flights)} recent flights to evaluate")
+    await _analyze_new_flights(flights)
 
 
 async def job_travelpayouts_enrichment():
