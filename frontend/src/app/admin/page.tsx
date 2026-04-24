@@ -23,11 +23,30 @@ interface DebugData {
   price_diagnosis: Array<{ route: string; price: number; baseline_avg: number; discount_pct: number; z_score: number; would_qualify: boolean }>;
 }
 
+interface RouteRow {
+  origin: string;
+  destination: string;
+  sources: string[];
+  tier: "tier1" | "tier2";
+  has_baseline: boolean;
+  baseline_avg: number | null;
+  baseline_samples: number;
+  baseline_updated_at: string | null;
+}
+
+const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
+  ryanair:      { label: "Ryanair",      color: "bg-blue-100 text-blue-800" },
+  transavia:    { label: "Transavia",    color: "bg-green-100 text-green-800" },
+  travelpayouts:{ label: "Travelpayouts",color: "bg-purple-100 text-purple-800" },
+};
+
 export default function AdminPage() {
   const [adminKey, setAdminKey] = useState("");
   const [authenticated, setAuthenticated] = useState(false);
   const [status, setStatus] = useState<{ active_baselines: number; recent_scrapes: ScrapeLog[] } | null>(null);
   const [debug, setDebug] = useState<DebugData | null>(null);
+  const [routes, setRoutes] = useState<RouteRow[] | null>(null);
+  const [routeFilter, setRouteFilter] = useState("");
   const [loading, setLoading] = useState(false);
   const [triggerResult, setTriggerResult] = useState("");
   const router = useRouter();
@@ -44,12 +63,14 @@ export default function AdminPage() {
   async function loadData(key: string) {
     setLoading(true);
     try {
-      const [statusRes, debugRes] = await Promise.all([
+      const [statusRes, debugRes, routesRes] = await Promise.all([
         fetch(`${API_URL}/api/status`).then(r => r.json()),
         fetch(`${API_URL}/api/debug/data`, { headers: { "X-Admin-Key": key } }).then(r => r.json()),
+        fetch(`${API_URL}/api/admin/routes`, { headers: { "X-Admin-Key": key } }).then(r => r.json()),
       ]);
       setStatus(statusRes);
       if (!debugRes.detail) setDebug(debugRes);
+      if (routesRes.routes) setRoutes(routesRes.routes);
     } catch { /* ignore */ }
     setLoading(false);
   }
@@ -168,6 +189,76 @@ export default function AdminPage() {
                       <td className="py-2"><span className={`text-xs px-2 py-0.5 rounded-full ${s.status === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{s.status}</span></td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Routes actives */}
+        {routes && (
+          <div className="bg-white rounded-xl border border-gray-100 p-4 mb-6">
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+              <h2 className="font-semibold">
+                Routes actives
+                <span className="ml-2 text-xs font-normal text-gray-400">
+                  {routes.filter(r => r.tier === "tier1").length} temps réel · {routes.filter(r => r.tier === "tier2").length} agrégateur
+                </span>
+              </h2>
+              <input
+                value={routeFilter}
+                onChange={e => setRouteFilter(e.target.value.toUpperCase())}
+                placeholder="Filtrer (ex: CDG, BKK…)"
+                className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-cyan-400 w-44"
+              />
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 text-left text-xs text-gray-400">
+                    <th className="pb-2 pr-4">Route</th>
+                    <th className="pb-2 pr-4">Source</th>
+                    <th className="pb-2 pr-4">Baseline</th>
+                    <th className="pb-2 pr-4">Prix moy.</th>
+                    <th className="pb-2 pr-4">Échantillons</th>
+                    <th className="pb-2">Mis à jour</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {routes
+                    .filter(r => !routeFilter || r.origin.includes(routeFilter) || r.destination.includes(routeFilter))
+                    .map((r, i) => (
+                      <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
+                        <td className="py-2 pr-4 font-mono font-semibold text-xs">
+                          {r.origin} → {r.destination}
+                        </td>
+                        <td className="py-2 pr-4">
+                          <div className="flex flex-wrap gap-1">
+                            {r.sources.map(s => (
+                              <span key={s} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${SOURCE_LABELS[s]?.color ?? "bg-gray-100 text-gray-600"}`}>
+                                {SOURCE_LABELS[s]?.label ?? s}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="py-2 pr-4">
+                          {r.has_baseline
+                            ? <span className="text-green-600 font-semibold text-xs">✓ Active</span>
+                            : <span className="text-gray-300 text-xs">—</span>}
+                        </td>
+                        <td className="py-2 pr-4 text-xs">
+                          {r.baseline_avg != null ? `${r.baseline_avg} €` : "—"}
+                        </td>
+                        <td className="py-2 pr-4 text-xs text-gray-500">
+                          {r.baseline_samples ?? "—"}
+                        </td>
+                        <td className="py-2 text-xs text-gray-400">
+                          {r.baseline_updated_at
+                            ? new Date(r.baseline_updated_at).toLocaleDateString("fr-FR")
+                            : "—"}
+                        </td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>

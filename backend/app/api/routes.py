@@ -1089,6 +1089,79 @@ def admin_reset_prefs(user_id: str, request: Request):
     return {"ok": True, "reset": bool(resp.data)}
 
 
+@router.get("/api/admin/routes")
+def admin_routes(request: Request):
+    """Return all monitored routes with scraping source and baseline status."""
+    _require_admin(request)
+    from app.scraper.tier1_routes import TIER1_ROUTES
+
+    # Build tier1 lookup: (origin, destination) → list of airlines
+    tier1_map: dict[tuple[str, str], list[str]] = {}
+    for o, d, airlines in TIER1_ROUTES:
+        tier1_map[(o, d)] = airlines
+
+    # Fetch all baselines to check which routes have an active baseline
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    baselines_resp = db.table("price_baselines").select(
+        "origin,destination,avg_price,sample_count,updated_at"
+    ).execute()
+    baseline_by_route: dict[tuple[str, str], dict] = {}
+    for b in (baselines_resp.data or []):
+        if isinstance(b, dict) and b.get("origin") and b.get("destination"):
+            key = (b["origin"], b["destination"])
+            # Keep the most recently updated baseline per route
+            existing = baseline_by_route.get(key)
+            if not existing or b.get("updated_at", "") > existing.get("updated_at", ""):
+                baseline_by_route[key] = b
+
+    # Travelpayouts routes: fetch distinct (origin, destination) from raw_flights
+    # that are NOT in tier1_map
+    tp_resp = db.table("raw_flights").select("origin,destination").execute()
+    tp_routes: set[tuple[str, str]] = set()
+    for r in (tp_resp.data or []):
+        if isinstance(r, dict) and r.get("origin") and r.get("destination"):
+            key = (r["origin"], r["destination"])
+            if key not in tier1_map:
+                tp_routes.add(key)
+
+    rows = []
+
+    # Tier 1 routes
+    for (o, d), airlines in tier1_map.items():
+        bl = baseline_by_route.get((o, d))
+        rows.append({
+            "origin": o,
+            "destination": d,
+            "sources": airlines,
+            "tier": "tier1",
+            "has_baseline": bl is not None,
+            "baseline_avg": round(bl["avg_price"]) if bl and bl.get("avg_price") else None,
+            "baseline_samples": bl["sample_count"] if bl else 0,
+            "baseline_updated_at": bl["updated_at"] if bl else None,
+        })
+
+    # Travelpayouts-only routes
+    for (o, d) in sorted(tp_routes):
+        bl = baseline_by_route.get((o, d))
+        rows.append({
+            "origin": o,
+            "destination": d,
+            "sources": ["travelpayouts"],
+            "tier": "tier2",
+            "has_baseline": bl is not None,
+            "baseline_avg": round(bl["avg_price"]) if bl and bl.get("avg_price") else None,
+            "baseline_samples": bl["sample_count"] if bl else 0,
+            "baseline_updated_at": bl["updated_at"] if bl else None,
+        })
+
+    # Sort: tier1 first, then alphabetically by origin+destination
+    rows.sort(key=lambda r: (r["tier"], r["origin"], r["destination"]))
+
+    return {"routes": rows, "total": len(rows), "tier1_count": len(tier1_map), "tier2_count": len(tp_routes)}
+
+
 # ---------------------------------------------------------------------------
 # Destination Wishlists
 # ---------------------------------------------------------------------------
