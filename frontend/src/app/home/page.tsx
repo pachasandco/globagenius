@@ -303,7 +303,6 @@ export default function HomePage() {
           </Link>
           <div className="hidden md:flex items-center gap-5 text-sm text-gray-500">
             <Link href="/home" className="text-gray-900 font-medium">Deals</Link>
-            <a href="#guides" className="hover:text-gray-900 transition-colors">Guides</a>
           </div>
           <div className="flex items-center gap-2 md:gap-3">
             <span className="text-sm text-gray-400 hidden md:block">{isPremium ? "🌟 Premium" : "Free"}</span>
