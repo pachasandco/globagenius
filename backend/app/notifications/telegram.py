@@ -373,7 +373,7 @@ async def send_grouped_flight_alerts(
     if user_id:
         reply_markup = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("⏸ Pause 24h", callback_data=f"pause:{user_id}"),
+                InlineKeyboardButton("⏸ Pause", callback_data=f"pause:{user_id}"),
                 InlineKeyboardButton("🔕 Se désabonner", callback_data=f"unsub:{user_id}"),
             ]
         ])
