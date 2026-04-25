@@ -662,13 +662,31 @@ async def _dispatch_grouped_flight_alerts(
                     continue
 
                 already_keys: set[str] = set()
+                # Itineraries blocked by a prior send (dest, dep, ret) — used to
+                # match against legacy keys that used a different format.
+                blocked_itineraries: set[tuple[str, str, str]] = set()
                 if user_id:
+                    import hashlib as _hl
                     keys_to_check = [k for (k, _, _, _) in candidates if k]
+                    # Build a reverse map: legacy_key → (dest, dep, ret) so we
+                    # can block an itinerary even if the stored key used a
+                    # different format (old keys included origin; new keys don't).
+                    ALL_ORIGINS = ["CDG", "ORY", "BVA", "NCE", "LYS", "MRS",
+                                   "BOD", "NTE", "TLS"]
+                    legacy_key_to_itinerary: dict[str, tuple[str, str, str]] = {}
+                    for _, flight, _, _ in candidates:
+                        dep = flight.get("departure_date", "")
+                        ret = flight.get("return_date", "")
+                        dest = flight.get("destination", "")
+                        for orig in ALL_ORIGINS:
+                            legacy = _hl.sha256(
+                                f"{user_id}|{orig}|{dest}|{dep}|{ret}".encode()
+                            ).hexdigest()[:32]
+                            legacy_key_to_itinerary[legacy] = (dest, dep, ret)
+                            if legacy not in keys_to_check:
+                                keys_to_check.append(legacy)
                     if keys_to_check:
                         try:
-                            # Inhibit re-alerts for the same itinerary within
-                            # ALERT_INHIBIT_HOURS — blocks Travelpayouts from
-                            # re-sending a deal already dispatched via Tier 1.
                             inhibit_since = (
                                 datetime.now(timezone.utc)
                                 - timedelta(hours=ALERT_INHIBIT_HOURS)
@@ -683,7 +701,11 @@ async def _dispatch_grouped_flight_alerts(
                             )
                             for row in (sent_resp.data or []):
                                 if isinstance(row, dict) and row.get("alert_key"):
-                                    already_keys.add(row["alert_key"])
+                                    k = row["alert_key"]
+                                    already_keys.add(k)
+                                    # If this was a legacy key, block the itinerary
+                                    if k in legacy_key_to_itinerary:
+                                        blocked_itineraries.add(legacy_key_to_itinerary[k])
                         except Exception as e:
                             logger.warning(
                                 f"Failed sent_alerts check for {user_id}: {e}"
@@ -694,6 +716,14 @@ async def _dispatch_grouped_flight_alerts(
                 group_tier = "free"
                 for key, flight, anomaly, tier in candidates:
                     if key and key in already_keys:
+                        continue
+                    # Block via legacy key match (origin was part of old key format)
+                    itin = (
+                        flight.get("destination", ""),
+                        flight.get("departure_date", ""),
+                        flight.get("return_date", ""),
+                    )
+                    if itin in blocked_itineraries:
                         continue
 
                     # Filter: minimum 4 days stay
