@@ -497,6 +497,10 @@ async def _dispatch_grouped_flight_alerts(
     # Track teasers already sent this run — at most once per user per run
     teaser_sent_quota: set[str] = set()
     teaser_sent_premium: set[str] = set()
+    # Track (user_id, destination) pairs already dispatched this run to avoid
+    # sending the same destination twice when a user tracks multiple origins
+    # (e.g. CDG + ORY both match a Paris→Rome flight).
+    dispatched_this_run: set[tuple[str, str]] = set()
 
     for sub in subs:
         if not isinstance(sub, dict):
@@ -733,6 +737,12 @@ async def _dispatch_grouped_flight_alerts(
                 if not offers:
                     continue
 
+                # Skip if we already sent this destination to this user this run
+                # (happens when a user tracks multiple origins, e.g. CDG + ORY)
+                run_key = (user_id or "", grp_dest)
+                if run_key in dispatched_this_run:
+                    continue
+
                 origin_city = IATA_TO_CITY.get(grp_origin, grp_origin)
                 dest_city = IATA_TO_CITY.get(grp_dest, grp_dest)
                 try:
@@ -749,6 +759,7 @@ async def _dispatch_grouped_flight_alerts(
                     )
                     if success:
                         logger.info(f"✅ Sent {len(offers)} flight alerts to {origin_city}→{dest_city} for user {user_id}")
+                        dispatched_this_run.add(run_key)
                         if sub_tier == "free":
                             weekly_sent_count += 1
                 except Exception as e:
