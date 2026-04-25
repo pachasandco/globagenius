@@ -260,8 +260,8 @@ async def _analyze_new_flights(flights: list[dict]):
 
         counters["qualified"] += 1
 
-        # Tier classification
-        tier = "premium" if anomaly.discount_pct >= 40 else "free"
+        # Tier classification: ≥50% → premium (masked for free users)
+        tier = "premium" if anomaly.discount_pct >= 50 else "free"
 
         score = compute_score(
             discount_pct=anomaly.discount_pct,
@@ -579,11 +579,11 @@ async def _dispatch_grouped_flight_alerts(
                         break
 
                 # Build candidate list
-                # Only deals ≥50% pass for everyone.
-                # Free:    50–55% → full info (max 3/week), >55% → masked teaser
-                # Premium: ≥50%  → full info, no limit
-                FREE_TIER_FULL_MAX = 55   # above this → masked for free users
-                GLOBAL_MIN_DISCOUNT = 50  # below this → no alert for anyone
+                # Only deals ≥40% pass for everyone.
+                # Free:    40–50% → full info (max 3/week), >50% → masked teaser
+                # Premium: ≥40%  → full info, no limit
+                FREE_TIER_FULL_MAX = 50   # above this → masked for free users
+                GLOBAL_MIN_DISCOUNT = 40  # below this → no alert for anyone
 
                 candidates: list[tuple[str | None, dict, object, str]] = []
                 for flight, anomaly, tier in flight_tuples:
@@ -609,7 +609,7 @@ async def _dispatch_grouped_flight_alerts(
                 if not candidates:
                     continue
 
-                # Free tier: deals >55% → masked teaser (once per run)
+                # Free tier: deals >50% → masked teaser (once per run)
                 if sub_tier == "free" and not tier_error and chat_id is not None and user_id not in teaser_sent_premium:
                     masked = [
                         (f, a) for f, a, _ in flight_tuples
