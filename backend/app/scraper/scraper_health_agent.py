@@ -191,28 +191,42 @@ SCRAPERS: list[dict] = [
         "name": "transavia",
         "probe": _probe_transavia,
         "scraper_path": "app/scraper/tier1_transavia.py",
+        # Transavia is disabled globally (API fully dead).
+        # Health agent manages _DISABLED_SCRAPERS for it.
+        "global_disable": True,
     },
     {
         "name": "vueling",
         "probe": _probe_vueling,
         "scraper_path": "app/scraper/tier1_vueling.py",
+        # Vueling uses per-route demotion — NOT global disable.
+        # Health agent only patches _BASE if a new API is found;
+        # individual route failures are handled by the demotion counter.
+        "global_disable": False,
     },
 ]
 
 
 async def run_scraper_health_check() -> None:
-    """Check all monitored scrapers and update _DISABLED_SCRAPERS accordingly."""
+    """Check all monitored scrapers and update state accordingly.
+
+    - Transavia: globally enabled/disabled via _DISABLED_SCRAPERS
+    - Vueling: per-route demotion survives; health agent only patches _BASE
+      if the endpoint URL itself has changed (new API found)
+    """
+    import os
     import app.scraper.tier1_scraper as tier1
 
     for scraper in SCRAPERS:
         name = scraper["name"]
+        global_disable = scraper.get("global_disable", True)
         try:
             alive, detail = scraper["probe"]()
 
             if alive:
-                if name in tier1._DISABLED_SCRAPERS:
+                if global_disable and name in tier1._DISABLED_SCRAPERS:
                     tier1._DISABLED_SCRAPERS.discard(name)
-                    logger.info(f"[health] {name} API is back online — re-enabled. ({detail})")
+                    logger.info(f"[health] {name} API is back online — re-enabled globally. ({detail})")
                 else:
                     logger.info(f"[health] {name} API healthy. ({detail})")
 
@@ -221,25 +235,28 @@ async def run_scraper_health_check() -> None:
                 new_base = _search_new_api(name)
 
                 if new_base:
-                    import os
-                    # Resolve path relative to this file's directory
                     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                     full_path = os.path.join(base_dir, scraper["scraper_path"])
                     patched = _patch_scraper_base(full_path, new_base)
                     if patched:
-                        tier1._DISABLED_SCRAPERS.discard(name)
+                        if global_disable:
+                            tier1._DISABLED_SCRAPERS.discard(name)
                         logger.info(
                             f"[health] {name} patched with new base {new_base} — re-enabled."
                         )
                     else:
-                        tier1._DISABLED_SCRAPERS.add(name)
+                        if global_disable:
+                            tier1._DISABLED_SCRAPERS.add(name)
                         logger.warning(
                             f"[health] {name} new API found but patch failed — keeping disabled."
                         )
                 else:
-                    tier1._DISABLED_SCRAPERS.add(name)
+                    if global_disable:
+                        tier1._DISABLED_SCRAPERS.add(name)
                     logger.warning(
-                        f"[health] {name} no new API found — kept disabled."
+                        f"[health] {name} no working API found — "
+                        + ("kept disabled globally." if global_disable
+                           else "per-route demotion remains active.")
                     )
 
         except Exception as e:
