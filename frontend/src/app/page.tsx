@@ -250,9 +250,9 @@ export default function Landing() {
       {/* ── STATS BAR ── */}
       <section className="flex flex-wrap justify-center gap-8 sm:gap-12 py-6 px-6 bg-white border-t border-[var(--color-sand)]">
         {[
-          { value: "2 340+", label: "vols détectés" },
-          { value: "-70%", label: "meilleur deal" },
-          { value: "47", label: "deals en cours" },
+          { value: "≥50%", label: "réduction minimum" },
+          { value: "-70%", label: "meilleur deal détecté" },
+          { value: "6×/jour", label: "scraping des prix" },
           { value: "9", label: "aéroports de départ" },
         ].map((s) => (
           <div key={s.label} className="text-center">

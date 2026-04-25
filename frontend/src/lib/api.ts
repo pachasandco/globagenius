@@ -23,18 +23,34 @@ async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
 
 // ─── Auth ───
 
-export function signup(email: string, password: string) {
-  return fetchAPI<{ user_id: string; email: string; token: string }>("/api/auth/signup", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  });
+function _setSessionCookie() {
+  if (typeof document !== "undefined") {
+    document.cookie = "gg_session=1; path=/; SameSite=Lax; max-age=2592000";
+  }
 }
 
-export function login(email: string, password: string) {
-  return fetchAPI<{ user_id: string; email: string; token: string }>("/api/auth/login", {
+export function clearSessionCookie() {
+  if (typeof document !== "undefined") {
+    document.cookie = "gg_session=; path=/; max-age=0";
+  }
+}
+
+export async function signup(email: string, password: string) {
+  const res = await fetchAPI<{ user_id: string; email: string; token: string }>("/api/auth/signup", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
+  _setSessionCookie();
+  return res;
+}
+
+export async function login(email: string, password: string) {
+  const res = await fetchAPI<{ user_id: string; email: string; token: string }>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+  _setSessionCookie();
+  return res;
 }
 
 export function changePassword(userId: string, currentPassword: string, newPassword: string) {

@@ -10,6 +10,7 @@ class Settings:
     APIFY_API_TOKEN: str = os.getenv("APIFY_API_TOKEN", "")
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "https://globegenius.app")
+    BACKEND_URL: str = os.getenv("BACKEND_URL", "https://globagenius-production-b887.up.railway.app")
     SUPABASE_SERVICE_KEY: str = os.getenv("SUPABASE_SERVICE_KEY", "")
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_ADMIN_CHAT_ID: str = os.getenv("TELEGRAM_ADMIN_CHAT_ID", "")
@@ -42,6 +43,18 @@ class Settings:
         e.strip() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()
     ])
     TRAVELPAYOUTS_MARKER: str = os.getenv("TRAVELPAYOUTS_MARKER", "")
+
+    def __post_init__(self):
+        if self.APP_ENV == "production":
+            missing = []
+            if self.JWT_SECRET == "globegenius-dev-secret-change-in-prod":
+                missing.append("JWT_SECRET")
+            if not self.ADMIN_API_KEY:
+                missing.append("ADMIN_API_KEY")
+            if not self.STRIPE_WEBHOOK_SECRET:
+                missing.append("STRIPE_WEBHOOK_SECRET")
+            if missing:
+                raise RuntimeError(f"Missing required env vars in production: {', '.join(missing)}")
 
 
 IATA_TO_CITY = {
