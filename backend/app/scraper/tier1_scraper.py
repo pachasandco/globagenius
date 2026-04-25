@@ -5,21 +5,22 @@ Falls back to Travelpayouts automatically when an airline endpoint is demoted.
 
 Active scrapers:
   - Ryanair: operational
-  - Transavia: API v1 returns HTML (dead) — disabled
-  - Vueling: booking.vueling.com unreachable from Railway (DNS/geo) — disabled
+  - Transavia: API v1 returns HTML (dead) — disabled globally
+  - Vueling: per-route demotion (some routes may still work)
 """
 
 import logging
 from app.scraper.tier1_routes import get_tier1_routes_for_airport
 from app.scraper.tier1_ryanair import scrape_route as scrape_ryanair, is_demoted as ryanair_demoted
+from app.scraper.tier1_vueling import scrape_route as scrape_vueling, is_demoted as vueling_demoted
 from app.scraper.travelpayouts_flights import scrape_flights_for_route
 
 logger = logging.getLogger(__name__)
 
-# Transavia /api/v1/flights/lowestFares now returns HTML (API changed).
-# Vueling booking.vueling.com is unreachable from Railway (DNS failure).
-# Both disabled until their APIs are restored.
-_DISABLED_SCRAPERS = {"transavia", "vueling"}
+# Scrapers disabled globally (API fully dead, not just some routes).
+# Vueling is NOT here — it uses per-route demotion so working routes survive.
+# The health agent (job_check_scraper_health) manages this set at runtime.
+_DISABLED_SCRAPERS: set[str] = {"transavia"}
 
 
 def scrape_tier1_airport(origin: str) -> list[dict]:
@@ -42,6 +43,10 @@ def scrape_tier1_airport(origin: str) -> list[dict]:
             if airline == "ryanair":
                 if not ryanair_demoted(orig, dest):
                     flights = scrape_ryanair(orig, dest)
+                    route_flights.extend(flights)
+            elif airline == "vueling":
+                if not vueling_demoted(orig, dest):
+                    flights = scrape_vueling(orig, dest)
                     route_flights.extend(flights)
 
         # If no direct scraper returned data → Travelpayouts fallback
