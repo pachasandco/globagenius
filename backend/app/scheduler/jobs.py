@@ -662,29 +662,8 @@ async def _dispatch_grouped_flight_alerts(
                     continue
 
                 already_keys: set[str] = set()
-                # Itineraries blocked by a prior send (dest, dep, ret) — used to
-                # match against legacy keys that used a different format.
-                blocked_itineraries: set[tuple[str, str, str]] = set()
                 if user_id:
-                    import hashlib as _hl
-                    keys_to_check = [k for (k, _, _, _) in candidates if k]
-                    # Build a reverse map: legacy_key → (dest, dep, ret) so we
-                    # can block an itinerary even if the stored key used a
-                    # different format (old keys included origin; new keys don't).
-                    ALL_ORIGINS = ["CDG", "ORY", "BVA", "NCE", "LYS", "MRS",
-                                   "BOD", "NTE", "TLS"]
-                    legacy_key_to_itinerary: dict[str, tuple[str, str, str]] = {}
-                    for _, flight, _, _ in candidates:
-                        dep = flight.get("departure_date", "")
-                        ret = flight.get("return_date", "")
-                        dest = flight.get("destination", "")
-                        for orig in ALL_ORIGINS:
-                            legacy = _hl.sha256(
-                                f"{user_id}|{orig}|{dest}|{dep}|{ret}".encode()
-                            ).hexdigest()[:32]
-                            legacy_key_to_itinerary[legacy] = (dest, dep, ret)
-                            if legacy not in keys_to_check:
-                                keys_to_check.append(legacy)
+                    keys_to_check = list({k for (k, _, _, _) in candidates if k})
                     if keys_to_check:
                         try:
                             inhibit_since = (
@@ -701,11 +680,7 @@ async def _dispatch_grouped_flight_alerts(
                             )
                             for row in (sent_resp.data or []):
                                 if isinstance(row, dict) and row.get("alert_key"):
-                                    k = row["alert_key"]
-                                    already_keys.add(k)
-                                    # If this was a legacy key, block the itinerary
-                                    if k in legacy_key_to_itinerary:
-                                        blocked_itineraries.add(legacy_key_to_itinerary[k])
+                                    already_keys.add(row["alert_key"])
                         except Exception as e:
                             logger.warning(
                                 f"Failed sent_alerts check for {user_id}: {e}"
@@ -716,14 +691,6 @@ async def _dispatch_grouped_flight_alerts(
                 group_tier = "free"
                 for key, flight, anomaly, tier in candidates:
                     if key and key in already_keys:
-                        continue
-                    # Block via legacy key match (origin was part of old key format)
-                    itin = (
-                        flight.get("destination", ""),
-                        flight.get("departure_date", ""),
-                        flight.get("return_date", ""),
-                    )
-                    if itin in blocked_itineraries:
                         continue
 
                     # Filter: minimum 4 days stay
@@ -768,13 +735,10 @@ async def _dispatch_grouped_flight_alerts(
                 if not offers:
                     continue
 
-                # Dedup across origins: for the same itinerary (dest + dates + price),
-                # only send the cheapest version. If CDG is cheaper than ORY for the
-                # same dates, CDG wins; if they're equal, the first one seen wins.
+                # Within a single run, if we already dispatched this destination
+                # at the same or cheaper price (from another origin), skip.
                 best_offer_price = min((o["price"] for o in offers), default=0)
-                best_dep = offers[0]["departure_date"] if offers else ""
-                best_ret = offers[0]["return_date"] if offers else ""
-                run_key = (user_id or "", grp_dest, best_dep, best_ret)
+                run_key = (user_id or "", grp_dest)
                 prev_best = dispatched_this_run.get(run_key)
                 if prev_best is not None and best_offer_price >= prev_best:
                     continue
@@ -795,7 +759,7 @@ async def _dispatch_grouped_flight_alerts(
                     )
                     if success:
                         logger.info(f"✅ Sent {len(offers)} flight alerts to {origin_city}→{dest_city} for user {user_id}")
-                        dispatched_this_run[run_key] = best_offer_price
+                        dispatched_this_run[(user_id or "", grp_dest)] = best_offer_price
                         if sub_tier == "free":
                             weekly_sent_count += 1
                 except Exception as e:
