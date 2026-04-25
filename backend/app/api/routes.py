@@ -177,25 +177,16 @@ class SignupRequest(BaseModel):
 class PreferencesRequest(BaseModel):
     airport_codes: list[str]
     offer_types: list[str]
-    min_discount: int = 40
     max_budget: int | None = None
     preferred_destinations: list[str] | None = None
-    flight_range: str = "all"
+    deal_tier: str = "regular"
 
-    @field_validator("min_discount")
+    @field_validator("deal_tier")
     @classmethod
-    def validate_min_discount(cls, v: int) -> int:
-        allowed = {20, 30, 40, 50, 60}
+    def validate_deal_tier(cls, v: str) -> str:
+        allowed = {"regular", "exceptional"}
         if v not in allowed:
-            raise ValueError(f"min_discount must be one of {sorted(allowed)}")
-        return v
-
-    @field_validator("flight_range")
-    @classmethod
-    def validate_flight_range(cls, v: str) -> str:
-        allowed = {"all", "short_medium", "long_haul"}
-        if v not in allowed:
-            raise ValueError(f"flight_range must be one of {sorted(allowed)}")
+            raise ValueError(f"deal_tier must be one of {sorted(allowed)}")
         return v
 
 
@@ -582,23 +573,19 @@ def update_preferences(user_id: str, req: PreferencesRequest, user: dict = Depen
         if ot not in VALID_OFFER_TYPES:
             raise HTTPException(status_code=400, detail=f"Invalid offer type. Valid: {VALID_OFFER_TYPES}")
 
-    # Free tier cannot filter on discounts >= 30 — silently floor to 29
-    # and signal the cap back to the client via `capped`.
+    # Free tier cannot choose "exceptional" tier — silently floor to "regular".
     caller_id = user.get("user_id") or user.get("sub")
     tier = _get_user_tier(caller_id)
-    capped = False
-    effective_min_discount = req.min_discount
-    if tier == "free" and effective_min_discount >= 30:
-        effective_min_discount = 29
-        capped = True
+    effective_deal_tier = req.deal_tier
+    if tier == "free" and effective_deal_tier == "exceptional":
+        effective_deal_tier = "regular"
 
     update_data = {
         "airport_codes": req.airport_codes,
         "offer_types": req.offer_types,
-        "min_discount": effective_min_discount,
         "max_budget": req.max_budget,
         "preferred_destinations": req.preferred_destinations or [],
-        "flight_range": req.flight_range,
+        "deal_tier": effective_deal_tier,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
