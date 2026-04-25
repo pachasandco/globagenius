@@ -439,64 +439,7 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* ── Deal Tier ── */}
-        <div className="mb-12">
-          <h2 className="text-xl font-semibold mb-1">Type d&apos;alertes</h2>
-          <p className="text-gray-400 text-sm mb-4">Choisissez le niveau de deal que vous souhaitez recevoir.</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {[
-              {
-                id: "regular",
-                icon: "✈️",
-                label: "Bons deals",
-                desc: isPremium ? "-30% à -50% · quelques alertes par semaine" : "-30% à -40% · quelques alertes par semaine",
-                locked: false,
-              },
-              {
-                id: "exceptional",
-                icon: "🔥",
-                label: "Deals exceptionnels",
-                desc: "-50% et plus · rare, réservation urgente",
-                locked: !isPremium,
-              },
-            ].map((opt) => (
-              <button
-                key={opt.id}
-                onClick={() => {
-                  if (opt.locked) return;
-                  setDealTier(opt.id);
-                }}
-                className="text-left p-4 rounded-xl border-2 transition-all relative"
-                style={{
-                  borderColor: dealTier === opt.id ? "#FF6B47" : "#e5e7eb",
-                  background: dealTier === opt.id ? "#FFF1EC" : opt.locked ? "#f9fafb" : "white",
-                  opacity: opt.locked ? 0.7 : 1,
-                  cursor: opt.locked ? "default" : "pointer",
-                }}
-              >
-                <div className="text-xl mb-1">{opt.icon}</div>
-                <div className="font-semibold text-sm text-[#0A1F3D] flex items-center gap-2">
-                  {opt.label}
-                  {opt.locked && <span className="text-xs font-normal text-[#FF6B47] bg-[#FFF1EC] px-2 py-0.5 rounded-full">Premium</span>}
-                </div>
-                <div className="text-xs text-gray-400 mt-0.5">{opt.desc}</div>
-                {dealTier === opt.id && (
-                  <div className="absolute top-3 right-3 w-4 h-4 rounded-full bg-[#FF6B47] flex items-center justify-center">
-                    <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                )}
-              </button>
-            ))}
-          </div>
-          {!isPremium && (
-            <div className="mt-3 bg-[#FFF1EC] border border-[#FF6B47] rounded-xl p-4 text-sm text-[#0A1F3D]/70">
-              💎 Les deals exceptionnels (-50% et plus) sont réservés aux membres premium.{" "}
-              <a href="/home" className="underline font-semibold">Passer à Premium →</a>
-            </div>
-          )}
-        </div>
+        {/* Deal Tier — hidden until feature is re-enabled */}
 
         {/* Save Button */}
         <button
