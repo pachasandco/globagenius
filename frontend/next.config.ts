@@ -25,20 +25,6 @@ const nextConfig: NextConfig = {
     ];
   },
   async headers() {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "https://globagenius-production-b887.up.railway.app";
-    const csp = [
-      "default-src 'self'",
-      `connect-src 'self' ${apiUrl} https://api.stripe.com`,
-      "script-src 'self' 'unsafe-inline' https://js.stripe.com",
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: https://images.unsplash.com",
-      "frame-src https://js.stripe.com https://hooks.stripe.com",
-      "font-src 'self'",
-      "object-src 'none'",
-      "base-uri 'self'",
-      "form-action 'self'",
-    ].join("; ");
-
     return [
       {
         source: "/(.*)",
@@ -48,7 +34,6 @@ const nextConfig: NextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
-          { key: "Content-Security-Policy", value: csp },
         ],
       },
     ];
