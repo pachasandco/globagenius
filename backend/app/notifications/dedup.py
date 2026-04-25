@@ -1,33 +1,34 @@
 """Deal-level deduplication helper for Telegram alerts."""
 import hashlib
 
-# After an alert is sent, suppress re-alerts for the same itinerary for
-# this many hours — regardless of source (Tier 1 or Travelpayouts) or
-# minor price variations. Covers the full Travelpayouts refresh cycle (2h)
-# plus a safety margin.
-ALERT_INHIBIT_HOURS = 6
+# One alert per (user, destination, price_bucket) per week.
+# Same destination at the same price level won't re-alert for 7 days.
+# If the price drops to a new bucket (every 50€), it's a new deal → new alert.
+ALERT_INHIBIT_HOURS = 168  # 7 days
+
+PRICE_BUCKET_SIZE = 50  # €
+
+
+def _price_bucket(price: float) -> int:
+    """Round price down to nearest 50€ bucket. 85€ → 50, 130€ → 100."""
+    return int(price // PRICE_BUCKET_SIZE) * PRICE_BUCKET_SIZE
 
 
 def compute_alert_key(
     user_id: str,
     origin: str,
     destination: str,
-    departure_date: str,
-    return_date: str,
-    price: float = 0,  # kept for backward compat but ignored in key
+    departure_date: str = "",
+    return_date: str = "",
+    price: float = 0,
 ) -> str:
-    """Compute a stable 32-char key identifying a unique deal for a user.
+    """Compute a stable dedup key for a (user, destination, price_bucket) tuple.
 
-    Keyed on (user, destination, departure_date, return_date) — origin is
-    intentionally excluded so that CDG→FCO and ORY→FCO on the same dates
-    share the same key. Whichever is dispatched first (cheapest) blocks the
-    duplicate from the other airport within ALERT_INHIBIT_HOURS.
-
-    Price is also excluded so that minor fluctuations between scrapes don't
-    generate duplicates.
-
-    Dedup window: ALERT_INHIBIT_HOURS (6h). After that, the deal is
-    considered stale enough that a renewed alert is legitimate.
+    Keyed on (user, destination, price_bucket) — origin and dates excluded.
+    All date variants of CDG→FCO at ~85€ share one key → one alert per week.
+    If the price drops from 85€ (bucket 50) to 45€ (bucket 0), that's a new
+    bucket → new alert fires immediately regardless of the 7-day window.
     """
-    raw = f"{user_id}|{destination}|{departure_date}|{return_date}"
+    bucket = _price_bucket(price)
+    raw = f"{user_id}|{destination}|{bucket}"
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
