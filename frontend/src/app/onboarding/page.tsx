@@ -166,62 +166,12 @@ export default function OnboardingPage() {
             </div>
 
             <button
-              onClick={() => setStep(2)}
+              onClick={() => setStep(3)}
               disabled={airports.length === 0}
               className="w-full bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold py-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Continuer ({airports.length} aeroport{airports.length !== 1 ? "s" : ""})
             </button>
-          </div>
-        )}
-
-        {/* ── STEP 2: Offer types ── */}
-        {step === 2 && (
-          <div>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-center mb-2">
-              Types d'offres
-            </h2>
-            <p className="text-gray-400 text-sm text-center mb-6">
-              Quels types de deals souhaitez-vous recevoir ?
-            </p>
-
-            <div className="space-y-3 mb-8">
-              {OFFER_TYPES.map((ot) => (
-                <button
-                  key={ot.id}
-                  onClick={() => toggleOfferType(ot.id)}
-                  className="w-full text-left p-4 rounded-xl border-2 flex items-center gap-3 transition-all"
-                  style={{
-                    borderColor: offerTypes.includes(ot.id) ? "#06b6d4" : "#e5e7eb",
-                    background: offerTypes.includes(ot.id) ? "#ecfeff" : "white",
-                  }}
-                >
-                  <span className="text-xl">{ot.icon}</span>
-                  <div>
-                    <div className="font-semibold text-sm">{ot.label}</div>
-                    <div className="text-xs text-gray-400">{ot.desc}</div>
-                  </div>
-                  <div className="ml-auto">
-                    {offerTypes.includes(ot.id) && (
-                      <div className="w-5 h-5 rounded-full bg-cyan-500 flex items-center justify-center">
-                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                        </svg>
-                      </div>
-                    )}
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            <div className="flex gap-3">
-              <button onClick={() => setStep(1)} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-500 font-medium hover:bg-gray-50 transition-colors">
-                Retour
-              </button>
-              <button onClick={() => setStep(3)} className="flex-1 bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold py-3 rounded-xl transition-all">
-                Continuer
-              </button>
-            </div>
           </div>
         )}
 
@@ -303,7 +253,7 @@ export default function OnboardingPage() {
             )}
 
             <div className="flex gap-3">
-              <button onClick={() => setStep(2)} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-500 font-medium hover:bg-gray-50 transition-colors">
+              <button onClick={() => setStep(1)} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-500 font-medium hover:bg-gray-50 transition-colors">
                 Retour
               </button>
               <button
