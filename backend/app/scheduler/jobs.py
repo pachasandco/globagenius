@@ -28,6 +28,7 @@ from app.notifications.telegram import (
     send_admin_alert,
 )
 from app.api.routes import _get_user_tier
+from app.scraper.scraper_health_agent import run_scraper_health_check
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,15 @@ def get_scheduler_jobs() -> list[dict]:
             "func": job_sync_stripe_subscriptions,
             "trigger": "cron",
             "hour": 6,
+        },
+        # ── SCRAPER HEALTH : 1x/jour à 7h ──
+        # Vérifie les APIs Transavia et Vueling. Si une API morte revient ou
+        # qu'une nouvelle URL est trouvée → réactive le scraper automatiquement.
+        {
+            "id": "check_scraper_health",
+            "func": job_check_scraper_health,
+            "trigger": "cron",
+            "hour": 7,
         },
     ]
 
@@ -1169,3 +1179,19 @@ async def job_sync_stripe_subscriptions():
             errors += 1
 
     logger.info(f"Stripe sync complete: {updated} renewed, {expired} expired, {errors} errors")
+
+
+async def job_check_scraper_health():
+    """Daily scraper API health check.
+
+    Probes Transavia and Vueling endpoints. If an API is dead, searches for
+    a new endpoint. If found, patches the scraper file and re-enables it.
+    If not found, keeps it disabled. If a previously dead API comes back,
+    re-enables it automatically.
+    """
+    logger.info("Starting scraper health check")
+    try:
+        await run_scraper_health_check()
+    except Exception as e:
+        logger.error(f"Scraper health check failed: {e}")
+    logger.info("Scraper health check complete")
