@@ -626,7 +626,7 @@ def update_preferences(user_id: str, req: PreferencesRequest, user: dict = Depen
                 except Exception:
                     pass  # Silent fail
 
-    return {**resp.data[0], "capped": capped}
+    return resp.data[0]
 
 
 @router.put("/api/users/{user_id}/email")
