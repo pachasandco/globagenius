@@ -31,6 +31,7 @@ export default function OnboardingPage() {
   const [isPremium, setIsPremium] = useState(false);
   const [telegramLink, setTelegramLink] = useState("");
   const [loading, setLoading] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [userId, setUserId] = useState("");
   const router = useRouter();
 
@@ -78,16 +79,16 @@ export default function OnboardingPage() {
 
   async function handleSavePreferences() {
     setLoading(true);
+    setSaveError("");
     try {
       await updatePreferences(userId, {
         airport_codes: airports.length > 0 ? airports : ["CDG"],
         offer_types: offerTypes.length > 0 ? offerTypes : ["flight"],
         deal_tier: dealTier,
       });
-      setStep(4);
+      setStep(3);
     } catch {
-      // Continue anyway
-      setStep(4);
+      setSaveError("Erreur lors de la sauvegarde. Vérifiez votre connexion et réessayez.");
     } finally {
       setLoading(false);
     }
@@ -99,7 +100,7 @@ export default function OnboardingPage() {
       const res = await generateTelegramLink(userId);
       setTelegramLink(res.link);
     } catch {
-      setTelegramLink("https://t.me/GlobeGeniusBot");
+      setTelegramLink("https://t.me/Globegenius_bot");
     } finally {
       setLoading(false);
     }
@@ -113,7 +114,7 @@ export default function OnboardingPage() {
           Globe<span className="text-[#FF6B47]">Genius</span>
         </Link>
 
-        {/* Progress */}
+        {/* Progress — 3 steps: airports / alerts / telegram */}
         <div className="flex gap-2 mb-8 max-w-xs mx-auto">
           {[1, 2, 3].map((s) => (
             <div
@@ -166,7 +167,7 @@ export default function OnboardingPage() {
             </div>
 
             <button
-              onClick={() => setStep(3)}
+              onClick={() => setStep(2)}
               disabled={airports.length === 0}
               className="w-full bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold py-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -175,8 +176,8 @@ export default function OnboardingPage() {
           </div>
         )}
 
-        {/* ── STEP 3: Min Discount ── */}
-        {step === 3 && (
+        {/* ── STEP 2: Deal tier ── */}
+        {step === 2 && (
           <div>
             <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-center mb-2">
               Type d&apos;alertes
@@ -252,6 +253,12 @@ export default function OnboardingPage() {
               </div>
             )}
 
+            {saveError && (
+              <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+                {saveError}
+              </div>
+            )}
+
             <div className="flex gap-3">
               <button onClick={() => setStep(1)} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-500 font-medium hover:bg-gray-50 transition-colors">
                 Retour
@@ -267,8 +274,8 @@ export default function OnboardingPage() {
           </div>
         )}
 
-        {/* ── STEP 4: Telegram (3 visually) ── */}
-        {step === 4 && (
+        {/* ── STEP 3: Telegram ── */}
+        {step === 3 && (
           <div className="text-center">
             <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl mb-2">
               Connecter Telegram

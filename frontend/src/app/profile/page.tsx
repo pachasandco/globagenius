@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getPreferences, updatePreferences, changePassword } from "@/lib/api";
+import { getPreferences, updatePreferences, changePassword, clearSessionCookie } from "@/lib/api";
 
 const AIRPORTS = [
   { code: "CDG", label: "Paris Charles de Gaulle" },
@@ -183,6 +183,7 @@ export default function ProfilePage() {
         throw new Error(err.detail || "Erreur lors de la suppression");
       }
       localStorage.clear();
+      clearSessionCookie();
       router.push("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur lors de la suppression du compte");
@@ -354,8 +355,8 @@ export default function ProfilePage() {
                   });
                   const data = await res.json();
                   if (data.portal_url) window.location.href = data.portal_url;
-                } catch (err) {
-                  console.error("Erreur:", err);
+                } catch {
+                  /* portal redirect failed silently */
                 }
               }}
               className="px-6 py-3 bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold rounded-lg transition-colors"

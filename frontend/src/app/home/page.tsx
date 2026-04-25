@@ -3,8 +3,9 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getFlightDeals, getPipelineStatus, type FlightDeal, type PipelineStatus } from "@/lib/api";
+import { getFlightDeals, getPipelineStatus, clearSessionCookie, type FlightDeal, type PipelineStatus } from "@/lib/api";
 import { initSession } from "@/lib/session";
+import { FlightDealCard } from "@/components/FlightDealCard";
 
 interface PlanDay {
   day: number;
@@ -42,103 +43,8 @@ interface Article {
   tags: string[];
 }
 
-function FlightDealCard({ deal }: { deal: FlightDeal }) {
-  const days = deal.trip_duration_days ?? Math.round(
-    (new Date(deal.return_date).getTime() - new Date(deal.departure_date).getTime()) / 86400000
-  );
-  const dep = new Date(deal.departure_date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
-  const ret = new Date(deal.return_date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
-  const isPremium = deal.tier === "premium";
-  const discount = Math.round(deal.discount_pct);
-  const stopsLabel = deal.stops === 0 ? "Direct" : `${deal.stops} escale${deal.stops > 1 ? "s" : ""}`;
-  const locked = deal.locked || deal.price === null || deal.baseline_price === null;
-  const saving = !locked && deal.baseline_price !== null && deal.price !== null
-    ? Math.round(deal.baseline_price - deal.price)
-    : null;
-
-  return (
-    <div className="relative bg-[#FFFEF9] rounded-2xl border border-[#F0E6D8] hover:border-[#FF6B47] shadow-[0_4px_16px_rgba(10,31,61,0.04)] hover:shadow-[0_12px_32px_rgba(255,107,71,0.12)] transition-all duration-300 overflow-visible p-5 pt-7">
-      {/* Savings sticker coral */}
-      <div
-        className="absolute -top-3 -right-3 w-14 h-14 rounded-full bg-[#FF6B47] text-white flex items-center justify-center font-bold text-sm shadow-[0_8px_20px_rgba(255,107,71,0.35)] z-10"
-        style={{ transform: "rotate(-8deg)" }}
-      >
-        -{discount}%
-      </div>
-
-      {/* Premium badge if applicable */}
-      {isPremium && (
-        <span className="inline-block bg-[#FFC940] text-[#0A1F3D] text-[10px] font-bold px-2 py-0.5 rounded-full mb-2">
-          PREMIUM
-        </span>
-      )}
-
-      {/* Route in DM Serif */}
-      <div className="font-[family-name:var(--font-dm-serif)] text-xl md:text-2xl text-[#0A1F3D] mb-1 pr-12">
-        {deal.origin} → {deal.destination}
-      </div>
-
-      {/* Dates + days */}
-      <div className="text-sm text-[#0A1F3D]/60 mb-3">
-        {dep} – {ret} · {days} jour{days > 1 ? "s" : ""}
-      </div>
-
-      {/* Chips row : airline + stops */}
-      <div className="flex flex-wrap items-center gap-1.5 mb-4">
-        {deal.airline && (
-          <span className="bg-[#F0E6D8]/60 text-[#0A1F3D] text-xs px-2.5 py-1 rounded-full">
-            ✈️ {deal.airline}
-          </span>
-        )}
-        <span className="bg-[#F0E6D8]/60 text-[#0A1F3D] text-xs px-2.5 py-1 rounded-full">
-          {stopsLabel}
-        </span>
-        <span className="bg-[#ECF4FF] text-[#0088cc] text-xs px-2.5 py-1 rounded-full font-medium">
-          👥 {Math.floor(Math.random() * 12) + 3} réservent
-        </span>
-      </div>
-
-      {/* Price hierarchy */}
-      {locked ? (
-        <div className="flex items-baseline gap-2 select-none mb-3">
-          <span className="text-3xl font-bold blur-sm text-[#0A1F3D]/30">••• €</span>
-          <span className="text-sm text-[#0A1F3D]/30 line-through blur-sm">••• €</span>
-        </div>
-      ) : (
-        <div className="flex items-baseline gap-2 mb-1">
-          <span className="text-3xl font-bold text-[#0A1F3D]">{Math.round(deal.price as number)} €</span>
-          <span className="text-sm text-[#0A1F3D]/40 line-through">{Math.round(deal.baseline_price as number)} €</span>
-        </div>
-      )}
-
-      {saving !== null && (
-        <div className="text-xs text-[#16A34A] font-semibold mb-3">
-          ✨ Économie de {saving} €
-        </div>
-      )}
-
-      {/* CTA footer */}
-      {locked ? (
-        <div className="bg-[#FFF1EC] border border-[#FF6B47]/30 rounded-xl px-3 py-2.5 text-xs text-[#E55A38] font-medium text-center">
-          💎 {isPremium ? "Réservé aux abonnés Premium" : "Connectez-vous pour débloquer ce deal"}
-        </div>
-      ) : deal.source_url ? (
-        <a
-          href={deal.source_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block w-full text-center bg-[#FF6B47] hover:bg-[#E55A38] text-white text-sm font-semibold py-3 rounded-full transition-all shadow-[0_4px_12px_rgba(255,107,71,0.2)] hover:shadow-[0_8px_20px_rgba(255,107,71,0.3)]"
-        >
-          Voir l&apos;offre →
-        </a>
-      ) : null}
-    </div>
-  );
-}
-
 export default function HomePage() {
-  const [myDeals, setMyDeals] = useState<FlightDeal[]>([]);
-  const [lockedDeals, setLockedDeals] = useState<FlightDeal[]>([]);
+  const [allDeals, setAllDeals] = useState<FlightDeal[]>([]);
   const [, setStatus] = useState<PipelineStatus | null>(null);
   const [, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
@@ -164,20 +70,7 @@ export default function HomePage() {
     const sessionCleanup = initSession();
 
     async function load() {
-      // Load user preferences
-      try {
-        const userId = localStorage.getItem("gg_user_id");
-        if (userId) {
-          const { getPreferences } = await import("@/lib/api");
-          const prefs = await getPreferences(userId);
-          console.log("Preferences loaded:", prefs);
-        }
-      } catch (err) {
-        console.error("Failed to load preferences:", err);
-      }
-
-      // Check premium status first so we know which deals to fetch
-      let isPremiumRef = false;
+      // Check premium status
       try {
         const token = localStorage.getItem("gg_token");
         if (token) {
@@ -185,33 +78,24 @@ export default function HomePage() {
             headers: { Authorization: `Bearer ${token}` },
           });
           const premData = await premStatus.json();
-          isPremiumRef = premData.is_premium || false;
-          setIsPremium(isPremiumRef);
+          setIsPremium(premData.is_premium || false);
         }
       } catch { /* ignore */ }
 
-      // Fetch deals based on premium status
-      const plan = isPremiumRef ? "premium" : "free";
+      // Single fetch — backend returns all deals (≥50%) with server-side
+      // quota logic: free users get up to 3 unlocked, rest masked.
       try {
         const [dealsRes, statusRes] = await Promise.allSettled([
-          getFlightDeals(plan, 50),
+          getFlightDeals("free", 50),
           getPipelineStatus(),
         ]);
         if (dealsRes.status === "fulfilled") {
-          setMyDeals(dealsRes.value.items || []);
+          setAllDeals(dealsRes.value.items || []);
         }
         if (statusRes.status === "fulfilled") {
           setStatus(statusRes.value as PipelineStatus);
         }
       } catch { /* ignore */ }
-
-      // If free user, also fetch 3 locked premium deals for teaser
-      if (!isPremiumRef) {
-        try {
-          const lockedRes = await getFlightDeals("premium", 3);
-          setLockedDeals(lockedRes.items || []);
-        } catch { /* ignore */ }
-      }
 
       // Load articles
       try {
@@ -271,11 +155,9 @@ export default function HomePage() {
       if (data.checkout_url) {
         window.location.href = data.checkout_url;
       } else {
-        console.error("Stripe checkout error:", data);
         alert(data.detail || "Erreur lors de la création du paiement. Réessayez.");
       }
-    } catch (e) {
-      console.error("Checkout failed:", e);
+    } catch {
       alert("Erreur de connexion au serveur. Réessayez.");
     }
   }
@@ -284,14 +166,20 @@ export default function HomePage() {
     localStorage.removeItem("gg_user_id");
     localStorage.removeItem("gg_email");
     localStorage.removeItem("gg_token");
+    clearSessionCookie();
     router.push("/");
   }
 
-  const filteredByDest = destFilter === "all" ? myDeals : myDeals.filter(d => d.destination === destFilter);
+  const unlockedDeals = allDeals.filter(d => !d.locked);
+  const lockedDeals = allDeals.filter(d => d.locked);
+
+  const filteredUnlocked = destFilter === "all" ? unlockedDeals : unlockedDeals.filter(d => d.destination === destFilter);
+  const filteredLocked = destFilter === "all" ? lockedDeals : lockedDeals.filter(d => d.destination === destFilter);
+
   const INITIAL_DEALS_COUNT = 6;
-  const deals = showAllDeals ? filteredByDest : filteredByDest.slice(0, INITIAL_DEALS_COUNT);
-  const hasMoreDeals = filteredByDest.length > INITIAL_DEALS_COUNT;
-  const availableDestinations = Array.from(new Set(myDeals.map(d => d.destination)));
+  const visibleUnlocked = showAllDeals ? filteredUnlocked : filteredUnlocked.slice(0, INITIAL_DEALS_COUNT);
+  const hasMoreDeals = filteredUnlocked.length > INITIAL_DEALS_COUNT;
+  const availableDestinations = Array.from(new Set(allDeals.map(d => d.destination)));
 
   return (
     <div className="min-h-screen bg-[#FFF8F0]">
@@ -326,7 +214,7 @@ export default function HomePage() {
               </div>
               <h3 className="font-semibold mb-1">Un seul deal suffit à rembourser votre année</h3>
               <p className="text-sm text-[#0A1F3D]/70">
-                Tous les deals -30% et plus, erreurs de prix incluses. Alertes Telegram instantanées.
+                Accès illimité à tous les deals ≥50%, sans quota hebdomadaire. Alertes Telegram instantanées.
                 <span className="font-semibold"> 29€/an</span> <span className="line-through text-[#0A1F3D]/40">59€</span> — soit 2,42€/mois.
                 <span className="block mt-1 text-xs text-[#16A34A]">✅ Satisfait ou remboursé 30 jours</span>
               </p>
@@ -349,7 +237,7 @@ export default function HomePage() {
 
           {loading && <div className="text-center py-12 text-gray-400">Chargement...</div>}
 
-          {!loading && deals.length === 0 && (
+          {!loading && allDeals.length === 0 && (
             <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center">
               <div className="text-4xl mb-3">🔍</div>
               <h3 className="font-semibold text-lg mb-2">Analyse en cours</h3>
@@ -363,7 +251,7 @@ export default function HomePage() {
             </div>
           )}
 
-          {!loading && deals.length > 0 && (<>
+          {!loading && allDeals.length > 0 && (<>
             {/* Destination filter pills */}
             {availableDestinations.length > 1 && (
               <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
@@ -395,20 +283,23 @@ export default function HomePage() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
-              {deals.map((deal) => (
-                <FlightDealCard key={deal.id} deal={deal} />
-              ))}
-            </div>
+            {/* Unlocked deals */}
+            {visibleUnlocked.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
+                {visibleUnlocked.map((deal) => (
+                  <FlightDealCard key={deal.id} deal={deal} />
+                ))}
+              </div>
+            )}
 
-            {/* Show more button */}
+            {/* Show more / less */}
             {!showAllDeals && hasMoreDeals && (
               <div className="text-center mt-8">
                 <button
                   onClick={() => setShowAllDeals(true)}
                   className="px-8 py-3 rounded-full border-2 border-[#FF6B47] text-[#FF6B47] font-semibold text-sm hover:bg-[#FF6B47] hover:text-white transition-all"
                 >
-                  Voir plus de deals ({filteredByDest.length - INITIAL_DEALS_COUNT} restants)
+                  Voir plus de deals ({filteredUnlocked.length - INITIAL_DEALS_COUNT} restants)
                 </button>
               </div>
             )}
@@ -423,28 +314,34 @@ export default function HomePage() {
               </div>
             )}
 
-            {/* Locked premium deals teaser */}
-            {!isPremium && lockedDeals.length > 0 && (
+            {/* Masked deals — quota atteinte ou >55% pour les free */}
+            {!isPremium && filteredLocked.length > 0 && (
               <div className="mt-10">
                 <div className="flex items-center gap-3 mb-4">
-                  <h3 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#0A1F3D]">Deals Premium</h3>
-                  <span className="text-xs font-bold bg-[#FF6B47] text-white px-2.5 py-0.5 rounded-full">🔒 Réservé</span>
+                  <h3 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#0A1F3D]">
+                    {unlockedDeals.length === 0 ? "Deals de la semaine" : "Deals supplémentaires"}
+                  </h3>
+                  <span className="text-xs font-bold bg-[#FF6B47] text-white px-2.5 py-0.5 rounded-full">🔒 Premium</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
-                  {lockedDeals.map((deal) => (
+                  {filteredLocked.map((deal) => (
                     <div key={deal.id} className="relative">
-                      <div className="blur-[6px] pointer-events-none opacity-60">
+                      <div className="blur-[3px] pointer-events-none select-none opacity-50">
                         <FlightDealCard deal={deal} />
                       </div>
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="bg-[#FFFEF9] border border-[#FF6B47] rounded-2xl px-6 py-4 text-center shadow-xl">
-                          <div className="text-sm font-semibold text-[#0A1F3D] mb-1">-{Math.round(deal.discount_pct)}% détecté</div>
-                          <div className="text-xs text-[#0A1F3D]/60 mb-3">Débloquez avec Premium</div>
+                        <div className="bg-white/95 border border-[#FF6B47]/40 rounded-2xl px-5 py-4 text-center shadow-lg max-w-[200px]">
+                          <div className="text-lg font-bold text-[#FF6B47] mb-0.5">-{Math.round(deal.discount_pct)}%</div>
+                          <div className="text-xs text-[#0A1F3D]/70 mb-3 leading-snug">
+                            {unlockedDeals.length === 0
+                              ? "Limite hebdomadaire atteinte"
+                              : "Réservé aux membres Premium"}
+                          </div>
                           <button
                             onClick={handleCheckout}
                             className="bg-[#FF6B47] hover:bg-[#E55A38] text-white text-xs font-semibold px-4 py-2 rounded-full transition-all"
                           >
-                            29€/an →
+                            Débloquer — 29€/an
                           </button>
                         </div>
                       </div>

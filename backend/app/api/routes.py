@@ -28,10 +28,29 @@ EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 _rate_limits: dict[str, list[float]] = {}
 RATE_LIMIT_WINDOW = 60  # seconds
 RATE_LIMIT_MAX = 10  # max requests per window
+_RATE_LIMIT_PURGE_INTERVAL = 300  # purge stale keys every 5 minutes
+_rate_limit_last_purge: float = 0.0
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 def _check_rate_limit(key: str):
+    global _rate_limit_last_purge
     now = datetime.now(timezone.utc).timestamp()
+
+    # Periodically purge keys with no recent activity to prevent unbounded growth
+    if now - _rate_limit_last_purge > _RATE_LIMIT_PURGE_INTERVAL:
+        cutoff = now - RATE_LIMIT_WINDOW
+        stale = [k for k, ts in _rate_limits.items() if not ts or max(ts) < cutoff]
+        for k in stale:
+            del _rate_limits[k]
+        _rate_limit_last_purge = now
+
     if key not in _rate_limits:
         _rate_limits[key] = []
     _rate_limits[key] = [t for t in _rate_limits[key] if t > now - RATE_LIMIT_WINDOW]
@@ -151,6 +170,11 @@ def _get_user_tier(user_id: str | None) -> str:
     except Exception:
         pass
     return "free"
+
+
+async def _get_user_tier_async(user_id: str | None) -> str:
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _get_user_tier, user_id)
 
 
 def _require_admin(request: Request):
@@ -320,65 +344,47 @@ def debug_data(request: Request):
         return {"error": str(e)}
 
 
+GLOBAL_MIN_DISCOUNT = 50   # deals below this are never shown
+FREE_TIER_WEEKLY_LIMIT = 3  # full unlocked deals per week for free users
+
+
 @router.get("/api/packages")
 def list_packages(
     min_score: int = 0,
-    limit: int = 20,
+    limit: int = 50,
     plan: str = "free",
     min_discount: int = 0,
     user: dict | None = Depends(get_optional_user),
 ):
-    """List deals with paywall on sensitive fields.
+    """Return deals aligned with Telegram dispatch rules.
 
-    free  = qualified flight items 20-29% (vol seul, tier "free")
-    premium = qualified flight items 30%+ (vol seul, tier "premium")
-
-    Sensitive fields (price, baseline_price, source_url) are nullified
-    server-side based on the caller's auth state:
-
-    - Anonymous (no JWT)         → all fields nullified for all deals
-    - Authenticated, non-premium → free deals visible in full,
-                                   premium deals masked
-    - Authenticated, premium     → all fields visible
-
-    Non-sensitive fields (origin, destination, dates, airline, stops,
-    discount_pct, tier, ...) are always returned so the UI can show a
-    visible-but-locked card with a CTA to upgrade."""
+    All deals: ≥50% discount only.
+    Premium: all deals unlocked, no weekly cap.
+    Free authenticated: up to 3 unlocked per rolling 7-day window
+                        (same deals as Telegram), rest shown masked.
+    Anonymous: all deals masked.
+    """
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
-    if plan == "premium":
-        plan_floor = 30
-        discount_filter = ("gte", 30)
-    else:
-        plan_floor = 20
-        discount_filter = ("range", 20, 30)  # 20 <= d < 30
+    effective_floor = max(min_discount, GLOBAL_MIN_DISCOUNT)
 
-    # A caller-supplied min_discount raises the floor (but never lowers it).
-    effective_floor = max(min_discount, plan_floor)
-
-    query = (
+    qi_resp = (
         db.table("qualified_items").select("*")
         .eq("status", "active")
         .eq("type", "flight")
+        .gte("discount_pct", effective_floor)
         .gte("score", min_score)
+        .order("score", desc=True)
+        .limit(limit * 3)
+        .execute()
     )
-    if discount_filter[0] == "gte":
-        query = query.gte("discount_pct", effective_floor)
-    elif effective_floor >= discount_filter[2]:
-        # Caller raised the floor past the free-tier ceiling → drop the
-        # upper bound and behave like a plain gte(effective_floor).
-        query = query.gte("discount_pct", effective_floor)
-    else:
-        query = query.gte("discount_pct", effective_floor).lt("discount_pct", discount_filter[2])
-
-    qi_resp = query.order("score", desc=True).limit(limit * 3).execute()
     qualified = qi_resp.data or []
 
     if not qualified:
         return {"items": [], "plan": plan}
 
-    # Fetch raw_flights in one round-trip by item_id
+    # Fetch raw_flights in one round-trip
     item_ids = [q["item_id"] for q in qualified if q.get("item_id")]
     flights_by_id: dict[str, dict] = {}
     if item_ids:
@@ -391,36 +397,61 @@ def list_packages(
         for f in (rf_resp.data or []):
             flights_by_id[f["id"]] = f
 
-    is_authenticated = user is not None
     is_premium = _is_premium_user(user)
+    user_id = (user.get("sub") or user.get("user_id")) if user else None
 
-    # Dedup: same flight (origin+dest+dates) can appear multiple times
-    # across scrape runs. Keep the highest-score entry per route+dates.
+    # For free users: count how many deals they've already received this week
+    # via Telegram (sent_alerts) — the homepage quota mirrors Telegram's.
+    free_weekly_used = 0
+    if user_id and not is_premium:
+        week_start = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        try:
+            wk_resp = (
+                db.table("sent_alerts")
+                .select("alert_key", count="exact")
+                .eq("user_id", user_id)
+                .gte("created_at", week_start)
+                .execute()
+            )
+            free_weekly_used = wk_resp.count or 0
+        except Exception:
+            pass
+
+    # Dedup by route+dates (same flight from multiple scrape runs)
     seen_flights: set[str] = set()
     items = []
+    free_unlocked_this_request = 0  # unlocked deals served in this response
+
     for qi in qualified:
         flight = flights_by_id.get(qi.get("item_id")) or {}
-        dedup_key = f"{flight.get('origin','')}-{flight.get('destination','')}-{flight.get('departure_date','')}-{flight.get('return_date','')}"
+        dedup_key = (
+            f"{flight.get('origin','')}-{flight.get('destination','')}"
+            f"-{flight.get('departure_date','')}-{flight.get('return_date','')}"
+        )
         if dedup_key in seen_flights:
             continue
         seen_flights.add(dedup_key)
-        tier = qi.get("tier", "free")
 
-        # Decide whether sensitive fields are visible for this deal
         if is_premium:
             unlocked = True
-        elif is_authenticated and tier == "free":
-            unlocked = True
+        elif user_id:
+            # Free user: allow up to FREE_TIER_WEEKLY_LIMIT unlocked deals
+            # across both Telegram and the homepage this week.
+            remaining = FREE_TIER_WEEKLY_LIMIT - free_weekly_used - free_unlocked_this_request
+            if remaining > 0:
+                unlocked = True
+                free_unlocked_this_request += 1
+            else:
+                unlocked = False
         else:
             unlocked = False
 
         items.append({
             "id": qi["id"],
-            "tier": tier,
+            "tier": qi.get("tier", "free"),
             "discount_pct": qi["discount_pct"],
             "score": qi["score"],
             "created_at": qi["created_at"],
-            # Always-visible enrichment
             "origin": flight.get("origin", ""),
             "destination": flight.get("destination", ""),
             "departure_date": flight.get("departure_date", ""),
@@ -429,18 +460,17 @@ def list_packages(
             "stops": flight.get("stops", 0),
             "trip_duration_days": flight.get("trip_duration_days"),
             "duration_minutes": flight.get("duration_minutes"),
-            # Sensitive fields — nullified when locked
             "price": qi["price"] if unlocked else None,
             "baseline_price": qi["baseline_price"] if unlocked else None,
             "source_url": flight.get("source_url", "") if unlocked else None,
             "locked": not unlocked,
         })
 
-    return {"items": items[:limit], "plan": plan}
+    return {"items": items[:limit], "plan": "premium" if is_premium else "free"}
 
 
 @router.get("/api/qualified-items")
-def list_qualified_items(type_filter: str = "", limit: int = 20):
+def list_qualified_items(type_filter: str = "", limit: int = 20, user: dict = Depends(get_current_user)):
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
@@ -481,7 +511,7 @@ async def trigger_job(job_name: str, request: Request):
 
 @router.post("/api/auth/signup")
 async def signup(req: SignupRequest, request: Request):
-    _check_rate_limit(f"signup:{request.client.host if request.client else 'unknown'}")
+    _check_rate_limit(f"signup:{_client_ip(request)}")
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
@@ -529,7 +559,7 @@ class ChangePasswordRequest(BaseModel):
 
 @router.post("/api/auth/login")
 def login(req: LoginRequest, request: Request):
-    _check_rate_limit(f"login:{request.client.host if request.client else 'unknown'}")
+    _check_rate_limit(f"login:{_client_ip(request)}")
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
@@ -550,6 +580,8 @@ def login(req: LoginRequest, request: Request):
 
 @router.get("/api/users/{user_id}/preferences")
 def get_preferences(user_id: str, user: dict = Depends(get_current_user)):
+    if user.get("sub") != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
@@ -562,6 +594,8 @@ def get_preferences(user_id: str, user: dict = Depends(get_current_user)):
 
 @router.put("/api/users/{user_id}/preferences")
 def update_preferences(user_id: str, req: PreferencesRequest, user: dict = Depends(get_current_user)):
+    if user.get("sub") != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
@@ -631,6 +665,8 @@ def update_preferences(user_id: str, req: PreferencesRequest, user: dict = Depen
 
 @router.put("/api/users/{user_id}/email")
 def update_email(user_id: str, req: dict, user: dict = Depends(get_current_user)):
+    if user.get("sub") != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
@@ -653,6 +689,8 @@ def update_email(user_id: str, req: dict, user: dict = Depends(get_current_user)
 
 @router.put("/api/users/{user_id}/password")
 def update_password(user_id: str, req: ChangePasswordRequest, user: dict = Depends(get_current_user)):
+    if user.get("sub") != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
     _check_rate_limit(f"change_password:{user_id}")
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
@@ -680,6 +718,8 @@ def update_password(user_id: str, req: ChangePasswordRequest, user: dict = Depen
 @router.post("/api/users/{user_id}/telegram/generate-link")
 def generate_telegram_link(user_id: str, user: dict = Depends(get_current_user)):
     """Generate a unique link for user to connect their Telegram."""
+    if user.get("sub") != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
@@ -692,8 +732,6 @@ def generate_telegram_link(user_id: str, user: dict = Depends(get_current_user))
     }).eq("user_id", user_id).execute()
 
     bot_username = "Globegenius_bot"
-    # Update webhook URL to use custom domain
-    webhook_url = "https://globagenius-production-b887.up.railway.app/api/telegram/webhook"
     deep_link = f"https://t.me/{bot_username}?start={token}"
 
     return {"link": deep_link, "token": token}
@@ -704,7 +742,7 @@ async def setup_telegram_webhook(request: Request):
     _require_admin(request)
     """Set Telegram webhook to point to our API."""
     import httpx
-    webhook_url = "https://globagenius-production-b887.up.railway.app/api/telegram/webhook"
+    webhook_url = f"{settings.BACKEND_URL}/api/telegram/webhook"
     telegram_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/setWebhook"
 
     async with httpx.AsyncClient() as client:
@@ -713,7 +751,9 @@ async def setup_telegram_webhook(request: Request):
 
 
 @router.get("/api/users/{user_id}/telegram/status")
-def telegram_status(user_id: str):
+def telegram_status(user_id: str, user: dict = Depends(get_current_user)):
+    if user.get("sub") != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
@@ -798,8 +838,10 @@ class PlannerMessage(BaseModel):
 
 
 @router.post("/api/planner/{user_id}/chat")
-async def planner_chat(user_id: str, req: PlannerMessage):
+async def planner_chat(user_id: str, req: PlannerMessage, user: dict = Depends(get_current_user)):
     """Chat with the travel planner agent."""
+    if user.get("sub") != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
     from app.agents.rag import get_or_create_session
     session = get_or_create_session(user_id)
     response = session.chat(req.message)
@@ -807,8 +849,10 @@ async def planner_chat(user_id: str, req: PlannerMessage):
 
 
 @router.post("/api/planner/{user_id}/reset")
-async def planner_reset(user_id: str):
+async def planner_reset(user_id: str, user: dict = Depends(get_current_user)):
     """Reset the planner conversation."""
+    if user.get("sub") != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
     from app.agents.rag import reset_session
     reset_session(user_id)
     return {"status": "reset"}
@@ -848,8 +892,8 @@ async def create_checkout(user: dict = Depends(get_current_user)):
             payment_method_types=["card"],
             line_items=[{"price": settings.STRIPE_PRICE_ID, "quantity": 1}],
             discounts=[{"coupon": settings.STRIPE_COUPON_ID}] if settings.STRIPE_COUPON_ID else [],
-            success_url="https://globegenius.app/home?payment=success",
-            cancel_url="https://globegenius.app/home?payment=cancel",
+            success_url=f"{settings.FRONTEND_URL}/home?payment=success",
+            cancel_url=f"{settings.FRONTEND_URL}/home?payment=cancel",
         )
 
         return {"checkout_url": session.url, "session_id": session.id}
@@ -869,11 +913,11 @@ async def stripe_webhook(request: Request):
     payload = await request.body()
     sig = request.headers.get("stripe-signature", "")
 
+    if not settings.STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(status_code=400, detail="Webhook secret not configured")
+
     try:
-        if settings.STRIPE_WEBHOOK_SECRET:
-            event = stripe.Webhook.construct_event(payload, sig, settings.STRIPE_WEBHOOK_SECRET)
-        else:
-            event = json.loads(payload)
+        event = stripe.Webhook.construct_event(payload, sig, settings.STRIPE_WEBHOOK_SECRET)
     except Exception as e:
         logger.error(f"Stripe webhook verification failed: {e}")
         raise HTTPException(status_code=400, detail="Invalid webhook")
@@ -952,7 +996,7 @@ async def create_portal(user: dict = Depends(get_current_user)):
     try:
         session = stripe.billing_portal.Session.create(
             customer=customer_id,
-            return_url="https://globegenius.app/home",
+            return_url=f"{settings.FRONTEND_URL}/home",
         )
         return {"portal_url": session.url}
     except stripe.StripeError as e:
@@ -965,7 +1009,7 @@ async def subscription_status(user: dict = Depends(get_current_user)):
     Uses _get_user_tier as single source of truth (checks premium_grants
     first, then stripe_customer_id)."""
     user_id = user.get("sub") or user.get("user_id")
-    return {"is_premium": _get_user_tier(user_id) == "premium"}
+    return {"is_premium": await _get_user_tier_async(user_id) == "premium"}
 
 
 # ─── ADMIN CONSOLE ───
