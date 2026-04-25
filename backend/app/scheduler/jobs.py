@@ -14,7 +14,7 @@ from app.analysis.destination_updater import update_priority_destinations_in_db
 from app.analysis.anomaly_detector import detect_anomaly
 from app.analysis.scorer import compute_score
 from app.analysis.buckets import bucket_for_duration, stops_allowed
-from app.analysis.velocity_detector import save_snapshot, detect_velocity_drop, purge_old_snapshots
+from app.analysis.velocity_detector import save_snapshots_bulk, detect_velocity_drops_bulk, purge_old_snapshots
 from app.analysis.cross_airline_comparator import compare_cross_airline, format_competitor_context
 from app.scraper.reverify import reverify_flight_price
 from app.notifications.aviasales import build_aviasales_url
@@ -924,24 +924,30 @@ async def job_scrape_tier1():
     skipped = 0
     velocity_alerts: list[dict] = []
 
+    # --- Velocity detection: bulk snapshot insert + bulk drop detection ---
+    # Two DB round-trips total for the whole batch (was 2N previously).
+    save_snapshots_bulk(db, flights)
+    v_alerts = detect_velocity_drops_bulk(db, flights)
+    for v_alert in v_alerts:
+        # Find the matching flight dict to annotate it
+        for flight in flights:
+            dep = flight.get("departure_date") or flight.get("departure_at", "")[:10]
+            ret = flight.get("return_date") or flight.get("return_at", "")[:10]
+            if (
+                flight["origin"] == v_alert.origin
+                and flight["destination"] == v_alert.destination
+                and dep == v_alert.departure_date
+                and ret == v_alert.return_date
+            ):
+                velocity_alerts.append({
+                    **flight,
+                    "ai_alert_level": v_alert.alert_level,
+                    "velocity_drop_pct": v_alert.drop_pct,
+                    "velocity_reference_price": v_alert.reference_price,
+                })
+                break
+
     for flight in flights:
-        # --- Velocity detection: save snapshot BEFORE upsert ---
-        # We save every observed price, including duplicates, to track price
-        # movement over time. The upsert below deduplicates by hash (same price
-        # same dates = same hash), but snapshots are always appended.
-        save_snapshot(db, flight)
-
-        # --- Detect velocity drop vs last 2h ---
-        v_alert = detect_velocity_drop(db, flight)
-        if v_alert:
-            # Convert VelocityAlert to a flight dict the dispatch pipeline understands
-            velocity_alerts.append({
-                **flight,
-                "ai_alert_level": v_alert.alert_level,
-                "velocity_drop_pct": v_alert.drop_pct,
-                "velocity_reference_price": v_alert.reference_price,
-            })
-
         try:
             result = (
                 db.table("raw_flights")
