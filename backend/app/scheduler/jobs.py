@@ -461,15 +461,7 @@ async def _dispatch_grouped_flight_alerts(
     except Exception as e:
         logger.warning(f"Failed to fetch destination_wishlists: {e}")
 
-    # Airport priority within same city cluster: when a user tracks multiple
-    # airports from the same city, pick the preferred one for European routes
-    # so they don't receive the same deal twice.
-    # ORY > CDG > BVA (all serve Paris; ORY is cheaper for short/medium-haul)
-    PARIS_PRIORITY = ["ORY", "CDG", "BVA"]
-
-    # Filter: keep only users who track at least one of the origin airports.
-    # When a user tracks multiple Paris airports and the same deal exists from
-    # several of them, resolve to a single preferred origin.
+    # Filter: keep only users who track at least one of the origin airports
     subs = []
     for pref in all_prefs:
         if not isinstance(pref, dict):
@@ -480,16 +472,7 @@ async def _dispatch_grouped_flight_alerts(
         tracked_origins = [o for o in origins if o in airports]
         if not tracked_origins or not pref.get("telegram_chat_id"):
             continue
-
-        # Deduplicate within Paris cluster: keep only the highest-priority one
-        paris_matches = [o for o in PARIS_PRIORITY if o in tracked_origins]
-        non_paris = [o for o in tracked_origins if o not in PARIS_PRIORITY]
-        if paris_matches:
-            resolved = [paris_matches[0]] + non_paris
-        else:
-            resolved = tracked_origins
-
-        for origin in resolved:
+        for origin in tracked_origins:
             subs.append({
                 "user_id": pref.get("user_id"),
                 "chat_id": pref.get("telegram_chat_id"),
@@ -512,10 +495,11 @@ async def _dispatch_grouped_flight_alerts(
     # Track teasers already sent this run — at most once per user per run
     teaser_sent_quota: set[str] = set()
     teaser_sent_premium: set[str] = set()
-    # Track (user_id, destination) pairs already dispatched this run to avoid
-    # sending the same destination twice when a user tracks multiple origins
-    # (e.g. CDG + ORY both match a Paris→Rome flight).
-    dispatched_this_run: set[tuple[str, str]] = set()
+    # Track best price already dispatched per (user_id, destination, dep_date, ret_date)
+    # this run. When a user tracks multiple origins (CDG + ORY + BVA) and the same
+    # itinerary appears from several airports, only send the cheapest one.
+    # Key: (user_id, dest, dep_date, ret_date) → best price sent
+    dispatched_this_run: dict[tuple, float] = {}
 
     for sub in subs:
         if not isinstance(sub, dict):
@@ -752,10 +736,15 @@ async def _dispatch_grouped_flight_alerts(
                 if not offers:
                     continue
 
-                # Skip if we already sent this destination to this user this run
-                # (happens when a user tracks multiple origins, e.g. CDG + ORY)
-                run_key = (user_id or "", grp_dest)
-                if run_key in dispatched_this_run:
+                # Dedup across origins: for the same itinerary (dest + dates + price),
+                # only send the cheapest version. If CDG is cheaper than ORY for the
+                # same dates, CDG wins; if they're equal, the first one seen wins.
+                best_offer_price = min((o["price"] for o in offers), default=0)
+                best_dep = offers[0]["departure_date"] if offers else ""
+                best_ret = offers[0]["return_date"] if offers else ""
+                run_key = (user_id or "", grp_dest, best_dep, best_ret)
+                prev_best = dispatched_this_run.get(run_key)
+                if prev_best is not None and best_offer_price >= prev_best:
                     continue
 
                 origin_city = IATA_TO_CITY.get(grp_origin, grp_origin)
@@ -774,7 +763,7 @@ async def _dispatch_grouped_flight_alerts(
                     )
                     if success:
                         logger.info(f"✅ Sent {len(offers)} flight alerts to {origin_city}→{dest_city} for user {user_id}")
-                        dispatched_this_run.add(run_key)
+                        dispatched_this_run[run_key] = best_offer_price
                         if sub_tier == "free":
                             weekly_sent_count += 1
                 except Exception as e:
