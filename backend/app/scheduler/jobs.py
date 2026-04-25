@@ -710,6 +710,8 @@ async def _dispatch_grouped_flight_alerts(
                         "departure_date": flight["departure_date"],
                         "return_date": flight["return_date"],
                         "price": flight["price"],
+                        "baseline_price": anomaly.baseline_price,
+                        "origin": flight["origin"],
                         "discount_pct": anomaly.discount_pct,
                         "score": flight.get("score", 0),
                         "airline": flight.get("airline", ""),

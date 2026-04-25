@@ -18,14 +18,16 @@ def compute_alert_key(
 ) -> str:
     """Compute a stable 32-char key identifying a unique deal for a user.
 
-    Keyed on (user, origin, destination, departure_date, return_date) only —
-    price is intentionally excluded so that:
-    - A Tier 1 alert (89€ Ryanair) blocks the Travelpayouts re-alert (92€)
-      for the same itinerary sent 2h later.
-    - Minor price fluctuations between scrapes don't generate duplicates.
+    Keyed on (user, destination, departure_date, return_date) — origin is
+    intentionally excluded so that CDG→FCO and ORY→FCO on the same dates
+    share the same key. Whichever is dispatched first (cheapest) blocks the
+    duplicate from the other airport within ALERT_INHIBIT_HOURS.
+
+    Price is also excluded so that minor fluctuations between scrapes don't
+    generate duplicates.
 
     Dedup window: ALERT_INHIBIT_HOURS (6h). After that, the deal is
     considered stale enough that a renewed alert is legitimate.
     """
-    raw = f"{user_id}|{origin}|{destination}|{departure_date}|{return_date}"
+    raw = f"{user_id}|{destination}|{departure_date}|{return_date}"
     return hashlib.sha256(raw.encode()).hexdigest()[:32]

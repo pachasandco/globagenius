@@ -254,9 +254,15 @@ def format_grouped_flight_alerts(
 
     noun = "offre" if total == 1 else "offres"
 
-    # **NEW: Prominent header with destination + count + urgency**
+    # Origin airport in header (use first offer's origin if available)
+    origin_label = ""
+    if origin_iata:
+        first_offer_origin = (offers[0].get("origin") or origin_iata) if offers else origin_iata
+        origin_label = f"✈️ {first_offer_origin} → {destination_iata}\n"
+
     header = (
         f"🌍 {dest_city.upper()}\n"
+        f"{origin_label}"
         f"{urgency_badge} — {total} {noun}"
     )
 
@@ -292,9 +298,11 @@ def format_grouped_flight_alerts(
             else:
                 qual = "CLASSIQUE"
 
-            # **NEW: Isolated price line with € emphasis**
+            baseline = o.get("baseline_price")
+            baseline_str = f" (prix habituel {int(round(baseline))}€)" if baseline and baseline > price else ""
+
             lines.append(f"{dep_str} – {ret_str}  |  {duration}j")
-            lines.append(f"💰 {price}€  ·  -{disc}% ({qual})")
+            lines.append(f"💰 {price}€  ·  -{disc}% ({qual}){baseline_str}")
 
             # **NEW: Airline and scarcity info on separate line**
             if airline:
