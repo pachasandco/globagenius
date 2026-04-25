@@ -461,7 +461,15 @@ async def _dispatch_grouped_flight_alerts(
     except Exception as e:
         logger.warning(f"Failed to fetch destination_wishlists: {e}")
 
-    # Filter: keep only users who track at least one of the origin airports
+    # Airport priority within same city cluster: when a user tracks multiple
+    # airports from the same city, pick the preferred one for European routes
+    # so they don't receive the same deal twice.
+    # ORY > CDG > BVA (all serve Paris; ORY is cheaper for short/medium-haul)
+    PARIS_PRIORITY = ["ORY", "CDG", "BVA"]
+
+    # Filter: keep only users who track at least one of the origin airports.
+    # When a user tracks multiple Paris airports and the same deal exists from
+    # several of them, resolve to a single preferred origin.
     subs = []
     for pref in all_prefs:
         if not isinstance(pref, dict):
@@ -469,12 +477,19 @@ async def _dispatch_grouped_flight_alerts(
         airports = pref.get("airport_codes", [])
         if not isinstance(airports, list):
             continue
-        # Check if any origin is in this user's tracked airports
         tracked_origins = [o for o in origins if o in airports]
         if not tracked_origins or not pref.get("telegram_chat_id"):
             continue
-        # Create a "subscriber" entry for each tracked origin
-        for origin in tracked_origins:
+
+        # Deduplicate within Paris cluster: keep only the highest-priority one
+        paris_matches = [o for o in PARIS_PRIORITY if o in tracked_origins]
+        non_paris = [o for o in tracked_origins if o not in PARIS_PRIORITY]
+        if paris_matches:
+            resolved = [paris_matches[0]] + non_paris
+        else:
+            resolved = tracked_origins
+
+        for origin in resolved:
             subs.append({
                 "user_id": pref.get("user_id"),
                 "chat_id": pref.get("telegram_chat_id"),
