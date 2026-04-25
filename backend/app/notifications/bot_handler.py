@@ -1,8 +1,10 @@
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from fastapi import APIRouter, Request
 from app.db import db
 from app.config import settings
+
+PAUSE_SENTINEL = "2099-01-01T00:00:00+00:00"  # far-future = paused indefinitely
 
 logger = logging.getLogger(__name__)
 
@@ -85,28 +87,57 @@ async def _handle_callback(callback: dict):
 
 
 async def _pause_alerts(bot, callback_id: str, chat_id: int, user_id: str):
-    """Mute alerts for 24h and confirm to the user."""
-    pause_until = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    """Toggle alerts pause. If already paused → resume. Otherwise → pause indefinitely."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
     try:
-        db.table("user_preferences").update({
-            "alerts_paused_until": pause_until,
-        }).eq("user_id", user_id).execute()
-        await bot.answer_callback_query(
-            callback_query_id=callback_id,
-            text="Alertes mises en pause pour 24h ⏸",
-            show_alert=False,
-        )
-        await bot.send_message(
-            chat_id=chat_id,
-            text=(
-                "⏸ Alertes mises en pause pour 24h.\n\n"
-                "Tu recevras à nouveau des deals demain. "
-                f"Pour réactiver maintenant, va dans ton profil : "
-                f"{settings.FRONTEND_URL}/profile"
-            ),
-        )
+        row = db.table("user_preferences").select("alerts_paused_until").eq("user_id", user_id).execute()
+        current = (row.data[0].get("alerts_paused_until") if row.data else None)
+
+        already_paused = False
+        if current:
+            try:
+                exp = datetime.fromisoformat(current.replace("Z", "+00:00"))
+                already_paused = exp > datetime.now(timezone.utc)
+            except Exception:
+                pass
+
+        if already_paused:
+            # Resume
+            db.table("user_preferences").update({
+                "alerts_paused_until": None,
+            }).eq("user_id", user_id).execute()
+            await bot.answer_callback_query(
+                callback_query_id=callback_id,
+                text="Alertes réactivées ▶️",
+                show_alert=False,
+            )
+            await bot.send_message(
+                chat_id=chat_id,
+                text="▶️ Alertes réactivées. Tu recevras à nouveau les prochains deals.",
+            )
+        else:
+            # Pause indefinitely
+            db.table("user_preferences").update({
+                "alerts_paused_until": PAUSE_SENTINEL,
+            }).eq("user_id", user_id).execute()
+            await bot.answer_callback_query(
+                callback_query_id=callback_id,
+                text="Alertes mises en pause ⏸",
+                show_alert=False,
+            )
+            await bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    "⏸ Alertes mises en pause.\n\n"
+                    "Clique sur le bouton ⏸ Pause d'une alerte pour les réactiver quand tu veux."
+                ),
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("▶️ Reprendre les alertes", callback_data=f"pause:{user_id}"),
+                ]]),
+            )
     except Exception as e:
-        logger.warning(f"Failed to pause alerts for {user_id}: {e}")
+        logger.warning(f"Failed to toggle pause for {user_id}: {e}")
         try:
             await bot.answer_callback_query(callback_query_id=callback_id, text="Erreur, réessaie.")
         except Exception:
