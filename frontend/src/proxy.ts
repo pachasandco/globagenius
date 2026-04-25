@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 
 const PROTECTED = ["/home", "/profile", "/onboarding", "/dashboard"];
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://globagenius-production-b887.up.railway.app";
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "https://globagenius-production-b887.up.railway.app").trim();
 
 function buildCsp(): string {
   return [
