@@ -742,7 +742,7 @@ async def _dispatch_grouped_flight_alerts(
                         dest_city=dest_city,
                         destination_iata=grp_dest,
                         offers=offers,
-                        tier=group_tier,
+                        tier=sub_tier,
                         user_id=user_id,
                         alert_key=keys_to_store[0] if keys_to_store else None,
                         origin_iata=grp_origin,
