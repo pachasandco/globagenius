@@ -27,9 +27,8 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(1);
   const [airports, setAirports] = useState<string[]>(["CDG"]);
   const [offerTypes, setOfferTypes] = useState<string[]>(["flight"]);
-  const [minDiscount, setMinDiscount] = useState<number>(20);
+  const [dealTier, setDealTier] = useState<string>("regular");
   const [isPremium, setIsPremium] = useState(false);
-  const [showUpsellBanner, setShowUpsellBanner] = useState(false);
   const [telegramLink, setTelegramLink] = useState("");
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState("");
@@ -52,8 +51,8 @@ export default function OnboardingPage() {
         if (prefs.offer_types && prefs.offer_types.length > 0) {
           setOfferTypes(prefs.offer_types);
         }
-        if (prefs.min_discount) {
-          setMinDiscount(prefs.min_discount);
+        if (prefs.deal_tier) {
+          setDealTier(prefs.deal_tier);
         }
       })
       .catch(() => {
@@ -83,7 +82,7 @@ export default function OnboardingPage() {
       await updatePreferences(userId, {
         airport_codes: airports.length > 0 ? airports : ["CDG"],
         offer_types: offerTypes.length > 0 ? offerTypes : ["flight"],
-        min_discount: minDiscount,
+        deal_tier: dealTier,
       });
       setStep(4);
     } catch {
@@ -230,54 +229,75 @@ export default function OnboardingPage() {
         {step === 3 && (
           <div>
             <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-center mb-2">
-              Seuil minimum de réduction
+              Type d&apos;alertes
             </h2>
             <p className="text-gray-400 text-sm text-center mb-8">
-              Vous ne recevrez des alertes qu&apos;à partir de ce pourcentage.
+              Choisissez le niveau de deal que vous souhaitez recevoir.
             </p>
 
-            <div className="mb-8 flex flex-wrap gap-2 justify-center">
-              {[20, 30, 40, 50, 60].map((val) => (
+            <div className="mb-8 grid grid-cols-1 gap-3">
+              {[
+                {
+                  id: "regular",
+                  icon: "✈️",
+                  label: "Bons deals",
+                  desc: isPremium ? "-30% à -50% · quelques alertes par semaine" : "-30% à -40% · quelques alertes par semaine",
+                  locked: false,
+                },
+                {
+                  id: "exceptional",
+                  icon: "🔥",
+                  label: "Deals exceptionnels",
+                  desc: "-50% et plus · rare, réservation urgente",
+                  locked: !isPremium,
+                },
+              ].map((opt) => (
                 <button
-                  key={val}
+                  key={opt.id}
                   type="button"
-                  onClick={() => {
-                    if (!isPremium && val >= 40) {
-                      setShowUpsellBanner(true);
-                      return;
-                    }
-                    setShowUpsellBanner(false);
-                    setMinDiscount(val);
-                  }}
-                  className="px-6 py-3 rounded-xl border-2 font-semibold text-base transition-all"
+                  onClick={() => { if (!opt.locked) setDealTier(opt.id); }}
+                  className="text-left p-4 rounded-xl border-2 transition-all relative"
                   style={{
-                    borderColor: minDiscount === val ? "#FF6B47" : "#F0E6D8",
-                    background: minDiscount === val ? "#FFF1EC" : "#FFFEF9",
-                    color: minDiscount === val ? "#E55A38" : "#6b7280",
+                    borderColor: dealTier === opt.id ? "#FF6B47" : "#e5e7eb",
+                    background: dealTier === opt.id ? "#FFF1EC" : opt.locked ? "#f9fafb" : "white",
+                    opacity: opt.locked ? 0.7 : 1,
+                    cursor: opt.locked ? "default" : "pointer",
                   }}
                 >
-                  -{val}%
+                  <div className="text-xl mb-1">{opt.icon}</div>
+                  <div className="font-semibold text-sm text-[#0A1F3D] flex items-center gap-2">
+                    {opt.label}
+                    {opt.locked && <span className="text-xs font-normal text-[#FF6B47] bg-[#FFF1EC] px-2 py-0.5 rounded-full">Premium</span>}
+                  </div>
+                  <div className="text-xs text-gray-400 mt-0.5">{opt.desc}</div>
+                  {dealTier === opt.id && (
+                    <div className="absolute top-3 right-3 w-4 h-4 rounded-full bg-[#FF6B47] flex items-center justify-center">
+                      <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  )}
                 </button>
               ))}
             </div>
 
-            {showUpsellBanner && !isPremium && (
+            {!isPremium && (
               <div className="mb-8 bg-[#FFF1EC] border border-[#FF6B47] rounded-xl p-4 text-sm text-[#0A1F3D]/70">
-                💎 Les deals -30% et plus sont réservés Premium. 29€/an, remboursé dès le 1er voyage.{" "}
+                💎 Les deals exceptionnels (-50% et plus) sont réservés aux membres premium.{" "}
                 <button
                   onClick={async () => {
                     try {
                       await updatePreferences(userId, {
                         airport_codes: airports.length > 0 ? airports : ["CDG"],
                         offer_types: offerTypes.length > 0 ? offerTypes : ["flight"],
-                        min_discount: minDiscount,
+                        deal_tier: dealTier,
                       });
                     } catch { /* ignore */ }
                     router.push("/home?upgrade=1");
                   }}
                   className="underline font-semibold hover:opacity-80 transition-opacity"
                 >
-                  Débloquer Premium →
+                  Passer à Premium →
                 </button>
               </div>
             )}

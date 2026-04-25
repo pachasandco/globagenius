@@ -24,10 +24,8 @@ const OFFER_TYPES = [
 export default function ProfilePage() {
   const [airports, setAirports] = useState<string[]>([]);
   const [offerTypes, setOfferTypes] = useState<string[]>([]);
-  const [minDiscount, setMinDiscount] = useState<number>(20);
-  const [flightRange, setFlightRange] = useState<string>("all");
+  const [dealTier, setDealTier] = useState<string>("regular");
   const [isPremium, setIsPremium] = useState(false);
-  const [showUpsellBanner, setShowUpsellBanner] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [userId, setUserId] = useState("");
@@ -64,11 +62,8 @@ export default function ProfilePage() {
         if (prefs.offer_types && prefs.offer_types.length > 0) {
           setOfferTypes(prefs.offer_types);
         }
-        if (prefs.min_discount) {
-          setMinDiscount(prefs.min_discount);
-        }
-        if (prefs.flight_range) {
-          setFlightRange(prefs.flight_range);
+        if (prefs.deal_tier) {
+          setDealTier(prefs.deal_tier);
         }
       })
       .catch((err) => {
@@ -96,8 +91,7 @@ export default function ProfilePage() {
       await updatePreferences(userId, {
         airport_codes: airports.length > 0 ? airports : ["CDG"],
         offer_types: offerTypes.length > 0 ? offerTypes : ["flight"],
-        min_discount: minDiscount,
-        flight_range: flightRange,
+        deal_tier: dealTier,
       });
       setSuccess("Préférences mises à jour avec succès !");
       setTimeout(() => setSuccess(""), 3000);
@@ -445,30 +439,49 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* ── Flight Range ── */}
+        {/* ── Deal Tier ── */}
         <div className="mb-12">
-          <h2 className="text-xl font-semibold mb-1">Type de vols</h2>
-          <p className="text-gray-400 text-sm mb-4">Filtrez les alertes selon la distance de vol.</p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <h2 className="text-xl font-semibold mb-1">Type d&apos;alertes</h2>
+          <p className="text-gray-400 text-sm mb-4">Choisissez le niveau de deal que vous souhaitez recevoir.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {[
-              { id: "all",          icon: "🌍", label: "Tous les vols",       desc: "Court, moyen et long-courrier" },
-              { id: "short_medium", icon: "✈️", label: "Court / Moyen-courrier", desc: "Europe, Maghreb, Moyen-Orient" },
-              { id: "long_haul",    icon: "🚀", label: "Long-courrier",        desc: "Amériques, Asie, Océanie…" },
+              {
+                id: "regular",
+                icon: "✈️",
+                label: "Bons deals",
+                desc: isPremium ? "-30% à -50% · quelques alertes par semaine" : "-30% à -40% · quelques alertes par semaine",
+                locked: false,
+              },
+              {
+                id: "exceptional",
+                icon: "🔥",
+                label: "Deals exceptionnels",
+                desc: "-50% et plus · rare, réservation urgente",
+                locked: !isPremium,
+              },
             ].map((opt) => (
               <button
                 key={opt.id}
-                onClick={() => setFlightRange(opt.id)}
-                className="text-left p-4 rounded-xl border-2 transition-all"
+                onClick={() => {
+                  if (opt.locked) return;
+                  setDealTier(opt.id);
+                }}
+                className="text-left p-4 rounded-xl border-2 transition-all relative"
                 style={{
-                  borderColor: flightRange === opt.id ? "#FF6B47" : "#e5e7eb",
-                  background: flightRange === opt.id ? "#FFF1EC" : "white",
+                  borderColor: dealTier === opt.id ? "#FF6B47" : "#e5e7eb",
+                  background: dealTier === opt.id ? "#FFF1EC" : opt.locked ? "#f9fafb" : "white",
+                  opacity: opt.locked ? 0.7 : 1,
+                  cursor: opt.locked ? "default" : "pointer",
                 }}
               >
                 <div className="text-xl mb-1">{opt.icon}</div>
-                <div className="font-semibold text-sm text-[#0A1F3D]">{opt.label}</div>
+                <div className="font-semibold text-sm text-[#0A1F3D] flex items-center gap-2">
+                  {opt.label}
+                  {opt.locked && <span className="text-xs font-normal text-[#FF6B47] bg-[#FFF1EC] px-2 py-0.5 rounded-full">Premium</span>}
+                </div>
                 <div className="text-xs text-gray-400 mt-0.5">{opt.desc}</div>
-                {flightRange === opt.id && (
-                  <div className="mt-2 w-4 h-4 rounded-full bg-[#FF6B47] flex items-center justify-center ml-auto">
+                {dealTier === opt.id && (
+                  <div className="absolute top-3 right-3 w-4 h-4 rounded-full bg-[#FF6B47] flex items-center justify-center">
                     <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                     </svg>
@@ -477,44 +490,10 @@ export default function ProfilePage() {
               </button>
             ))}
           </div>
-        </div>
-
-        {/* ── Min Discount ── */}
-        <div className="mb-12">
-          <h2 className="text-xl font-semibold mb-1">Seuil minimum de réduction</h2>
-          <p className="text-gray-400 text-sm mb-6">
-            Vous ne recevrez des alertes qu&apos;à partir de ce pourcentage.
-          </p>
-
-          <div className="flex flex-wrap gap-2">
-            {[20, 30, 40, 50, 60].map((val) => (
-              <button
-                key={val}
-                type="button"
-                onClick={() => {
-                  if (!isPremium && val >= 40) {
-                    setShowUpsellBanner(true);
-                    return;
-                  }
-                  setShowUpsellBanner(false);
-                  setMinDiscount(val);
-                }}
-                className="px-4 py-2 rounded-xl border-2 font-semibold text-sm transition-all"
-                style={{
-                  borderColor: minDiscount === val ? "#FF6B47" : "#F0E6D8",
-                  background: minDiscount === val ? "#FFF1EC" : "#FFFEF9",
-                  color: minDiscount === val ? "#E55A38" : "#6b7280",
-                }}
-              >
-                -{val}%
-              </button>
-            ))}
-          </div>
-
-          {showUpsellBanner && !isPremium && (
-            <div className="mt-4 bg-[#FFF1EC] border border-[#FF6B47] rounded-xl p-4 text-sm text-[#0A1F3D]/70">
-              💎 Les deals -30% et plus sont réservés Premium. 29€/an, remboursé dès le 1er voyage.{" "}
-              <a href="/home" className="underline font-semibold">Débloquer Premium →</a>
+          {!isPremium && (
+            <div className="mt-3 bg-[#FFF1EC] border border-[#FF6B47] rounded-xl p-4 text-sm text-[#0A1F3D]/70">
+              💎 Les deals exceptionnels (-50% et plus) sont réservés aux membres premium.{" "}
+              <a href="/home" className="underline font-semibold">Passer à Premium →</a>
             </div>
           )}
         </div>

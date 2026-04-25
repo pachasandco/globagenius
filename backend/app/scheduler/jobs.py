@@ -416,19 +416,19 @@ async def _dispatch_grouped_flight_alerts(
     try:
         prefs_resp = (
             db.table("user_preferences")
-            .select("user_id,telegram_chat_id,telegram_connected,airport_codes,min_discount,alerts_paused_until,flight_range")
+            .select("user_id,telegram_chat_id,telegram_connected,airport_codes,alerts_paused_until,deal_tier")
             .eq("telegram_connected", True)
             .execute()
         )
         all_prefs = prefs_resp.data or []
     except Exception as e:
         err_msg = str(e)
-        if "alerts_paused_until" in err_msg or "flight_range" in err_msg:
+        if "alerts_paused_until" in err_msg or "deal_tier" in err_msg:
             logger.warning("Migration not yet applied — fetching prefs without optional columns")
             try:
                 prefs_resp = (
                     db.table("user_preferences")
-                    .select("user_id,telegram_chat_id,telegram_connected,airport_codes,min_discount")
+                    .select("user_id,telegram_chat_id,telegram_connected,airport_codes")
                     .eq("telegram_connected", True)
                     .execute()
                 )
@@ -485,16 +485,14 @@ async def _dispatch_grouped_flight_alerts(
         return
 
     # Build per-user lookups from the preferences we already fetched
-    prefs_by_user: dict[str, int] = {}
     paused_until_by_user: dict[str, str] = {}
-    flight_range_by_user: dict[str, str] = {}
+    deal_tier_by_user: dict[str, str] = {}
     for pref in all_prefs:
         if isinstance(pref, dict) and pref.get("user_id"):
             uid = pref["user_id"]
-            prefs_by_user[uid] = pref.get("min_discount", 20)
             if pref.get("alerts_paused_until"):
                 paused_until_by_user[uid] = pref["alerts_paused_until"]
-            flight_range_by_user[uid] = pref.get("flight_range") or "all"
+            deal_tier_by_user[uid] = pref.get("deal_tier") or "regular"
 
     # Track teasers already sent this run to avoid spamming one per destination
     teaser_sent_quota: set[str] = set()
@@ -515,9 +513,10 @@ async def _dispatch_grouped_flight_alerts(
                 logger.warning(f"Failed to resolve tier for {user_id}: {e}")
                 sub_tier = "free"
                 tier_error = True
-            # Free tier: fixed at 30% min discount, no customization
-            # Premium users can set their own threshold via min_discount preference
-            user_min = 30 if sub_tier == "free" else (prefs_by_user.get(user_id, 20) if user_id else 20)
+            # Deal tier: regular = -30% to -50%, exceptional = -50%+ (premium only)
+            user_deal_tier = deal_tier_by_user.get(user_id, "regular") if user_id else "regular"
+            if sub_tier == "free":
+                user_deal_tier = "regular"  # free tier always regular
 
             # Pause gate — skip entirely if alerts are muted
             if user_id and user_id in paused_until_by_user:
@@ -559,14 +558,6 @@ async def _dispatch_grouped_flight_alerts(
 
             for (grp_origin, grp_dest), flight_tuples in groups.items():
                 if grp_origin != sub_origin:
-                    continue
-
-                # Flight range filter — user preference
-                user_flight_range = flight_range_by_user.get(user_id, "all") if user_id else "all"
-                dest_is_long_haul = is_long_haul(grp_dest)
-                if user_flight_range == "long_haul" and not dest_is_long_haul:
-                    continue
-                if user_flight_range == "short_medium" and dest_is_long_haul:
                     continue
 
                 # Free tier: long-haul only scrapped from CDG — no restriction on short-haul origins
@@ -640,13 +631,23 @@ async def _dispatch_grouped_flight_alerts(
                         if max_price is not None and flight.get("price", 9999) > max_price:
                             continue
                     else:
-                        # Standard path: min_discount + free-tier gates
-                        if anomaly.discount_pct < user_min:
-                            continue
-                        # Free tier gates:
-                        # D4a: block ≥40% discount
-                        if sub_tier == "free" and anomaly.discount_pct >= 40:
-                            continue
+                        # Standard path: deal_tier filter
+                        # regular:     -30% to -50% (free: capped at -40%)
+                        # exceptional: -50%+ (premium only)
+                        pct = anomaly.discount_pct
+                        if user_deal_tier == "exceptional":
+                            if pct < 50:
+                                continue
+                        else:
+                            # regular tier
+                            if pct < 30:
+                                continue
+                            # free tier: cap at 40%
+                            if sub_tier == "free" and pct >= 40:
+                                continue
+                            # premium regular: cap at 50%
+                            if sub_tier == "premium" and pct >= 50:
+                                continue
                     key = None
                     if user_id:
                         key = compute_alert_key(
@@ -660,11 +661,11 @@ async def _dispatch_grouped_flight_alerts(
                     candidates.append((key, flight, anomaly, tier))
 
                 if not candidates:
-                    # Free tier: if deals were blocked by ≥40% gate, send teaser once per run
+                    # Free tier: if deals were blocked by ≥40% cap, send teaser once per run
                     if sub_tier == "free" and not tier_error and chat_id is not None and user_id not in teaser_sent_premium:
                         blocked = [
                             (f, a) for f, a, _ in flight_tuples
-                            if a.discount_pct >= 40
+                            if a.discount_pct >= 40 and a.discount_pct < 50
                         ]
                         if blocked:
                             teaser_sent_premium.add(user_id)

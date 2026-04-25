@@ -57,7 +57,7 @@ export interface UserPreferences {
   telegram_connected: boolean;
   telegram_chat_id: number | null;
   notifications_enabled: boolean;
-  flight_range: string;
+  deal_tier: string;
 }
 
 export function getPreferences(userId: string) {
@@ -67,10 +67,9 @@ export function getPreferences(userId: string) {
 export function updatePreferences(userId: string, prefs: {
   airport_codes: string[];
   offer_types: string[];
-  min_discount?: number;
   max_budget?: number | null;
   preferred_destinations?: string[] | null;
-  flight_range?: string;
+  deal_tier?: string;
 }) {
   return fetchAPI<UserPreferences>(`/api/users/${userId}/preferences`, {
     method: "PUT",
