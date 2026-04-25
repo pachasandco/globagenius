@@ -2,16 +2,24 @@
 
 Called by job_scrape_tier1() every 15-30 min (configurable).
 Falls back to Travelpayouts automatically when an airline endpoint is demoted.
+
+Active scrapers:
+  - Ryanair: operational
+  - Transavia: API v1 returns HTML (dead) — disabled
+  - Vueling: booking.vueling.com unreachable from Railway (DNS/geo) — disabled
 """
 
 import logging
 from app.scraper.tier1_routes import get_tier1_routes_for_airport
 from app.scraper.tier1_ryanair import scrape_route as scrape_ryanair, is_demoted as ryanair_demoted
-from app.scraper.tier1_transavia import scrape_route as scrape_transavia, is_demoted as transavia_demoted
-from app.scraper.tier1_vueling import scrape_route as scrape_vueling, is_demoted as vueling_demoted
 from app.scraper.travelpayouts_flights import scrape_flights_for_route
 
 logger = logging.getLogger(__name__)
+
+# Transavia /api/v1/flights/lowestFares now returns HTML (API changed).
+# Vueling booking.vueling.com is unreachable from Railway (DNS failure).
+# Both disabled until their APIs are restored.
+_DISABLED_SCRAPERS = {"transavia", "vueling"}
 
 
 def scrape_tier1_airport(origin: str) -> list[dict]:
@@ -29,22 +37,15 @@ def scrape_tier1_airport(origin: str) -> list[dict]:
         route_flights: list[dict] = []
 
         for airline in airlines:
+            if airline in _DISABLED_SCRAPERS:
+                continue
             if airline == "ryanair":
                 if not ryanair_demoted(orig, dest):
                     flights = scrape_ryanair(orig, dest)
                     route_flights.extend(flights)
-            elif airline == "transavia":
-                if not transavia_demoted(orig, dest):
-                    flights = scrape_transavia(orig, dest)
-                    route_flights.extend(flights)
-            elif airline == "vueling":
-                if not vueling_demoted(orig, dest):
-                    flights = scrape_vueling(orig, dest)
-                    route_flights.extend(flights)
 
-        # If all direct scrapers failed / demoted → Travelpayouts fallback
+        # If no direct scraper returned data → Travelpayouts fallback
         if not route_flights:
-            logger.info(f"Tier1 {orig}->{dest}: all direct scrapers demoted, falling back to Travelpayouts")
             route_flights = scrape_flights_for_route(orig, dest)
 
         all_flights.extend(route_flights)
