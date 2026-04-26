@@ -43,6 +43,8 @@ class Settings:
         e.strip() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()
     ])
     TRAVELPAYOUTS_MARKER: str = os.getenv("TRAVELPAYOUTS_MARKER", "")
+    AMADEUS_API_KEY: str = os.getenv("AMADEUS_API_KEY", "")
+    AMADEUS_API_SECRET: str = os.getenv("AMADEUS_API_SECRET", "")
 
     def __post_init__(self):
         if self.APP_ENV == "production":
