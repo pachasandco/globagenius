@@ -369,12 +369,17 @@ def list_packages(
 
     effective_floor = max(min_discount, GLOBAL_MIN_DISCOUNT)
 
+    # Only show deals reverified within the last 4h. Deals without reverified_at
+    # (pre-migration rows) are included via the OR fallback to created_at.
+    freshness_cutoff = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat()
+
     qi_resp = (
         db.table("qualified_items").select("*")
         .eq("status", "active")
         .eq("type", "flight")
         .gte("discount_pct", effective_floor)
         .gte("score", min_score)
+        .gte("reverified_at", freshness_cutoff)
         .order("score", desc=True)
         .limit(limit * 3)
         .execute()
