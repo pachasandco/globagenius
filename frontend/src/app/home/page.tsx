@@ -51,6 +51,7 @@ export default function HomePage() {
   const [isPremium, setIsPremium] = useState(false);
   const [showAllDeals, setShowAllDeals] = useState(false);
   const [destFilter, setDestFilter] = useState<string>("all");
+  const [wishlistRoutes, setWishlistRoutes] = useState<Set<string>>(new Set());
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
@@ -65,9 +66,18 @@ export default function HomePage() {
       return;
     }
 
-    // Auto-logout after 15 min inactivity. Keep the cleanup so we can
-    // return it from the useEffect at the END, after load() has started.
     const sessionCleanup = initSession();
+
+    // Load wishlist once
+    const token = localStorage.getItem("gg_token");
+    if (token) {
+      fetch(`${API_URL}/api/users/${userId}/wishlists`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((r) => r.ok ? r.json() : { wishlists: [] })
+        .then((d) => setWishlistRoutes(new Set((d.wishlists || []).map((w: { origin: string; destination: string }) => `${w.origin}:${w.destination}`))))
+        .catch(() => {});
+    }
 
     async function load() {
       // Check premium status
@@ -192,6 +202,9 @@ export default function HomePage() {
           <div className="hidden md:flex items-center gap-5 text-sm text-gray-500">
             <Link href="/home" className="text-gray-900 font-medium">Deals</Link>
             <Link href="/articles" className="hover:text-gray-900 transition-colors">Destinations</Link>
+            <Link href="/wishlist" className="hover:text-gray-900 transition-colors">
+              Wishlist {wishlistRoutes.size > 0 && <span className="ml-1 text-[#FF6B47] font-bold">({wishlistRoutes.size})</span>}
+            </Link>
           </div>
           <div className="flex items-center gap-2 md:gap-3">
             <span className="text-sm text-gray-400 hidden md:block">{isPremium ? "🌟 Premium" : "Free"}</span>
@@ -288,7 +301,12 @@ export default function HomePage() {
             {visibleUnlocked.length > 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
                 {visibleUnlocked.map((deal) => (
-                  <FlightDealCard key={deal.id} deal={deal} onUpgrade={handleCheckout} />
+                  <FlightDealCard
+                    key={deal.id}
+                    deal={deal}
+                    onUpgrade={handleCheckout}
+                    wishlisted={wishlistRoutes.has(`${deal.origin}:${deal.destination}`)}
+                  />
                 ))}
               </div>
             )}
@@ -326,7 +344,12 @@ export default function HomePage() {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
                   {filteredLocked.map((deal) => (
-                    <FlightDealCard key={deal.id} deal={deal} onUpgrade={handleCheckout} />
+                    <FlightDealCard
+                      key={deal.id}
+                      deal={deal}
+                      onUpgrade={handleCheckout}
+                      wishlisted={wishlistRoutes.has(`${deal.origin}:${deal.destination}`)}
+                    />
                   ))}
                 </div>
               </div>

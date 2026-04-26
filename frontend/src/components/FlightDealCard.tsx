@@ -28,9 +28,10 @@ function useCountdown(expiresAt: string | null): string | null {
 interface Props {
   deal: FlightDeal;
   onUpgrade?: () => void;
+  wishlisted?: boolean;
 }
 
-export function FlightDealCard({ deal, onUpgrade }: Props) {
+export function FlightDealCard({ deal, onUpgrade, wishlisted }: Props) {
   const days = deal.trip_duration_days ?? Math.round(
     (new Date(deal.return_date).getTime() - new Date(deal.departure_date).getTime()) / 86400000
   );
@@ -55,11 +56,16 @@ export function FlightDealCard({ deal, onUpgrade }: Props) {
         -{discount}%
       </div>
 
-      {isPremium && (
-        <span className="inline-block bg-[#FFC940] text-[#0A1F3D] text-[10px] font-bold px-2 py-0.5 rounded-full mb-2">
-          PREMIUM
-        </span>
-      )}
+      <div className="flex items-center gap-2 mb-2">
+        {isPremium && (
+          <span className="inline-block bg-[#FFC940] text-[#0A1F3D] text-[10px] font-bold px-2 py-0.5 rounded-full">
+            PREMIUM
+          </span>
+        )}
+        {wishlisted && (
+          <span className="text-sm" title="Dans votre wishlist">❤️</span>
+        )}
+      </div>
 
       <div className="font-[family-name:var(--font-dm-serif)] text-xl md:text-2xl text-[#0A1F3D] mb-1 pr-12">
         {deal.origin} → {deal.destination}
