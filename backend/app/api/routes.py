@@ -344,7 +344,7 @@ def debug_data(request: Request):
         return {"error": str(e)}
 
 
-GLOBAL_MIN_DISCOUNT = 50   # deals below this are never shown
+GLOBAL_MIN_DISCOUNT = 40   # aligned with Telegram dispatch threshold
 FREE_TIER_WEEKLY_LIMIT = 3  # full unlocked deals per week for free users
 
 

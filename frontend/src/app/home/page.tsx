@@ -86,7 +86,7 @@ export default function HomePage() {
       // quota logic: free users get up to 3 unlocked, rest masked.
       try {
         const [dealsRes, statusRes] = await Promise.allSettled([
-          getFlightDeals("free", 50),
+          getFlightDeals("free", 50, 40, 40),
           getPipelineStatus(),
         ]);
         if (dealsRes.status === "fulfilled") {
