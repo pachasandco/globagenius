@@ -74,6 +74,7 @@ export interface UserPreferences {
   telegram_chat_id: number | null;
   notifications_enabled: boolean;
   deal_tier: string;
+  blocked_destinations: string[];
 }
 
 export function getPreferences(userId: string) {
@@ -86,6 +87,7 @@ export function updatePreferences(userId: string, prefs: {
   max_budget?: number | null;
   preferred_destinations?: string[] | null;
   deal_tier?: string;
+  blocked_destinations?: string[];
 }) {
   return fetchAPI<UserPreferences>(`/api/users/${userId}/preferences`, {
     method: "PUT",

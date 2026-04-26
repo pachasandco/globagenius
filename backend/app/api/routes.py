@@ -204,6 +204,7 @@ class PreferencesRequest(BaseModel):
     max_budget: int | None = None
     preferred_destinations: list[str] | None = None
     deal_tier: str = "regular"
+    blocked_destinations: list[str] = []
 
     @field_validator("deal_tier")
     @classmethod
@@ -405,6 +406,22 @@ def list_packages(
     is_premium = _is_premium_user(user)
     user_id = (user.get("sub") or user.get("user_id")) if user else None
 
+    # Fetch blocked destinations for this user (if logged in)
+    user_blocked: set[str] = set()
+    if user_id:
+        try:
+            bp_resp = (
+                db.table("user_preferences")
+                .select("blocked_destinations")
+                .eq("user_id", user_id)
+                .single()
+                .execute()
+            )
+            blocked_list = (bp_resp.data or {}).get("blocked_destinations") or []
+            user_blocked = set(blocked_list)
+        except Exception:
+            pass
+
     # For free users: count how many deals they've already received this week
     # via Telegram (sent_alerts) — the homepage quota mirrors Telegram's.
     free_weekly_used = 0
@@ -429,8 +446,11 @@ def list_packages(
 
     for qi in qualified:
         flight = flights_by_id.get(qi.get("item_id")) or {}
+        dest = flight.get("destination", "")
+        if dest and dest in user_blocked:
+            continue
         dedup_key = (
-            f"{flight.get('origin','')}-{flight.get('destination','')}"
+            f"{flight.get('origin','')}-{dest}"
             f"-{flight.get('departure_date','')}-{flight.get('return_date','')}"
         )
         if dedup_key in seen_flights:
@@ -625,6 +645,7 @@ def update_preferences(user_id: str, req: PreferencesRequest, user: dict = Depen
         "max_budget": req.max_budget,
         "preferred_destinations": req.preferred_destinations or [],
         "deal_tier": effective_deal_tier,
+        "blocked_destinations": req.blocked_destinations,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 

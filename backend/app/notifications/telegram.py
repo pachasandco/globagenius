@@ -62,9 +62,9 @@ def _get_bot() -> Bot | None:
 
 
 def format_deal_alert(package: dict, flight: dict, accommodation: dict) -> str:
-    from app.config import IATA_TO_CITY
-    origin_city = IATA_TO_CITY.get(package["origin"], package["origin"])
-    dest_city = IATA_TO_CITY.get(package["destination"], package["destination"])
+    from app.config import iata_label
+    origin_city = iata_label(package["origin"])
+    dest_city = iata_label(package["destination"])
 
     # Alert level badge
     alert_level = package.get("ai_alert_level", "good_deal")
@@ -155,9 +155,9 @@ def format_flight_deal_alert(flight: dict, discount_pct: float, baseline_price: 
 
     `flight` is expected to contain: origin, destination, departure_date,
     return_date, price, airline, source_url, trip_duration_days (optional)."""
-    from app.config import IATA_TO_CITY
-    origin_city = IATA_TO_CITY.get(flight["origin"], flight["origin"])
-    dest_city = IATA_TO_CITY.get(flight["destination"], flight["destination"])
+    from app.config import iata_label
+    origin_city = iata_label(flight["origin"])
+    dest_city = iata_label(flight["destination"])
 
     if discount_pct >= 60:
         alert_badge = "🔴 ERREUR DE PRIX"
@@ -257,8 +257,9 @@ def format_grouped_flight_alerts(
     # Origin airport in header (use first offer's origin if available)
     origin_label = ""
     if origin_iata:
+        from app.config import iata_label
         first_offer_origin = (offers[0].get("origin") or origin_iata) if offers else origin_iata
-        origin_label = f"✈️ {first_offer_origin} → {destination_iata}\n"
+        origin_label = f"✈️ {iata_label(first_offer_origin)} → {iata_label(destination_iata)}\n"
 
     header = (
         f"🌍 {dest_city.upper()}\n"

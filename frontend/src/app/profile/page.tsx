@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getPreferences, updatePreferences, changePassword, clearSessionCookie } from "@/lib/api";
@@ -21,10 +21,134 @@ const OFFER_TYPES = [
   { id: "flight", label: "Vols à prix cassés", desc: "Billets d'avion aller-retour en promo", icon: "✈️" },
 ];
 
+const ALL_DESTINATIONS = [
+  { code: "LIS", label: "Lisbonne" },
+  { code: "BCN", label: "Barcelone" },
+  { code: "FCO", label: "Rome" },
+  { code: "ATH", label: "Athènes" },
+  { code: "NAP", label: "Naples" },
+  { code: "OPO", label: "Porto" },
+  { code: "AMS", label: "Amsterdam" },
+  { code: "BER", label: "Berlin" },
+  { code: "PRG", label: "Prague" },
+  { code: "BUD", label: "Budapest" },
+  { code: "DUB", label: "Dublin" },
+  { code: "EDI", label: "Édimbourg" },
+  { code: "IST", label: "Istanbul" },
+  { code: "MAD", label: "Madrid" },
+  { code: "MXP", label: "Milan" },
+  { code: "VCE", label: "Venise" },
+  { code: "VIE", label: "Vienne" },
+  { code: "WAW", label: "Varsovie" },
+  { code: "ZAG", label: "Zagreb" },
+  { code: "CPH", label: "Copenhague" },
+  { code: "HEL", label: "Helsinki" },
+  { code: "OSL", label: "Oslo" },
+  { code: "ARN", label: "Stockholm" },
+  { code: "AGP", label: "Malaga" },
+  { code: "PMI", label: "Palma de Majorque" },
+  { code: "TFS", label: "Ténérife" },
+  { code: "HER", label: "Héraklion" },
+  { code: "SPU", label: "Split" },
+  { code: "DBV", label: "Dubrovnik" },
+  { code: "ACE", label: "Lanzarote" },
+  { code: "ALC", label: "Alicante" },
+  { code: "BLQ", label: "Bologne" },
+  { code: "BRI", label: "Bari" },
+  { code: "BRU", label: "Bruxelles" },
+  { code: "CAG", label: "Cagliari" },
+  { code: "CFU", label: "Corfou" },
+  { code: "CTA", label: "Catane" },
+  { code: "FAO", label: "Faro" },
+  { code: "FNC", label: "Madère" },
+  { code: "FUE", label: "Fuerteventura" },
+  { code: "IBZ", label: "Ibiza" },
+  { code: "JMK", label: "Mykonos" },
+  { code: "JTR", label: "Santorin" },
+  { code: "KRK", label: "Cracovie" },
+  { code: "LPA", label: "Las Palmas" },
+  { code: "OLB", label: "Olbia" },
+  { code: "PDL", label: "Ponta Delgada" },
+  { code: "RHO", label: "Rhodes" },
+  { code: "RIX", label: "Riga" },
+  { code: "SAW", label: "Istanbul Sabiha" },
+  { code: "SKG", label: "Thessalonique" },
+  { code: "SOF", label: "Sofia" },
+  { code: "SVQ", label: "Séville" },
+  { code: "TIV", label: "Tivat" },
+  { code: "TLL", label: "Tallinn" },
+  { code: "VLC", label: "Valence" },
+  { code: "VNO", label: "Vilnius" },
+  { code: "ZRH", label: "Zurich" },
+  { code: "LHR", label: "Londres Heathrow" },
+  { code: "LGW", label: "Londres Gatwick" },
+  { code: "STN", label: "Londres Stansted" },
+  { code: "LTN", label: "Londres Luton" },
+  { code: "MAN", label: "Manchester" },
+  { code: "BHX", label: "Birmingham" },
+  { code: "GLA", label: "Glasgow" },
+  { code: "RAK", label: "Marrakech" },
+  { code: "CMN", label: "Casablanca" },
+  { code: "AGA", label: "Agadir" },
+  { code: "FEZ", label: "Fès" },
+  { code: "NDR", label: "Nador" },
+  { code: "TNG", label: "Tanger" },
+  { code: "ESU", label: "Essaouira" },
+  { code: "TUN", label: "Tunis" },
+  { code: "MIR", label: "Monastir" },
+  { code: "DJE", label: "Djerba" },
+  { code: "ALG", label: "Alger" },
+  { code: "ORN", label: "Oran" },
+  { code: "CZL", label: "Constantine" },
+  { code: "TLM", label: "Tlemcen" },
+  { code: "AAE", label: "Annaba" },
+  { code: "BJA", label: "Béjaïa" },
+  { code: "CAI", label: "Le Caire" },
+  { code: "TLV", label: "Tel Aviv" },
+  { code: "HRG", label: "Hurghada" },
+  { code: "SSH", label: "Charm el-Cheikh" },
+  { code: "DXB", label: "Dubaï" },
+  { code: "CPT", label: "Le Cap" },
+  { code: "JNB", label: "Johannesburg" },
+  { code: "ZNZ", label: "Zanzibar" },
+  { code: "JFK", label: "New York" },
+  { code: "EWR", label: "New York Newark" },
+  { code: "YUL", label: "Montréal" },
+  { code: "MIA", label: "Miami" },
+  { code: "LAX", label: "Los Angeles" },
+  { code: "SFO", label: "San Francisco" },
+  { code: "CUN", label: "Cancún" },
+  { code: "PUJ", label: "Punta Cana" },
+  { code: "BOG", label: "Bogotá" },
+  { code: "GIG", label: "Rio de Janeiro" },
+  { code: "EZE", label: "Buenos Aires" },
+  { code: "LIM", label: "Lima" },
+  { code: "SCL", label: "Santiago" },
+  { code: "BKK", label: "Bangkok" },
+  { code: "SIN", label: "Singapour" },
+  { code: "KUL", label: "Kuala Lumpur" },
+  { code: "NRT", label: "Tokyo Narita" },
+  { code: "HND", label: "Tokyo Haneda" },
+  { code: "ICN", label: "Séoul" },
+  { code: "HKG", label: "Hong Kong" },
+  { code: "BOM", label: "Mumbai" },
+  { code: "DEL", label: "Delhi" },
+  { code: "MLE", label: "Malé" },
+  { code: "MRU", label: "Maurice" },
+  { code: "RUN", label: "La Réunion" },
+  { code: "PPT", label: "Papeete" },
+  { code: "GVA", label: "Genève" },
+  { code: "SYD", label: "Sydney" },
+];
+
 export default function ProfilePage() {
   const [airports, setAirports] = useState<string[]>([]);
   const [offerTypes, setOfferTypes] = useState<string[]>([]);
   const [dealTier, setDealTier] = useState<string>("regular");
+  const [blockedDestinations, setBlockedDestinations] = useState<string[]>([]);
+  const [destSearch, setDestSearch] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const destInputRef = useRef<HTMLInputElement>(null);
   const [isPremium, setIsPremium] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -43,6 +167,16 @@ export default function ProfilePage() {
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+  const filteredSuggestions = destSearch.trim().length > 0
+    ? ALL_DESTINATIONS.filter((d) => {
+        const q = destSearch.toLowerCase();
+        return (
+          !blockedDestinations.includes(d.code) &&
+          (d.label.toLowerCase().includes(q) || d.code.toLowerCase().includes(q))
+        );
+      }).slice(0, 8)
+    : [];
+
   useEffect(() => {
     const id = localStorage.getItem("gg_user_id");
     const userEmail = localStorage.getItem("gg_email");
@@ -53,7 +187,6 @@ export default function ProfilePage() {
     setUserId(id);
     setEmail(userEmail || "");
 
-    // Load existing preferences
     getPreferences(id)
       .then((prefs) => {
         if (prefs.airport_codes && prefs.airport_codes.length > 0) {
@@ -65,15 +198,17 @@ export default function ProfilePage() {
         if (prefs.deal_tier) {
           setDealTier(prefs.deal_tier);
         }
+        if (prefs.blocked_destinations) {
+          setBlockedDestinations(prefs.blocked_destinations);
+        }
       })
-      .catch((err) => {
+      .catch(() => {
         setError("Erreur lors du chargement des préférences");
       })
       .finally(() => {
         setLoading(false);
       });
 
-    // Check premium status
     const token = localStorage.getItem("gg_token");
     if (token) {
       fetch(`${API_URL}/api/stripe/status`, { headers: { Authorization: `Bearer ${token}` } })
@@ -82,6 +217,21 @@ export default function ProfilePage() {
         .catch(() => {});
     }
   }, [router, API_URL]);
+
+  function blockDestination(code: string) {
+    setBlockedDestinations((prev) => prev.includes(code) ? prev : [...prev, code]);
+    setDestSearch("");
+    setShowSuggestions(false);
+  }
+
+  function unblockDestination(code: string) {
+    setBlockedDestinations((prev) => prev.filter((c) => c !== code));
+  }
+
+  function getDestLabel(code: string): string {
+    const found = ALL_DESTINATIONS.find((d) => d.code === code);
+    return found ? `${found.label} (${code})` : code;
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -92,6 +242,7 @@ export default function ProfilePage() {
         airport_codes: airports.length > 0 ? airports : ["CDG"],
         offer_types: offerTypes.length > 0 ? offerTypes : ["flight"],
         deal_tier: dealTier,
+        blocked_destinations: blockedDestinations,
       });
       setSuccess("Préférences mises à jour avec succès !");
       setTimeout(() => setSuccess(""), 3000);
@@ -405,6 +556,67 @@ export default function ProfilePage() {
           </div>
         </div>
 
+        {/* ── Destinations masquées ── */}
+        <div className="mb-12">
+          <h2 className="text-xl font-semibold mb-1">Destinations masquées</h2>
+          <p className="text-gray-400 text-sm mb-6">
+            Masquez les destinations pour lesquelles vous ne souhaitez plus recevoir d&apos;alertes.
+            Vous pouvez les réactiver à tout moment.
+          </p>
+
+          {/* Search input */}
+          <div className="relative mb-4" ref={destInputRef as React.RefObject<HTMLDivElement>}>
+            <input
+              type="text"
+              value={destSearch}
+              onChange={(e) => {
+                setDestSearch(e.target.value);
+                setShowSuggestions(true);
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+              placeholder="Rechercher une destination (ex: Lisbonne, BCN...)"
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FF6B47] text-sm"
+            />
+            {showSuggestions && filteredSuggestions.length > 0 && (
+              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                {filteredSuggestions.map((d) => (
+                  <button
+                    key={d.code}
+                    onMouseDown={() => blockDestination(d.code)}
+                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center justify-between text-sm"
+                  >
+                    <span>{d.label}</span>
+                    <span className="text-gray-400 text-xs font-mono">{d.code}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Blocked pills */}
+          {blockedDestinations.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {blockedDestinations.map((code) => (
+                <span
+                  key={code}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 border border-gray-200 rounded-full text-sm text-gray-700"
+                >
+                  {getDestLabel(code)}
+                  <button
+                    onClick={() => unblockDestination(code)}
+                    className="ml-0.5 text-gray-400 hover:text-gray-700 transition-colors leading-none"
+                    aria-label={`Retirer ${code}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400 italic">Aucune destination masquée.</p>
+          )}
+        </div>
 
         {/* Deal Tier — hidden until feature is re-enabled */}
 
