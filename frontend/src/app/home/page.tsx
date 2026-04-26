@@ -43,6 +43,289 @@ interface Article {
   tags: string[];
 }
 
+const PLANNER_DESTINATIONS = [
+  { label: "Tokyo", emoji: "🇯🇵" },
+  { label: "Lisbonne", emoji: "🇵🇹" },
+  { label: "Bali", emoji: "🇮🇩" },
+  { label: "New York", emoji: "🇺🇸" },
+  { label: "Marrakech", emoji: "🇲🇦" },
+  { label: "Barcelone", emoji: "🇪🇸" },
+];
+
+const PLANNER_DURATIONS = ["Week-end", "1 semaine", "2 semaines", "3 semaines"];
+const PLANNER_STYLES = ["Budget", "Food", "Aventure", "Romantique", "Premium"];
+
+const PLANNER_TEMPLATES = [
+  { label: "7 jours à Tokyo en avril", budget: "1 500 €" },
+  { label: "Week-end pas cher en Europe depuis Paris", budget: "300 €" },
+  { label: "10 jours au Japon en famille", budget: "3 500 €" },
+];
+
+function PlannerBlock({
+  chatMessages,
+  chatLoading,
+  chatInput,
+  setChatInput,
+  sendChat,
+  chatEndRef,
+  showPlanner,
+  setShowPlanner,
+}: {
+  chatMessages: ChatMessage[];
+  chatLoading: boolean;
+  chatInput: string;
+  setChatInput: (v: string) => void;
+  sendChat: (t: string) => void;
+  chatEndRef: React.RefObject<HTMLDivElement | null>;
+  showPlanner: boolean;
+  setShowPlanner: (v: boolean) => void;
+}) {
+  const [dest, setDest] = useState("");
+  const [duration, setDuration] = useState("");
+  const [style, setStyle] = useState("");
+  const [expertMode, setExpertMode] = useState(false);
+
+  function buildAndSend() {
+    const parts: string[] = [];
+    if (dest) parts.push(`destination : ${dest}`);
+    if (duration) parts.push(duration);
+    if (style) parts.push(`ambiance ${style.toLowerCase()}`);
+    const prompt = parts.length > 0
+      ? `Planifie-moi un voyage — ${parts.join(", ")}`
+      : chatInput.trim();
+    if (!prompt) return;
+    sendChat(prompt);
+    setDest("");
+    setDuration("");
+    setStyle("");
+  }
+
+  const canGenerate = !!(dest || duration || style);
+
+  return (
+    <div className="mb-8">
+      <button
+        onClick={() => setShowPlanner(!showPlanner)}
+        className="w-full flex items-center justify-between mb-4 hover:opacity-75 transition-opacity"
+      >
+        <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl">📅 Planificateur de voyage</h2>
+        <span className="text-2xl font-light text-gray-400">{showPlanner ? "−" : "+"}</span>
+      </button>
+
+      {showPlanner && (
+        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+
+          {chatMessages.length === 0 ? (
+            /* ── Onboarding actif ── */
+            <div className="p-5 md:p-6 space-y-6">
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Destination</p>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {PLANNER_DESTINATIONS.map((d) => (
+                    <button
+                      key={d.label}
+                      onClick={() => setDest(dest === d.label ? "" : d.label)}
+                      className="px-3 py-1.5 rounded-full text-sm border-2 font-medium transition-all"
+                      style={{
+                        borderColor: dest === d.label ? "#FF6B47" : "#e5e7eb",
+                        background: dest === d.label ? "#FF6B47" : "white",
+                        color: dest === d.label ? "white" : "#374151",
+                      }}
+                    >
+                      {d.emoji} {d.label}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  value={dest && !PLANNER_DESTINATIONS.find(d => d.label === dest) ? dest : ""}
+                  onChange={(e) => setDest(e.target.value)}
+                  onFocus={() => {
+                    if (PLANNER_DESTINATIONS.find(d => d.label === dest)) setDest("");
+                  }}
+                  placeholder="Autre destination..."
+                  className="w-full text-sm bg-gray-50 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-[#FF6B47]/30 border border-gray-100"
+                />
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Durée</p>
+                <div className="flex flex-wrap gap-2">
+                  {PLANNER_DURATIONS.map((d) => (
+                    <button
+                      key={d}
+                      onClick={() => setDuration(duration === d ? "" : d)}
+                      className="px-3 py-1.5 rounded-full text-sm border-2 font-medium transition-all"
+                      style={{
+                        borderColor: duration === d ? "#06b6d4" : "#e5e7eb",
+                        background: duration === d ? "#ecfeff" : "white",
+                        color: duration === d ? "#0e7490" : "#374151",
+                      }}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Style</p>
+                <div className="flex flex-wrap gap-2">
+                  {PLANNER_STYLES.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setStyle(style === s ? "" : s)}
+                      className="px-3 py-1.5 rounded-full text-sm border-2 font-medium transition-all"
+                      style={{
+                        borderColor: style === s ? "#8b5cf6" : "#e5e7eb",
+                        background: style === s ? "#f5f3ff" : "white",
+                        color: style === s ? "#6d28d9" : "#374151",
+                      }}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Preview de sortie */}
+              <div className="bg-[#FFF8F0] border border-[#FF6B47]/20 rounded-xl px-4 py-3 text-xs text-[#0A1F3D]/60 flex flex-wrap gap-x-4 gap-y-1">
+                <span>✈️ Vol optimal</span>
+                <span>🏨 Quartiers recommandés</span>
+                <span>📅 Itinéraire jour par jour</span>
+                <span>💰 Budget détaillé</span>
+              </div>
+
+              <button
+                onClick={buildAndSend}
+                disabled={!canGenerate || chatLoading}
+                className="w-full bg-[#FF6B47] hover:bg-[#E55A38] disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-all text-sm"
+              >
+                Créer mon itinéraire →
+              </button>
+
+              {/* Séparateur templates */}
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100" /></div>
+                <div className="relative flex justify-center"><span className="bg-white px-3 text-xs text-gray-400">ou essayez un exemple</span></div>
+              </div>
+
+              <div className="space-y-2">
+                {PLANNER_TEMPLATES.map((t) => (
+                  <button
+                    key={t.label}
+                    onClick={() => sendChat(t.label)}
+                    disabled={chatLoading}
+                    className="w-full text-left px-4 py-3 rounded-xl border border-gray-100 hover:border-[#FF6B47]/40 hover:bg-[#FFF8F0] transition-all group disabled:opacity-40"
+                  >
+                    <span className="text-sm text-gray-700 group-hover:text-[#FF6B47] transition-colors">{t.label}</span>
+                    <span className="ml-2 text-xs text-gray-400">≈ {t.budget}</span>
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={() => setExpertMode(true)}
+                className="text-xs text-gray-400 hover:text-gray-600 transition-colors underline underline-offset-2 w-full text-center"
+              >
+                Mode libre — décrire moi-même
+              </button>
+
+              {expertMode && (
+                <div className="flex gap-2 mt-1">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={e => setChatInput(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && !chatLoading && sendChat(chatInput)}
+                    placeholder="Ex: 7 jours à Kyoto, couple, budget 2000€, avril..."
+                    className="flex-1 text-sm bg-gray-50 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-[#FF6B47]/30 border border-gray-100"
+                    autoFocus
+                  />
+                  <button
+                    onClick={() => sendChat(chatInput)}
+                    disabled={chatLoading || !chatInput.trim()}
+                    className="bg-[#FF6B47] hover:bg-[#E55A38] text-white rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-40 transition-colors"
+                  >
+                    →
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* ── Conversation en cours ── */
+            <>
+              <div className="h-[300px] md:h-[380px] overflow-y-auto p-4 md:p-5 space-y-3">
+                {chatMessages.map((msg, i) => (
+                  <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
+                      msg.role === "user" ? "bg-gray-900 text-white" : "bg-gray-50 border border-gray-100"
+                    }`}>
+                      <p className="whitespace-pre-wrap">{msg.content}</p>
+                      {msg.data?.options && msg.data.options.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {msg.data.options.map(opt => (
+                            <button key={opt} onClick={() => sendChat(opt)} disabled={chatLoading}
+                              className="text-[11px] bg-cyan-50 text-cyan-700 border border-cyan-100 px-2 py-1 rounded-full hover:bg-cyan-100 disabled:opacity-50">
+                              {opt}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {msg.data?.type === "planning" && msg.data?.days && (
+                        <div className="mt-3 space-y-2">
+                          <div className="bg-cyan-50 rounded-lg p-2 text-center text-xs font-semibold text-cyan-900">
+                            {msg.data.destination} · {msg.data.duration} · Budget : {msg.data.estimated_budget}
+                          </div>
+                          {msg.data.days.map(day => (
+                            <div key={day.day} className="border border-gray-100 rounded-lg p-2 text-xs">
+                              <div className="font-semibold mb-1">Jour {day.day} — {day.title}</div>
+                              <div className="text-gray-500">🌅 {day.morning?.activity} · ☀️ {day.afternoon?.activity} · 🌙 {day.evening?.activity}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {chatLoading && (
+                  <div className="flex justify-start">
+                    <div className="bg-gray-50 border border-gray-100 rounded-2xl px-4 py-2.5">
+                      <div className="flex gap-1">
+                        <div className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" />
+                        <div className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: "150ms" }} />
+                        <div className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: "300ms" }} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div ref={chatEndRef} />
+              </div>
+              <div className="border-t border-gray-100 p-3 flex gap-2">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && !chatLoading && sendChat(chatInput)}
+                  placeholder="Continuez la conversation..."
+                  className="flex-1 text-sm bg-gray-50 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-[#FF6B47]/30 border border-gray-100"
+                />
+                <button
+                  onClick={() => sendChat(chatInput)}
+                  disabled={chatLoading || !chatInput.trim()}
+                  className="bg-[#FF6B47] hover:bg-[#E55A38] text-white rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-40 transition-colors"
+                >
+                  →
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function HomePage() {
   const [allDeals, setAllDeals] = useState<FlightDeal[]>([]);
   const [, setStatus] = useState<PipelineStatus | null>(null);
@@ -371,91 +654,16 @@ export default function HomePage() {
             </div>
           </div>
         ) : (
-          <div className="mb-8">
-            <button
-              onClick={() => setShowPlanner(!showPlanner)}
-              className="w-full flex items-center justify-between mb-4 hover:opacity-75 transition-opacity"
-            >
-              <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl">📅 Planificateur de voyage</h2>
-              <span className="text-2xl font-light text-gray-400">{showPlanner ? "−" : "+"}</span>
-            </button>
-            {showPlanner && (
-              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                {/* Chat messages */}
-                <div className="h-[300px] md:h-[350px] overflow-y-auto p-4 md:p-5 space-y-3">
-                  {chatMessages.length === 0 && (
-                    <div className="text-center py-8">
-                      <div className="text-3xl mb-3">✈️</div>
-                      <p className="text-sm text-gray-500">
-                        Dites-moi votre destination et vos dates, je vous prépare un programme sur mesure.
-                      </p>
-                    </div>
-                  )}
-                  {chatMessages.map((msg, i) => (
-                    <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                      <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
-                        msg.role === "user" ? "bg-gray-900 text-white" : "bg-gray-50 border border-gray-100"
-                      }`}>
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
-                        {msg.data?.options && msg.data.options.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 mt-2">
-                            {msg.data.options.map(opt => (
-                              <button key={opt} onClick={() => sendChat(opt)} disabled={chatLoading}
-                                className="text-[11px] bg-cyan-50 text-cyan-700 border border-cyan-100 px-2 py-1 rounded-full hover:bg-cyan-100 disabled:opacity-50">
-                                {opt}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        {msg.data?.type === "planning" && msg.data?.days && (
-                          <div className="mt-3 space-y-2">
-                            <div className="bg-cyan-50 rounded-lg p-2 text-center text-xs font-semibold text-cyan-900">
-                              {msg.data.destination} · {msg.data.duration} · Budget: {msg.data.estimated_budget}
-                            </div>
-                            {msg.data.days.map(day => (
-                              <div key={day.day} className="border border-gray-100 rounded-lg p-2 text-xs">
-                                <div className="font-semibold mb-1">Jour {day.day} — {day.title}</div>
-                                <div className="text-gray-500">🌅 {day.morning?.activity} · ☀️ {day.afternoon?.activity} · 🌙 {day.evening?.activity}</div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  {chatLoading && (
-                    <div className="flex justify-start">
-                      <div className="bg-gray-50 border border-gray-100 rounded-2xl px-4 py-2.5">
-                        <div className="flex gap-1">
-                          <div className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" />
-                          <div className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: "150ms" }} />
-                          <div className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: "300ms" }} />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                {/* Input */}
-                <div className="border-t border-gray-100 p-3 flex gap-2">
-                  <input
-                    type="text"
-                    value={chatInput}
-                    onChange={e => setChatInput(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && !chatLoading && sendChat(chatInput)}
-                    placeholder="Ex: Je pars à Tokyo 7 jours en avril..."
-                    className="flex-1 text-sm bg-gray-50 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-cyan-100"
-                  />
-                  <button
-                    onClick={() => sendChat(chatInput)}
-                    disabled={chatLoading || !chatInput.trim()}
-                    className="bg-gray-900 text-white rounded-xl px-4 py-2.5 text-sm font-medium disabled:opacity-40 hover:bg-gray-700 transition-colors"
-                  >
-                    →
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          <PlannerBlock
+            chatMessages={chatMessages}
+            chatLoading={chatLoading}
+            chatInput={chatInput}
+            setChatInput={setChatInput}
+            sendChat={sendChat}
+            chatEndRef={chatEndRef}
+            showPlanner={showPlanner}
+            setShowPlanner={setShowPlanner}
+          />
         )}
 
       </div>
