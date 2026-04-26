@@ -337,7 +337,7 @@ export default function HomePage() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
-  const [showPlanner, setShowPlanner] = useState(false);
+  const [showPlanner, setShowPlanner] = useState(true);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
