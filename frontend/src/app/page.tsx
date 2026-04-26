@@ -133,10 +133,10 @@ const PAST_DEALS = [
 
 const faqs = [
   { q: "Comment fonctionne Globe Genius ?", a: "On surveille en permanence les prix des vols au départ de 9 aéroports français. Dès qu\u2019on détecte une baisse de prix significative, on vous envoie une alerte sur Telegram avec tous les détails pour réserver." },
-  { q: "Quelle est la différence entre Gratuit et Premium ?", a: "En Gratuit, vous recevez les deals avec des réductions jusqu\u2019à -29%. En Premium, vous accédez à tous les deals (jusqu\u2019à -70%+), y compris les erreurs de prix des compagnies, avec des alertes prioritaires." },
+  { q: "Quelle est la différence entre Gratuit et Premium ?", a: "En Gratuit, vous recevez jusqu\u2019à 3 alertes complètes par semaine sur les deals à -40% et plus. En Premium, vous accédez à tous les deals sans limite (jusqu\u2019à -70%+), y compris les erreurs de prix des compagnies, avec prix et liens de réservation débloqués." },
   { q: "Comment fonctionne la garantie 30 jours ?", a: "Si Premium ne vous convient pas, contactez-nous dans les 30 jours suivant votre achat et on vous rembourse intégralement, sans question." },
   { q: "Les prix incluent-ils les bagages ?", a: "Les prix affichés sont ceux des compagnies aériennes. Les bagages en soute sont parfois inclus selon la compagnie et le tarif. On le précise dans chaque alerte quand l\u2019information est disponible." },
-  { q: "Combien de temps entre la publication du prix et votre alerte ?", a: "Pour les vols Ryanair, Transavia et Vueling au départ de Paris (CDG/ORY), on scrape les prix directement sur les APIs des compagnies toutes les 20 minutes. Dès qu\u2019une anomalie est détectée, l\u2019alerte Telegram part dans la foulée, généralement moins de 5 minutes après l\u2019apparition du deal. Pour les autres destinations, on utilise un agrégateur de vols interrogé toutes les 2 heures." },
+  { q: "Combien de temps entre la publication du prix et votre alerte ?", a: "Pour les vols Ryanair et Vueling au départ de Paris (CDG/ORY), on scrape les prix directement sur les APIs des compagnies toutes les 20 minutes. Dès qu\u2019une anomalie est détectée, l\u2019alerte Telegram part dans la foulée, généralement moins de 5 minutes après l\u2019apparition du deal. Pour les autres aéroports et destinations, on utilise un agrégateur de vols interrogé toutes les 2 heures." },
   { q: "Pourquoi certains deals disparaissent avant que j\u2019aie pu réserver ?", a: "Les tarifs érronés (\u00ab\u00a0erreurs de prix\u00a0\u00bb) sont des oublis de configuration des compagnies. Dès qu\u2019elles s\u2019en rendent compte, elles corrigent le tarif \u2014 parfois en quelques heures. C\u2019est pourquoi les alertes temps réel sont déterminantes : réserver dans l\u2019heure qui suit l\u2019alerte maximise vos chances d\u2019obtenir le prix affiché. Passez commande rapidement et contactez la compagnie si le tarif change avant l\u2019émission." },
 ];
 
@@ -325,7 +325,7 @@ export default function Landing() {
             {
               num: "2",
               title: "L\u2019algorithme détecte l\u2019anomalie de prix",
-              desc: "Dès qu\u2019un tarif chute sous le prix habituel, notre système le signale. Pour Ryanair, Transavia et Vueling, la vérification a lieu toutes les 20 minutes.",
+              desc: "Dès qu\u2019un tarif chute sous le prix habituel, notre système le signale. Pour Ryanair et Vueling au départ de Paris, la vérification a lieu toutes les 20 minutes.",
             },
             {
               num: "3",
@@ -371,11 +371,11 @@ export default function Landing() {
             <div className="font-bold text-[var(--color-ink)] text-sm mb-1">Gratuit</div>
             <div className="text-3xl font-extrabold text-[var(--color-ink)] mb-5">0€</div>
             <div className="text-sm text-gray-500 leading-loose mb-6">
-              ✓ Deals jusqu&apos;à -29%<br />
+              ✓ Deals à partir de -40%<br />
+              ✓ 3 alertes complètes / semaine<br />
               ✓ 9 aéroports de départ<br />
-              ✓ Alertes Telegram<br />
-              <span className="text-gray-300">✗ Deals au-delà de -30%</span><br />
-              <span className="text-gray-300">✗ Alertes prioritaires</span><br />
+              <span className="text-gray-300">✗ Deals au-delà de -50% (masqués)</span><br />
+              <span className="text-gray-300">✗ Alertes illimitées</span><br />
               <span className="text-gray-300">✗ Erreurs de prix</span>
             </div>
             <Link
