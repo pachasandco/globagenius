@@ -253,8 +253,26 @@ async def _analyze_new_flights(flights: list[dict]):
         # Anomaly detection (existing helper)
         anomaly = detect_anomaly(price=flight["price"], baseline=baseline)
         if not anomaly:
-            counters["rejected_no_anomaly"] += 1
-            continue
+            # Fallback: qualify on raw discount alone when z-score is unreliable
+            # (high variance baselines or young seasonal cells with few samples).
+            # A deal ≥40% below avg_price is worth showing regardless of z-score.
+            avg = baseline.get("avg_price") or 0
+            if avg > 0 and flight["price"] < avg:
+                raw_discount = (avg - flight["price"]) / avg * 100
+                std = baseline.get("std_dev") or 0
+                raw_z = (avg - flight["price"]) / std if std > 0 else 0
+                if raw_discount >= 40:
+                    from app.analysis.anomaly_detector import QualifiedItem
+                    anomaly = QualifiedItem(
+                        price=round(flight["price"], 2),
+                        baseline_price=round(avg, 2),
+                        discount_pct=round(raw_discount, 2),
+                        z_score=round(raw_z, 2),
+                        alert_level="good_deal",
+                    )
+            if not anomaly:
+                counters["rejected_no_anomaly"] += 1
+                continue
 
         # Extra filters on top of detect_anomaly's tiering
         # Qualify if EITHER discount is good (>=15%) OR statistical anomaly is strong (z>=1.5)
