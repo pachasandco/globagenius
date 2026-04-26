@@ -132,6 +132,7 @@ export interface FlightDeal {
   stops: number;
   trip_duration_days: number | null;
   duration_minutes: number | null;
+  expires_at: string | null;
   // Nullable when locked
   price: number | null;
   baseline_price: number | null;

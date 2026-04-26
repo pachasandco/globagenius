@@ -390,7 +390,7 @@ def list_packages(
     if item_ids:
         rf_resp = (
             db.table("raw_flights")
-            .select("id, origin, destination, departure_date, return_date, airline, stops, source_url, trip_duration_days, duration_minutes")
+            .select("id, origin, destination, departure_date, return_date, airline, stops, source_url, trip_duration_days, duration_minutes, expires_at")
             .in_("id", item_ids)
             .execute()
         )
@@ -460,6 +460,7 @@ def list_packages(
             "stops": flight.get("stops", 0),
             "trip_duration_days": flight.get("trip_duration_days"),
             "duration_minutes": flight.get("duration_minutes"),
+            "expires_at": flight.get("expires_at"),
             "price": qi["price"] if unlocked else None,
             "baseline_price": qi["baseline_price"] if unlocked else None,
             "source_url": flight.get("source_url", "") if unlocked else None,

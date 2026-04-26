@@ -276,8 +276,8 @@ async def _analyze_new_flights(flights: list[dict]):
         score = compute_score(
             discount_pct=anomaly.discount_pct,
             destination_code=flight["destination"],
-            date_flexibility=0,
-            accommodation_rating=None,
+            scraped_at=flight.get("scraped_at"),
+            source=flight.get("source"),
         )
 
         # item_id must be a valid UUID; skip if we couldn't capture it at upsert time
@@ -369,8 +369,8 @@ async def _dispatch_velocity_alerts(flights: list[dict]):
         score = compute_score(
             discount_pct=drop_pct,
             destination_code=flight["destination"],
-            date_flexibility=0,
-            accommodation_rating=None,
+            scraped_at=flight.get("scraped_at"),
+            source=flight.get("source"),
         )
         flight["score"] = score
         tier = "premium"  # Velocity alerts are always premium (high-value)
