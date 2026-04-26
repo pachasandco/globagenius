@@ -2,7 +2,7 @@ import asyncio
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from app.config import settings, IATA_TO_CITY
+from app.config import settings, IATA_TO_CITY, iata_label
 from app.db import db
 from app.scraper.travelpayouts_flights import scrape_all_flights
 from app.scraper.tier1_scraper import scrape_all_tier1
@@ -456,14 +456,14 @@ async def _dispatch_grouped_flight_alerts(
     try:
         prefs_resp = (
             db.table("user_preferences")
-            .select("user_id,telegram_chat_id,telegram_connected,airport_codes,alerts_paused_until,deal_tier")
+            .select("user_id,telegram_chat_id,telegram_connected,airport_codes,alerts_paused_until,deal_tier,blocked_destinations")
             .eq("telegram_connected", True)
             .execute()
         )
         all_prefs = prefs_resp.data or []
     except Exception as e:
         err_msg = str(e)
-        if "alerts_paused_until" in err_msg or "deal_tier" in err_msg:
+        if "alerts_paused_until" in err_msg or "deal_tier" in err_msg or "blocked_destinations" in err_msg:
             logger.warning("Migration not yet applied — fetching prefs without optional columns")
             try:
                 prefs_resp = (
@@ -525,12 +525,16 @@ async def _dispatch_grouped_flight_alerts(
     # Build per-user lookups from the preferences we already fetched
     paused_until_by_user: dict[str, str] = {}
     deal_tier_by_user: dict[str, str] = {}
+    blocked_by_user: dict[str, set] = {}
     for pref in all_prefs:
         if isinstance(pref, dict) and pref.get("user_id"):
             uid = pref["user_id"]
             if pref.get("alerts_paused_until"):
                 paused_until_by_user[uid] = pref["alerts_paused_until"]
             deal_tier_by_user[uid] = pref.get("deal_tier") or "regular"
+            blocked = pref.get("blocked_destinations") or []
+            if blocked:
+                blocked_by_user[uid] = set(blocked)
 
     # Track teasers already sent this run — at most once per user per run
     teaser_sent_quota: set[str] = set()
@@ -591,6 +595,9 @@ async def _dispatch_grouped_flight_alerts(
                 if grp_origin != sub_origin:
                     continue
 
+                # Skip destinations the user has blocked
+                if user_id and grp_dest in blocked_by_user.get(user_id, set()):
+                    continue
 
                 # Wishlist matching: check if this (origin, destination) is in any
                 # of the user's active wishlists — bypass standard discount gates
@@ -783,8 +790,8 @@ async def _dispatch_grouped_flight_alerts(
                 if prev_best is not None and best_offer_price >= prev_best:
                     continue
 
-                origin_city = IATA_TO_CITY.get(grp_origin, grp_origin)
-                dest_city = IATA_TO_CITY.get(grp_dest, grp_dest)
+                origin_city = iata_label(grp_origin)
+                dest_city = iata_label(grp_dest)
                 try:
                     success = await send_grouped_flight_alerts(
                         chat_id=chat_id,
