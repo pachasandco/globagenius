@@ -64,6 +64,16 @@ def get_scheduler_jobs() -> list[dict]:
             "trigger": "cron",
             "hour": 5,  # Une fois par jour a 5h suffit
         },
+        # ── REVERIFICATION : toutes les 2h ──
+        # Re-vérifie les qualified_items actifs dont reverified_at date de plus de 2h.
+        # Expire les deals dont le prix n'est plus valide.
+        *[{
+            "id": f"reverify_active_deals_{h:02d}",
+            "func": job_reverify_active_deals,
+            "trigger": "cron",
+            "hour": h,
+            "minute": 45,
+        } for h in range(24)],
         {
             "id": "daily_digest",
             "func": job_daily_digest,
@@ -317,6 +327,7 @@ async def _analyze_new_flights(flights: list[dict]):
                 # Telegram message context without re-querying.
                 flight["_comparison"] = comparison
 
+        now_utc = datetime.now(timezone.utc).isoformat()
         qualified_item_row = {
             "type": "flight",
             "item_id": flight_id,
@@ -326,6 +337,7 @@ async def _analyze_new_flights(flights: list[dict]):
             "score": score,
             "tier": tier,
             "status": "active",
+            "reverified_at": now_utc,
         }
         if competitor_prices is not None:
             qualified_item_row["competitor_prices"] = competitor_prices
@@ -1212,4 +1224,66 @@ async def job_check_scraper_health():
         await run_scraper_health_check()
     except Exception as e:
         logger.error(f"Scraper health check failed: {e}")
+
+
+async def job_reverify_active_deals():
+    """Re-verify all active qualified_items whose reverified_at is older than 2h.
+
+    Deals that no longer exist at their original price are expired immediately,
+    keeping the homepage free of stale offers. Deals that still hold get their
+    reverified_at timestamp refreshed so they stay visible.
+    """
+    if not db:
+        return
+
+    stale_threshold = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    resp = (
+        db.table("qualified_items")
+        .select("id, item_id, price")
+        .eq("status", "active")
+        .lt("reverified_at", stale_threshold)
+        .limit(50)
+        .execute()
+    )
+    items = resp.data or []
+    if not items:
+        return
+
+    logger.info(f"Re-verifying {len(items)} stale qualified_items")
+
+    item_ids = [qi["item_id"] for qi in items]
+    flights_resp = (
+        db.table("raw_flights")
+        .select("id, origin, destination, price, departure_date, return_date, source")
+        .in_("id", item_ids)
+        .execute()
+    )
+    flights_by_id = {f["id"]: f for f in (flights_resp.data or [])}
+
+    now_utc = datetime.now(timezone.utc).isoformat()
+    expired = 0
+    refreshed = 0
+
+    for qi in items:
+        flight = flights_by_id.get(qi["item_id"])
+        if not flight:
+            db.table("qualified_items").update({"status": "expired"}).eq("id", qi["id"]).execute()
+            expired += 1
+            continue
+
+        flight["price"] = qi["price"]
+        try:
+            still_valid = await reverify_flight_price(flight)
+        except Exception as e:
+            logger.warning(f"Reverify error for qi {qi['id']}: {e}")
+            continue
+
+        if still_valid:
+            db.table("qualified_items").update({"reverified_at": now_utc}).eq("id", qi["id"]).execute()
+            refreshed += 1
+        else:
+            db.table("qualified_items").update({"status": "expired"}).eq("id", qi["id"]).execute()
+            expired += 1
+
+    logger.info(f"Reverify pass: {refreshed} refreshed, {expired} expired")
     logger.info("Scraper health check complete")
