@@ -32,10 +32,10 @@ export default function Conditions() {
 
           <section>
             <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#0A1F3D]">Article 2 — Description du service</h2>
-            <p>Globe Genius est un service de détection automatique de vols à prix anormalement bas au départ de 8 aéroports français. Le service comprend :</p>
+            <p>Globe Genius est un service de détection automatique de vols à prix anormalement bas au départ de 9 aéroports français. Le service comprend :</p>
             <ul className="list-disc pl-6 space-y-1">
-              <li><strong>Formule Gratuite :</strong> accès aux deals avec une réduction de 20 à 29% par rapport au prix moyen du marché, consultables sur le site.</li>
-              <li><strong>Formule Premium (29€/an) :</strong> accès à tous les deals (réduction de 30% et plus, incluant les erreurs de prix et les promos flash), alertes Telegram instantanées avec liens de réservation directs vers Aviasales et Booking.com.</li>
+              <li><strong>Formule Gratuite :</strong> accès aux deals avec une réduction d&apos;au moins 40% par rapport au prix moyen du marché, dans la limite de 3 alertes complètes par semaine glissante. Les deals au-delà de 50% de réduction sont affichés avec prix masqué.</li>
+              <li><strong>Formule Premium (29€/an) :</strong> accès à tous les deals sans limite (réductions de 40% et plus, incluant les erreurs de prix et les promos flash), alertes Telegram illimitées avec prix et liens de réservation directs vers Aviasales et Booking.com.</li>
             </ul>
           </section>
 
