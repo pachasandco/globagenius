@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { Zap, Shield, CreditCard, X as XIcon, Check } from "lucide-react";
 
 const PAST_DEALS = [
   { origin: "CDG", destination: "JFK", city: "New York", flag: "🇺🇸", price: 198, usual: 580, discount: 66, img: "https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?w=800&q=80" },
@@ -54,28 +55,55 @@ export function HeroContent() {
       transition={{ duration: 0.6 }}
       className="relative z-10 px-6 sm:px-12 py-16 max-w-2xl"
     >
-      <span className="inline-flex items-center gap-2 bg-[var(--color-coral)] text-white px-4 py-1.5 rounded-full text-sm font-bold mb-6">
-        🔥 Offre printemps — 29€/an · <span className="line-through opacity-70">59€</span> · Expire bientôt
-      </span>
+      {/* Badge urgence */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.4, delay: 0.1 }}
+        className="inline-flex items-center gap-2 bg-[var(--color-coral)] text-white px-4 py-1.5 rounded-full text-sm font-bold mb-6"
+      >
+        <Zap className="w-3.5 h-3.5" aria-hidden="true" />
+        Offre printemps — 29€/an · <span className="line-through opacity-70">59€</span> · Expire bientôt
+      </motion.div>
+
       <h1 className="font-[family-name:var(--font-dm-serif)] text-4xl sm:text-5xl font-bold text-white leading-tight mb-4">
         Les vols à -70% partent{" "}
         <br className="hidden sm:block" />
         <em className="not-italic text-[var(--color-coral)]">en quelques heures.</em>
       </h1>
+
       <p className="text-white/80 text-lg leading-relaxed mb-3 max-w-lg">
         Globe Genius surveille les prix 24h/24 et vous alerte sur Telegram dès qu&apos;une erreur de prix apparaît — avant qu&apos;elle disparaisse.
       </p>
+
+      {/* Social proof live */}
       <p className="text-white/50 text-sm mb-8 flex items-center gap-2">
-        <span className="inline-block w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+        <span className="inline-block w-2 h-2 rounded-full bg-green-400 animate-pulse" aria-hidden="true" />
         +2 400 voyageurs ont déjà économisé cette année
       </p>
+
+      {/* CTA */}
       <Link
         href="/signup"
-        className="inline-block bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-8 py-4 rounded-xl font-bold text-lg transition-all shadow-[0_8px_32px_rgba(232,57,42,0.45)] hover:shadow-[0_12px_40px_rgba(232,57,42,0.55)] hover:-translate-y-0.5"
+        className="inline-flex items-center gap-2 bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-8 py-4 rounded-xl font-bold text-lg transition-all duration-200 shadow-[0_8px_32px_rgba(232,57,42,0.45)] hover:shadow-[0_12px_40px_rgba(232,57,42,0.55)] hover:-translate-y-0.5 active:scale-95 cursor-pointer"
       >
-        Recevoir mes premières alertes gratuitement →
+        Recevoir mes premières alertes gratuitement
+        <span aria-hidden="true">→</span>
       </Link>
-      <p className="text-white/40 text-sm mt-3">✓ Gratuit · ✓ Sans carte · ✓ Résiliable en 1 clic</p>
+
+      {/* Trust triplet avec icônes SVG */}
+      <div className="flex items-center gap-4 mt-4 flex-wrap">
+        {[
+          { icon: Check, label: "Gratuit" },
+          { icon: CreditCard, label: "Sans carte" },
+          { icon: Shield, label: "Résiliable en 1 clic" },
+        ].map(({ icon: Icon, label }) => (
+          <span key={label} className="flex items-center gap-1 text-white/40 text-xs">
+            <Icon className="w-3 h-3" aria-hidden="true" />
+            {label}
+          </span>
+        ))}
+      </div>
     </motion.div>
   );
 }

@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { Check, X } from "lucide-react";
 import RedirectIfLoggedIn from "./_components/RedirectIfLoggedIn";
 import LandingAnimated, { HeroContent } from "./_components/LandingAnimated";
+import StatsBar from "./_components/StatsBar";
 
 export const metadata: Metadata = {
   alternates: {
@@ -70,20 +72,7 @@ export default function Landing() {
           <HeroContent />
         </section>
 
-        {/* ── SOCIAL PROOF BAR ── */}
-        <section className="flex flex-wrap justify-center gap-8 sm:gap-16 py-6 px-6 bg-white border-t border-[var(--color-sand)]">
-          {[
-            { value: "+2 400", label: "voyageurs inscrits" },
-            { value: "-70%", label: "meilleur deal détecté" },
-            { value: "30 j", label: "garantie satisfait ou remboursé" },
-            { value: "9", label: "aéroports surveillés" },
-          ].map((s) => (
-            <div key={s.label} className="text-center">
-              <div className="text-2xl font-extrabold text-[var(--color-coral)]">{s.value}</div>
-              <div className="text-xs text-gray-400 mt-1">{s.label}</div>
-            </div>
-          ))}
-        </section>
+        <StatsBar />
 
         {/* Deals passés, comment ça marche, FAQ */}
         <LandingAnimated />
@@ -98,7 +87,7 @@ export default function Landing() {
           </p>
           <div className="flex flex-col sm:flex-row gap-6 max-w-2xl mx-auto">
             {/* Premium first — anchoring effect */}
-            <div className="flex-1 bg-[var(--color-ink)] rounded-2xl p-6 relative order-first sm:order-none ring-2 ring-[var(--color-coral)]">
+            <div className="flex-1 bg-[var(--color-ink)] rounded-2xl p-6 relative order-first sm:order-none ring-2 ring-[var(--color-coral)] transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_20px_40px_rgba(232,57,42,0.2)]">
               <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[var(--color-coral)] text-white text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap">
                 ⭐ RECOMMANDÉ
               </span>
@@ -109,30 +98,46 @@ export default function Landing() {
                 <span className="text-gray-500 text-sm">/an</span>
               </div>
               <p className="text-[var(--color-coral)] text-xs font-semibold mb-4">Offre printemps — expire bientôt</p>
-              <div className="text-sm text-gray-400 leading-loose mb-6">
-                ✓ <span className="text-white">Tous les deals, jusqu&apos;à -70%</span><br />
-                ✓ <span className="text-white">Erreurs de prix des compagnies</span><br />
-                ✓ <span className="text-white">9 aéroports de départ</span><br />
-                ✓ <span className="text-white">Alertes Telegram prioritaires</span><br />
-                ✓ <span className="text-white font-semibold">Garantie satisfait 30 jours</span><br />
-                <span className="text-[var(--color-forest)]">= 2,42€/mois · rentabilisé dès 1 vol</span>
-              </div>
-              <Link href="/signup" className="block text-center py-3 rounded-xl font-bold text-sm bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white transition-colors">
+              <ul className="text-sm space-y-2 mb-6">
+                {[
+                  "Tous les deals, jusqu'à -70%",
+                  "Erreurs de prix des compagnies",
+                  "9 aéroports de départ",
+                  "Alertes Telegram prioritaires",
+                  "Garantie satisfait 30 jours",
+                ].map((f) => (
+                  <li key={f} className="flex items-center gap-2 text-white">
+                    <Check className="w-4 h-4 text-[var(--color-coral)] shrink-0" />
+                    {f}
+                  </li>
+                ))}
+                <li className="text-[var(--color-forest)] text-xs pt-1 pl-6">= 2,42€/mois · rentabilisé dès 1 vol</li>
+              </ul>
+              <Link href="/signup" className="block text-center py-3 rounded-xl font-bold text-sm bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white transition-all duration-150 hover:shadow-[0_4px_16px_rgba(232,57,42,0.4)] active:scale-95">
                 Commencer Premium →
               </Link>
             </div>
-            <div className="flex-1 bg-white border border-[var(--color-sand)] rounded-2xl p-6">
+            <div className="flex-1 bg-white border border-[var(--color-sand)] rounded-2xl p-6 transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-md">
               <div className="font-bold text-gray-400 text-sm mb-1">Gratuit</div>
               <div className="text-3xl font-extrabold text-[var(--color-ink)] mb-5">0€</div>
-              <div className="text-sm text-gray-500 leading-loose mb-6">
-                ✓ Deals à partir de -40%<br />
-                ✓ 3 alertes complètes / semaine<br />
-                ✓ 9 aéroports de départ<br />
-                <span className="text-gray-300">✗ Deals au-delà de -50% (masqués)</span><br />
-                <span className="text-gray-300">✗ Alertes illimitées</span><br />
-                <span className="text-gray-300">✗ Erreurs de prix</span>
-              </div>
-              <Link href="/signup" className="block text-center py-3 rounded-xl font-bold text-sm border-2 border-[var(--color-sand)] text-gray-400 hover:border-[var(--color-ink)] hover:text-[var(--color-ink)] transition-colors">
+              <ul className="text-sm space-y-2 mb-6">
+                {[
+                  { text: "Deals à partir de -40%", ok: true },
+                  { text: "3 alertes complètes / semaine", ok: true },
+                  { text: "9 aéroports de départ", ok: true },
+                  { text: "Deals au-delà de -50% (masqués)", ok: false },
+                  { text: "Alertes illimitées", ok: false },
+                  { text: "Erreurs de prix", ok: false },
+                ].map((f) => (
+                  <li key={f.text} className={`flex items-center gap-2 ${f.ok ? "text-gray-600" : "text-gray-300"}`}>
+                    {f.ok
+                      ? <Check className="w-4 h-4 text-gray-400 shrink-0" />
+                      : <X className="w-4 h-4 text-gray-200 shrink-0" />}
+                    {f.text}
+                  </li>
+                ))}
+              </ul>
+              <Link href="/signup" className="block text-center py-3 rounded-xl font-bold text-sm border-2 border-[var(--color-sand)] text-gray-400 hover:border-[var(--color-ink)] hover:text-[var(--color-ink)] transition-all duration-150 active:scale-95">
                 Essayer gratuitement
               </Link>
             </div>
