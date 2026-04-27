@@ -342,7 +342,12 @@ async def _analyze_new_flights(flights: list[dict]):
         if competitor_prices is not None:
             qualified_item_row["competitor_prices"] = competitor_prices
 
-        db.table("qualified_items").insert(qualified_item_row).execute()
+        # Upsert: if this raw_flight already has an active qualified_item, update
+        # price/score/reverified_at in place instead of inserting a duplicate row.
+        # The unique constraint on item_id (migration 021) enforces this at DB level.
+        db.table("qualified_items").upsert(
+            qualified_item_row, on_conflict="item_id"
+        ).execute()
 
         # Defer flight alert dispatch: accumulate and send as grouped alerts
         # (by origin+destination) after the analysis pass completes. This lets
