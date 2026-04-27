@@ -58,9 +58,9 @@ export function HeroContent() {
         🔥 Offre printemps — Premium à 29€/an au lieu de 59€
       </span>
       <h1 className="font-[family-name:var(--font-dm-serif)] text-4xl sm:text-5xl font-bold text-white leading-tight mb-4">
-        Des vols à prix cassés,{" "}
+        Alertes vols pas chers,{" "}
         <br className="hidden sm:block" />
-        détectés{" "}
+        détectées{" "}
         <em className="not-italic text-[var(--color-coral)]">avant tout le monde</em>.
       </h1>
       <p className="text-white/75 text-lg leading-relaxed mb-8 max-w-lg">
