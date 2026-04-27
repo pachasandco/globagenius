@@ -885,7 +885,7 @@ async def planner_reset(user_id: str, user: dict = Depends(get_current_user)):
 
 
 @router.post("/api/admin/rag/ingest")
-async def rag_ingest(api_key: str = Depends(require_admin_key)):
+async def rag_ingest(api_key: str = Depends(_require_admin)):
     """Ingest YouTube travel transcripts into rag_chunks (admin only, async job)."""
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
