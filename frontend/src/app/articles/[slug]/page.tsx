@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -22,6 +23,8 @@ interface Article {
   best_time: string;
   sections: Section[];
   budget_tip: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 async function fetchArticle(slug: string): Promise<Article | null> {
@@ -122,7 +125,8 @@ export default async function ArticlePage({
     description: article.subtitle,
     image: article.cover_photo,
     url: `https://globegenius.app/articles/${slug}`,
-    datePublished: "2026-04-10",
+    datePublished: article.created_at ? article.created_at.slice(0, 10) : "2026-04-10",
+    dateModified: article.updated_at ? article.updated_at.slice(0, 10) : undefined,
     author: {
       "@type": "Organization",
       name: "Globe Genius",
@@ -196,10 +200,13 @@ export default async function ArticlePage({
 
       {/* Hero */}
       <div className="relative h-[30vh] md:h-[50vh]">
-        <img
+        <Image
           src={article.cover_photo}
-          alt={article.destination}
-          className="w-full h-full object-cover"
+          alt={`${article.destination} — guide voyage Globe Genius`}
+          fill
+          priority
+          className="object-cover"
+          sizes="100vw"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
         <div className="absolute bottom-8 left-0 right-0">
@@ -241,11 +248,13 @@ export default async function ArticlePage({
                 {section.title}
               </h2>
               {section.photo_url && (
-                <div className="rounded-2xl overflow-hidden mb-4 aspect-[16/9]">
-                  <img
+                <div className="rounded-2xl overflow-hidden mb-4 aspect-[16/9] relative">
+                  <Image
                     src={section.photo_url}
                     alt={section.title}
-                    className="w-full h-full object-cover"
+                    fill
+                    className="object-cover"
+                    sizes="(max-width: 768px) 100vw, 896px"
                   />
                 </div>
               )}
