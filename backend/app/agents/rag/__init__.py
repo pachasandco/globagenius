@@ -1,8 +1,7 @@
-"""RAG travel planner package."""
+"""RAG travel planner package — Supabase full-text search backend."""
 
 from .rag_planner import RagTravelPlannerSession, get_or_create_session, set_rag_retriever, reset_session
 from .retriever import RagRetriever
-from .channels import YOUTUBE_CHANNELS, CHANNEL_HANDLE_MAP
 
 __all__ = [
     "RagTravelPlannerSession",
@@ -10,6 +9,4 @@ __all__ = [
     "reset_session",
     "set_rag_retriever",
     "RagRetriever",
-    "YOUTUBE_CHANNELS",
-    "CHANNEL_HANDLE_MAP",
 ]

@@ -1,150 +1,149 @@
-"""Ingest YouTube transcripts into RAG vector database."""
+"""Ingest YouTube travel channel transcripts into Supabase rag_chunks table."""
 
 import logging
-from typing import Optional
 import re
+import time
+from typing import Optional
 
-try:
-    from youtube_transcript_api import YouTubeTranscriptApi
-except ImportError:
-    YouTubeTranscriptApi = None
+import httpx
 
 logger = logging.getLogger(__name__)
 
+try:
+    from youtube_transcript_api import YouTubeTranscriptApi
+    TRANSCRIPT_API_AVAILABLE = True
+except ImportError:
+    TRANSCRIPT_API_AVAILABLE = False
+    logger.warning("youtube-transcript-api not installed")
 
-def get_channel_videos(channel_id: str, max_results: int = 50) -> list[dict]:
-    """
-    Fetch video IDs and metadata from a YouTube channel.
 
-    NOTE: This requires YouTube Data API which is not free.
-    For now, this is a placeholder. In production, use youtube-dl or pytube
-    to scrape the channel's latest videos.
-    """
-    logger.warning(f"Channel video fetch not yet implemented for {channel_id}")
-    return []
+def get_channel_videos(channel_id: str, api_key: str, max_results: int = 50) -> list[dict]:
+    """Fetch recent video IDs from a YouTube channel via Data API v3."""
+    videos = []
+    page_token = None
+
+    while len(videos) < max_results:
+        params = {
+            "part": "snippet",
+            "channelId": channel_id,
+            "maxResults": min(50, max_results - len(videos)),
+            "order": "date",
+            "type": "video",
+            "key": api_key,
+        }
+        if page_token:
+            params["pageToken"] = page_token
+
+        try:
+            resp = httpx.get(
+                "https://www.googleapis.com/youtube/v3/search",
+                params=params,
+                timeout=15,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            logger.error(f"YouTube API error for channel {channel_id}: {e}")
+            break
+
+        for item in data.get("items", []):
+            vid_id = item.get("id", {}).get("videoId")
+            title = item.get("snippet", {}).get("title", "")
+            if vid_id:
+                videos.append({"id": vid_id, "title": title})
+
+        page_token = data.get("nextPageToken")
+        if not page_token:
+            break
+
+    return videos
 
 
 def get_transcript(video_id: str) -> Optional[str]:
-    """
-    Fetch transcript for a YouTube video.
-
-    Args:
-        video_id: YouTube video ID (e.g., "dQw4w9WgXcQ")
-
-    Returns:
-        Full transcript text, or None if transcript unavailable
-    """
-    if YouTubeTranscriptApi is None:
-        logger.error("youtube-transcript-api not installed")
+    """Fetch transcript for a YouTube video (French preferred, English fallback)."""
+    if not TRANSCRIPT_API_AVAILABLE:
         return None
-
     try:
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=["en", "fr"])
-        # Combine all transcript entries into one text
-        text = " ".join([entry["text"] for entry in transcript_list])
-        return text
+        entries = YouTubeTranscriptApi.get_transcript(video_id, languages=["fr", "en"])
+        return " ".join(e["text"] for e in entries)
     except Exception as e:
-        logger.warning(f"Failed to fetch transcript for video {video_id}: {e}")
+        logger.debug(f"No transcript for {video_id}: {e}")
         return None
-
-
-def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]:
-    """
-    Split text into overlapping chunks.
-
-    Args:
-        text: Input text
-        chunk_size: Target chunk size in tokens (approximate, based on word count)
-        overlap: Overlap between chunks in tokens
-
-    Returns:
-        List of text chunks
-    """
-    # Simple word-based chunking (1 word ≈ 1.3 tokens, so divide by 1.3)
-    words = text.split()
-    word_chunk_size = max(1, int(chunk_size / 1.3))
-    overlap_words = max(1, int(overlap / 1.3))
-
-    chunks = []
-    for i in range(0, len(words), word_chunk_size - overlap_words):
-        chunk = " ".join(words[i : i + word_chunk_size])
-        if chunk.strip():
-            chunks.append(chunk)
-
-    return chunks
 
 
 def clean_text(text: str) -> str:
-    """Clean transcript text: remove extra whitespace, artifacts."""
-    # Remove [Music], [Applause], etc.
     text = re.sub(r"\[.*?\]", "", text)
-    # Remove extra whitespace
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
 
-def ingest_channel(
-    channel_id: str,
-    channel_name: str,
-    db_client,
-    max_videos: int = 50,
-    chunk_size: int = 500,
-    overlap: int = 50,
-) -> dict:
-    """
-    Ingest all transcripts from a YouTube channel into vector DB.
+def chunk_text(text: str, chunk_words: int = 200, overlap: int = 30) -> list[str]:
+    words = text.split()
+    step = max(1, chunk_words - overlap)
+    return [
+        " ".join(words[i: i + chunk_words])
+        for i in range(0, len(words), step)
+        if words[i: i + chunk_words]
+    ]
 
-    Args:
-        channel_id: YouTube channel ID
-        channel_name: Human-readable channel name
-        db_client: ChromaDB client
-        max_videos: Max videos to ingest per channel
-        chunk_size: Token size per chunk
-        overlap: Overlap between chunks
 
-    Returns:
-        Stats dict: {videos_found, videos_with_transcript, chunks_ingested, errors}
-    """
-    stats = {
-        "videos_found": 0,
-        "videos_with_transcript": 0,
-        "chunks_ingested": 0,
-        "errors": [],
+def extract_destinations_from_title(title: str) -> list[str]:
+    """Best-effort: extract destination names from a video title."""
+    # Remove common non-destination words
+    stopwords = {
+        "vlog", "travel", "trip", "guide", "day", "days", "week", "food",
+        "best", "top", "things", "to", "do", "in", "at", "the", "my", "our",
+        "voyage", "jour", "jours", "semaine", "visite", "visiter", "découvrir",
     }
+    words = re.findall(r"[A-ZÀ-Ÿ][a-zà-ÿA-ZÀ-Ÿ\-]+", title)
+    return [w for w in words if w.lower() not in stopwords and len(w) > 3]
 
-    # Placeholder: get_channel_videos is not yet implemented
-    videos = get_channel_videos(channel_id, max_results=max_videos)
+
+def ingest_channel(channel_id: str, channel_name: str, db, api_key: str,
+                   max_videos: int = 30) -> dict:
+    """Fetch videos, transcripts, chunk them and upsert into rag_chunks."""
+    stats = {"videos_found": 0, "transcribed": 0, "chunks": 0, "skipped": 0}
+
+    videos = get_channel_videos(channel_id, api_key, max_results=max_videos)
     stats["videos_found"] = len(videos)
+    logger.info(f"{channel_name}: {len(videos)} videos found")
 
     for video in videos:
-        video_id = video.get("id")
-        video_title = video.get("title", "Unknown")
+        vid_id = video["id"]
+        title = video["title"]
 
-        # Fetch transcript
-        transcript = get_transcript(video_id)
+        transcript = get_transcript(vid_id)
         if not transcript:
+            stats["skipped"] += 1
             continue
 
-        stats["videos_with_transcript"] += 1
-
-        # Clean and chunk
+        stats["transcribed"] += 1
         cleaned = clean_text(transcript)
-        chunks = chunk_text(cleaned, chunk_size=chunk_size, overlap=overlap)
+        chunks = chunk_text(cleaned)
+        destinations = extract_destinations_from_title(title)
+        destination = destinations[0] if destinations else None
 
-        # Ingest chunks into vector DB
-        for chunk in chunks:
-            try:
-                db_client.add_document(
-                    text=chunk,
-                    metadata={
-                        "channel": channel_name,
-                        "video_id": video_id,
-                        "video_title": video_title,
-                    },
-                )
-                stats["chunks_ingested"] += 1
-            except Exception as e:
-                logger.error(f"Failed to ingest chunk from {video_id}: {e}")
-                stats["errors"].append(str(e))
+        rows = [
+            {
+                "channel": channel_name,
+                "video_id": vid_id,
+                "video_title": title,
+                "destination": destination,
+                "chunk_text": chunk,
+            }
+            for chunk in chunks
+        ]
 
+        try:
+            db.table("rag_chunks").upsert(
+                rows,
+                on_conflict="video_id,md5(chunk_text)",
+            ).execute()
+            stats["chunks"] += len(rows)
+        except Exception as e:
+            logger.error(f"Failed to upsert chunks for {vid_id}: {e}")
+
+        time.sleep(0.3)  # rate limit
+
+    logger.info(f"{channel_name}: {stats}")
     return stats

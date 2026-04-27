@@ -884,6 +884,35 @@ async def planner_reset(user_id: str, user: dict = Depends(get_current_user)):
     return {"status": "reset"}
 
 
+@router.post("/api/admin/rag/ingest")
+async def rag_ingest(api_key: str = Depends(require_admin_key)):
+    """Ingest YouTube travel transcripts into rag_chunks (admin only, async job)."""
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    from app.config import settings
+    if not settings.YOUTUBE_API_KEY:
+        raise HTTPException(status_code=503, detail="YOUTUBE_API_KEY not configured")
+
+    import asyncio
+    from app.agents.rag.youtube_ingester import ingest_channel
+    from app.agents.rag.channels import YOUTUBE_CHANNELS
+
+    async def _run():
+        total = {"videos_found": 0, "transcribed": 0, "chunks": 0, "skipped": 0}
+        for ch in YOUTUBE_CHANNELS:
+            stats = await asyncio.to_thread(
+                ingest_channel,
+                ch["channel_id"], ch["name"], db, settings.YOUTUBE_API_KEY,
+                max_videos=30,
+            )
+            for k in total:
+                total[k] += stats.get(k, 0)
+        logger.info(f"RAG ingestion complete: {total}")
+
+    asyncio.create_task(_run())
+    return {"status": "ingestion_started", "channels": len(YOUTUBE_CHANNELS)}
+
+
 # ─── STRIPE ───
 
 @router.post("/api/stripe/create-checkout")

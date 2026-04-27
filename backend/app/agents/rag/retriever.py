@@ -1,68 +1,61 @@
-"""Retrieve relevant chunks from RAG vector database."""
+"""Retrieve relevant RAG chunks from Supabase using PostgreSQL full-text search."""
 
 import logging
-from typing import Optional
-from .chromadb_client import get_chromadb_client
+import re
 
 logger = logging.getLogger(__name__)
 
 
+def _normalize_query(query: str) -> str:
+    """Convert free text to a tsquery-compatible OR string."""
+    words = re.findall(r"[a-zA-ZÀ-ÿ]{3,}", query)
+    return " | ".join(words) if words else query
+
+
 class RagRetriever:
-    """Query vector database for travel-relevant context."""
+    """Query rag_chunks via Supabase full-text search (no ML deps)."""
 
-    def __init__(self, db_client=None):
-        """Initialize retriever with ChromaDB client."""
-        self.db_client = db_client or get_chromadb_client()
+    def __init__(self, db):
+        self.db = db
 
-    def retrieve(
-        self,
-        query: str,
-        destination: Optional[str] = None,
-        top_k: int = 5,
-        min_similarity: float = 0.3,
-    ) -> list[dict]:
-        """
-        Retrieve top-K relevant chunks for a travel query.
-
-        Args:
-            query: User query or destination name
-            destination: Optional explicit destination for filtering
-            top_k: Number of chunks to retrieve
-            min_similarity: Minimum similarity threshold (0-1)
-
-        Returns:
-            List of dicts: {text, similarity, channel, video_id, video_title}
-        """
+    def retrieve(self, query: str, top_k: int = 5) -> list[dict]:
+        """Full-text search across all chunks."""
+        if not self.db:
+            return []
         try:
-            results = self.db_client.query(
-                query_text=query,
-                destination=destination,
-                top_k=top_k,
-                min_similarity=min_similarity,
+            tsquery = _normalize_query(query)
+            resp = (
+                self.db.table("rag_chunks")
+                .select("chunk_text, channel, video_title, destination")
+                .text_search("tsv", tsquery, config="french")
+                .limit(top_k)
+                .execute()
             )
-            return results or []
+            return resp.data or []
         except Exception as e:
-            logger.error(f"Retrieval failed: {e}")
+            logger.warning(f"RAG retrieve error: {e}")
             return []
 
-    def retrieve_by_destination(
-        self,
-        destination: str,
-        top_k: int = 5,
-    ) -> list[dict]:
-        """
-        Retrieve chunks specifically about a destination.
+    def retrieve_by_destination(self, destination: str, top_k: int = 8) -> list[dict]:
+        """Retrieve chunks tagged to a specific destination, with FTS fallback."""
+        if not self.db:
+            return []
+        try:
+            resp = (
+                self.db.table("rag_chunks")
+                .select("chunk_text, channel, video_title, destination")
+                .ilike("destination", f"%{destination}%")
+                .limit(top_k)
+                .execute()
+            )
+            rows = resp.data or []
 
-        Args:
-            destination: Destination name (e.g., "Tokyo", "Paris")
-            top_k: Number of chunks to retrieve
+            if len(rows) < 3:
+                fts = self.retrieve(destination, top_k=top_k - len(rows))
+                seen = {r["chunk_text"] for r in rows}
+                rows += [r for r in fts if r["chunk_text"] not in seen]
 
-        Returns:
-            List of relevant chunks with metadata
-        """
-        return self.retrieve(
-            query=destination,
-            destination=destination,
-            top_k=top_k,
-            min_similarity=0.2,  # Stricter for destination-specific queries
-        )
+            return rows[:top_k]
+        except Exception as e:
+            logger.warning(f"RAG retrieve_by_destination error: {e}")
+            return []
