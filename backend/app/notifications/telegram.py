@@ -150,34 +150,59 @@ def format_admin_report(stats: dict) -> str:
     return "\n".join(lines)
 
 
-def format_flight_deal_alert(flight: dict, discount_pct: float, baseline_price: float) -> str:
-    """Format an alert message for a flight-only deal (no hotel package).
-
-    `flight` is expected to contain: origin, destination, departure_date,
-    return_date, price, airline, source_url, trip_duration_days (optional)."""
-    from app.config import iata_label
-    origin_city = iata_label(flight["origin"])
-    dest_city = iata_label(flight["destination"])
-
+def _deal_badge(discount_pct: float) -> str:
     if discount_pct >= 60:
-        alert_badge = "🔴 ERREUR DE PRIX"
-    elif discount_pct >= 40:
-        alert_badge = "🟠 PROMO FLASH"
-    else:
-        alert_badge = "🟡 BON DEAL"
+        return "🔴 Erreur de prix"
+    if discount_pct >= 45:
+        return "🟠 Deal rare"
+    if discount_pct >= 30:
+        return "🟡 Promo flash"
+    return "🟢 Bon deal"
 
-    duration = flight.get("trip_duration_days")
-    duration_line = f"🗓 {duration} jours sur place\n" if duration else ""
 
-    return (
-        f"{alert_badge}\n\n"
-        f"🌍 {origin_city} → {dest_city}\n"
-        f"📅 {flight['departure_date']} – {flight['return_date']}\n"
-        f"{duration_line}"
-        f"✈️ {flight.get('airline', 'Compagnie')}\n\n"
-        f"💰 {flight['price']}€ au lieu de ~{round(baseline_price)}€  ·  🔥 -{round(discount_pct)}%\n\n"
-        f"👉 Réservation : {flight.get('source_url', 'N/A')}"
-    )
+def _fmt_date_fr(date_str: str) -> str:
+    """'2025-05-29' → '29 mai'"""
+    try:
+        d = datetime.strptime(date_str, "%Y-%m-%d")
+        return f"{d.day} {_FR_MONTHS_SHORT[d.month]}"
+    except Exception:
+        return date_str
+
+
+def format_flight_deal_alert(flight: dict, discount_pct: float, baseline_price: float) -> str:
+    """Format an alert message for a flight-only deal (no hotel package)."""
+    origin = flight["origin"]
+    dest = flight["destination"]
+
+    dep_str = _fmt_date_fr(flight["departure_date"])
+    ret_str = _fmt_date_fr(flight["return_date"])
+    try:
+        dep_dt = datetime.strptime(flight["departure_date"], "%Y-%m-%d")
+        ret_dt = datetime.strptime(flight["return_date"], "%Y-%m-%d")
+        duration = (ret_dt - dep_dt).days
+    except Exception:
+        duration = flight.get("trip_duration_days")
+    duration_str = f" · {duration} jours" if duration else ""
+
+    price = int(round(flight["price"]))
+    disc = int(round(discount_pct))
+    baseline = int(round(baseline_price))
+    badge = _deal_badge(discount_pct)
+    url = flight.get("source_url", "")
+
+    lines = [
+        f"*{badge}*",
+        "",
+        f"✈️ *{origin} → {dest}*",
+        f"💰 *{price} € A/R · -{disc} %*",
+        f"📅 {dep_str} – {ret_str}{duration_str}",
+        f"Prix habituel : ~{baseline} €~",
+        "✅ Vol vérifié",
+    ]
+    if url and url != "N/A":
+        lines += ["", f"👉 [Voir le deal]({url})"]
+
+    return "\n".join(lines)
 
 
 async def send_flight_deal_alert(
@@ -243,28 +268,16 @@ def format_grouped_flight_alerts(
     remaining = total - len(shown)
 
     max_discount = max(o.get("discount_pct", 0) for o in shown)
+    badge = _deal_badge(max_discount)
 
-    # Determine urgency badge based on best deal
-    if max_discount >= 60:
-        urgency_badge = "🔴 ERREUR DE PRIX"
-    elif max_discount >= 40:
-        urgency_badge = "🟠 PROMO FLASH"
-    else:
-        urgency_badge = "🟡 BON DEAL"
-
+    origin_display = origin_iata or (offers[0].get("origin") if offers else "")
     noun = "offre" if total == 1 else "offres"
 
-    # Origin airport in header (use first offer's origin if available)
-    origin_label = ""
-    if origin_iata:
-        from app.config import iata_label
-        first_offer_origin = (offers[0].get("origin") or origin_iata) if offers else origin_iata
-        origin_label = f"✈️ {iata_label(first_offer_origin)} → {iata_label(destination_iata)}\n"
-
     header = (
-        f"🌍 {dest_city.upper()}\n"
-        f"{origin_label}"
-        f"{urgency_badge} — {total} {noun}"
+        f"*{badge}*\n"
+        f"\n"
+        f"✈️ *{origin_display} → {destination_iata}*\n"
+        f"🗓 {total} {noun} disponibles"
     )
 
     # Group by (year, month) chronologically
@@ -279,40 +292,26 @@ def format_grouped_flight_alerts(
     for (year, month) in sorted(by_month.keys()):
         month_offers = sorted(by_month[(year, month)], key=lambda o: o.get("price", 0))
         lines.append("")
-        lines.append(f"📅 {_FR_MONTHS_LONG[month]} {year}")
+        lines.append(f"📅 *{_FR_MONTHS_LONG[month]} {year}*")
 
         for o in month_offers:
             dep = datetime.strptime(o["departure_date"], "%Y-%m-%d")
             ret = datetime.strptime(o["return_date"], "%Y-%m-%d")
             duration = (ret - dep).days
-            dep_str = f"{dep.day:02d} {_FR_MONTHS_SHORT[dep.month]}"
-            ret_str = f"{ret.day:02d} {_FR_MONTHS_SHORT[ret.month]}"
+            dep_str = f"{dep.day} {_FR_MONTHS_SHORT[dep.month]}"
+            ret_str = f"{ret.day} {_FR_MONTHS_SHORT[ret.month]}"
             price = int(round(o["price"]))
             disc = int(round(o.get("discount_pct", 0)))
-            airline = o.get("airline", "").strip()
-
-            # **NEW: Deal qualification tag (EXCELLENT/BON/CLASSIQUE)**
-            if disc >= 60:
-                qual = "EXCELLENT"
-            elif disc >= 40:
-                qual = "BON"
-            else:
-                qual = "CLASSIQUE"
 
             baseline = o.get("baseline_price")
-            baseline_str = f" (prix habituel {int(round(baseline))}€)" if baseline and baseline > price else ""
+            baseline_str = f"\n   Prix habituel : ~{int(round(baseline))} €~" if baseline and baseline > price else ""
 
-            lines.append(f"{dep_str} – {ret_str}  |  {duration}j")
-            lines.append(f"💰 {price}€  ·  -{disc}% ({qual}){baseline_str}")
-
-            # **NEW: Airline and scarcity info on separate line**
-            if airline:
-                lines.append(f"✈️ {airline}")
-
-            # Cross-airline comparison context (Tier 1 only)
-            competitor_ctx = o.get("competitor_context", "").strip()
-            if competitor_ctx:
-                lines.append(f"📊 {competitor_ctx}")
+            lines.append(
+                f"\n💰 *{price} € A/R · -{disc} %*\n"
+                f"   {dep_str} – {ret_str} · {duration} jours"
+                f"{baseline_str}\n"
+                f"   ✅ Vol vérifié"
+            )
 
             booking_url = o.get("booking_url", "").strip()
             if booking_url:
@@ -322,9 +321,9 @@ def format_grouped_flight_alerts(
                     )
                 else:
                     tracked = _add_utms(booking_url, origin_iata or "", destination_iata)
-                lines.append(f"[🔗 Voir le vol]({tracked})")
+                lines.append(f"   👉 [Voir le deal]({tracked})")
 
-            # Hotel CTA only for high-value deals
+            # Hotel CTA for high-value deals
             if disc >= 40:
                 hotel_url = build_booking_url(
                     dest_city,
@@ -333,18 +332,17 @@ def format_grouped_flight_alerts(
                     marker=settings.TRAVELPAYOUTS_MARKER or None,
                 )
                 hotel_tracked = _add_utms(hotel_url, origin_iata or "", destination_iata)
-                lines.append(f"[🏨 Voir les hôtels]({hotel_tracked})")
+                lines.append(f"   🏨 [Voir les hôtels]({hotel_tracked})")
 
-            lines.append("")  # Spacing between offers
+            lines.append("")
 
     msg_parts = [header] + lines
 
     if remaining > 0:
-        msg_parts.append(f"+ {remaining} autres offres disponibles")
+        msg_parts.append(f"_+ {remaining} autres dates disponibles_")
 
-    # **NEW: Simple "See all" CTA instead of long URL**
     msg_parts.append("")
-    msg_parts.append(f"👉 Voir toutes les offres → {settings.FRONTEND_URL}/home?dest={destination_iata}")
+    msg_parts.append(f"👉 [Toutes les offres {destination_iata}]({settings.FRONTEND_URL}/home?dest={destination_iata})")
 
     msg = "\n".join(msg_parts)
 
