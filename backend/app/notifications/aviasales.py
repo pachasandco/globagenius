@@ -20,13 +20,12 @@ def build_aviasales_url(
         dep = datetime.strptime(departure_date, "%Y-%m-%d")
         ret = datetime.strptime(return_date, "%Y-%m-%d")
         slug = f"{origin}{dep.strftime('%d%m')}{destination}{ret.strftime('%d%m')}1"
-        url = f"https://www.aviasales.com/search/{slug}"
+        url = f"https://www.aviasales.com/search/{slug}?currency=eur"
     except (ValueError, TypeError):
         url = (
             f"https://www.aviasales.com/search?"
-            f"origin={quote(origin)}&destination={quote(destination)}"
+            f"origin={quote(origin)}&destination={quote(destination)}&currency=eur"
         )
     if marker:
-        sep = "&" if "?" in url else "?"
-        url = f"{url}{sep}marker={marker}"
+        url = f"{url}&marker={marker}"
     return url
