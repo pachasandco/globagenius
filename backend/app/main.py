@@ -53,6 +53,18 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     logger.info(f"Scheduler started with {len(scheduler.get_jobs())} jobs")
 
+    # Wire RAG retriever to the travel planner (Supabase full-text search)
+    try:
+        from app.api.routes import db as rag_db
+        from app.agents.rag import set_rag_retriever, RagRetriever
+        if rag_db:
+            set_rag_retriever(RagRetriever(rag_db))
+            logger.info("RAG retriever initialised ✓")
+        else:
+            logger.warning("RAG retriever skipped — db not available")
+    except Exception as e:
+        logger.warning(f"RAG retriever init failed: {e}")
+
     yield
 
     scheduler.shutdown()
