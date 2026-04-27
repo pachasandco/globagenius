@@ -93,8 +93,11 @@ class RagTravelPlannerSession:
         # Call Claude
         try:
             client = get_client()
+            if client is None:
+                return {"type": "error", "message": "Clé API non configurée."}
+
             response = client.messages.create(
-                model="claude-haiku-4-5",
+                model="claude-haiku-4-5-20251001",
                 max_tokens=3000,
                 system=system_prompt,
                 messages=self.messages,
@@ -105,7 +108,6 @@ class RagTravelPlannerSession:
             # Store assistant message
             self.messages.append({"role": "assistant", "content": assistant_message})
 
-            # Return as plain message (Markdown will render naturally)
             return {
                 "type": "message",
                 "message": assistant_message,
@@ -114,8 +116,8 @@ class RagTravelPlannerSession:
         except Exception as e:
             logger.error(f"Chat error: {e}")
             return {
-                "type": "message",
-                "message": f"Erreur: {str(e)}",
+                "type": "error",
+                "message": "Une erreur est survenue. Réessayez.",
             }
 
     def _build_system_prompt(self, rag_context: str, destination: Optional[str] = None) -> str:
