@@ -190,10 +190,14 @@ def format_flight_deal_alert(flight: dict, discount_pct: float, baseline_price: 
     badge = _deal_badge(discount_pct)
     url = flight.get("source_url", "")
 
+    from app.config import iata_label
+    origin_label = iata_label(origin)
+    dest_label = iata_label(dest)
+
     lines = [
         f"*{badge}*",
         "",
-        f"✈️ *{origin} → {dest}*",
+        f"✈️ *{origin_label} ({origin}) → {dest_label} ({dest})*",
         f"💰 *{price} € A/R · -{disc} %*",
         f"📅 {dep_str} – {ret_str}{duration_str}",
         f"Prix habituel : ~{baseline} €~",
@@ -270,13 +274,16 @@ def format_grouped_flight_alerts(
     max_discount = max(o.get("discount_pct", 0) for o in shown)
     badge = _deal_badge(max_discount)
 
+    from app.config import iata_label
     origin_display = origin_iata or (offers[0].get("origin") if offers else "")
+    origin_label = iata_label(origin_display)
+    dest_label = iata_label(destination_iata)
     noun = "offre" if total == 1 else "offres"
 
     header = (
         f"*{badge}*\n"
         f"\n"
-        f"✈️ *{origin_display} → {destination_iata}*\n"
+        f"✈️ *{origin_label} ({origin_display}) → {dest_label} ({destination_iata})*\n"
         f"🗓 {total} {noun} disponibles"
     )
 
