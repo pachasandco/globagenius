@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { getFlightDeals, getPipelineStatus, clearSessionCookie, type FlightDeal, type PipelineStatus } from "@/lib/api";
 import { initSession } from "@/lib/session";
 import { FlightDealCard } from "@/components/FlightDealCard";
+import ReactMarkdown from "react-markdown";
 
 interface PlanDay {
   day: number;
@@ -261,7 +262,13 @@ function PlannerBlock({
                     <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
                       msg.role === "user" ? "bg-gray-900 text-white" : "bg-gray-50 border border-gray-100"
                     }`}>
-                      <p className="whitespace-pre-wrap">{msg.content}</p>
+                      {msg.role === "assistant" ? (
+                        <div className="prose prose-sm prose-gray max-w-none [&>p]:mb-2 [&>h1]:text-base [&>h2]:text-sm [&>h2]:font-semibold [&>h3]:text-sm [&>h3]:font-semibold [&>ul]:pl-4 [&>ul>li]:mb-0.5 [&>ol]:pl-4">
+                          <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        </div>
+                      ) : (
+                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                      )}
                       {msg.data?.options && msg.data.options.length > 0 && (
                         <div className="flex flex-wrap gap-1.5 mt-2">
                           {msg.data.options.map(opt => (
