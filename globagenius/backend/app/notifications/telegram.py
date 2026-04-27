@@ -1,0 +1,456 @@
+import logging
+import secrets
+from datetime import datetime
+from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+_FR_MONTHS_SHORT = ["", "janv", "févr", "mars", "avr", "mai", "juin",
+                    "juil", "août", "sept", "oct", "nov", "déc"]
+
+_FR_MONTHS_LONG = ["", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+                   "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
+
+
+def _add_utms(url: str, origin: str, dest: str) -> str:
+    """Append UTM parameters to a URL without clobbering existing query params."""
+    if not url or url == "N/A":
+        return url
+    parsed = urlparse(url)
+    existing = parse_qs(parsed.query, keep_blank_values=True)
+    existing.update({
+        "utm_source": ["telegram"],
+        "utm_medium": ["alert"],
+        "utm_campaign": ["deal"],
+        "utm_content": [f"{origin}-{dest}"],
+    })
+    new_query = urlencode({k: v[0] for k, v in existing.items()})
+    return urlunparse(parsed._replace(query=new_query))
+
+
+def _make_redirect_token(
+    user_id: str | None,
+    alert_key: str,
+    origin: str,
+    dest: str,
+    url: str,
+) -> str:
+    """Persist a short opaque token → URL mapping and return the tracking URL."""
+    from app.db import db
+    token = f"{dest}-{secrets.token_urlsafe(6)}"
+    if db:
+        try:
+            db.table("alert_redirect_tokens").insert({
+                "token": token,
+                "user_id": user_id,
+                "alert_key": alert_key,
+                "origin": origin,
+                "destination": dest,
+                "url": url,
+            }).execute()
+        except Exception:
+            return _add_utms(url, origin, dest)
+    return f"{settings.FRONTEND_URL}/r/{token}"
+
+
+def _get_bot() -> Bot | None:
+    if not settings.TELEGRAM_BOT_TOKEN:
+        return None
+    return Bot(token=settings.TELEGRAM_BOT_TOKEN)
+
+
+def format_deal_alert(package: dict, flight: dict, accommodation: dict) -> str:
+    from app.config import IATA_TO_CITY
+    origin_city = IATA_TO_CITY.get(package["origin"], package["origin"])
+    dest_city = IATA_TO_CITY.get(package["destination"], package["destination"])
+
+    # Alert level badge
+    alert_level = package.get("ai_alert_level", "good_deal")
+    if alert_level == "fare_mistake":
+        alert_badge = "🔴 ERREUR DE PRIX"
+    elif alert_level == "flash_promo":
+        alert_badge = "🟠 PROMO FLASH"
+    else:
+        alert_badge = "🟡 BON DEAL"
+
+    # Check if AI-enriched
+    ai_desc = package.get("ai_description")
+    ai_reason = package.get("ai_reason")
+    ai_tip = package.get("ai_tip")
+    ai_tags = package.get("ai_tags")
+
+    if ai_desc:
+        # Enriched format
+        tags_str = " ".join(ai_tags) if ai_tags else ""
+        return (
+            f"✈️ GLOBE GENIUS — {alert_badge}\n\n"
+            f"🌍 {origin_city} → {dest_city}\n"
+            f"📅 {package['departure_date']} – {package['return_date']}\n\n"
+            f"{ai_desc}\n\n"
+            f"💰 {package['total_price']}€ au lieu de {package['baseline_total']}€ · -{package['discount_pct']}%\n"
+            f"📊 {ai_reason}\n\n"
+            f"💡 {ai_tip}\n\n"
+            f"🎯 Score : {package['score']}/100\n"
+            f"{tags_str}\n\n"
+            f"👉 Vol : {flight.get('source_url', 'N/A')}\n"
+            f"👉 Hotel : {accommodation.get('source_url', 'N/A')}"
+        )
+    else:
+        # Basic format (fallback)
+        return (
+            f"✈️ GLOBE GENIUS — {alert_badge}\n\n"
+            f"🌍 {origin_city} → {dest_city}\n"
+            f"📅 {package['departure_date']} – {package['return_date']}\n"
+            f"🏨 {accommodation['name']} ⭐ {accommodation.get('rating', 'N/A')}/5\n"
+            f"💰 {package['total_price']}€  |  🔥 -{package['discount_pct']}% vs marche\n"
+            f"🎯 Score : {package['score']}/100\n\n"
+            f"👉 Vol : {flight.get('source_url', 'N/A')}\n"
+            f"👉 Hotel : {accommodation.get('source_url', 'N/A')}"
+        )
+
+
+def format_digest(packages: list[dict]) -> str:
+    today = datetime.now().strftime("%d/%m/%Y")
+    lines = [f"📬 GLOBE GENIUS DIGEST — {today}\n"]
+    lines.append(f"Top {len(packages)} deals du jour :\n")
+    for i, pkg in enumerate(packages, 1):
+        lines.append(
+            f"{i}. {pkg['origin']} → {pkg['destination']} | "
+            f"{pkg['total_price']}€ (-{pkg['discount_pct']}%) | "
+            f"Score {pkg['score']}/100 | "
+            f"{pkg['departure_date']} → {pkg['return_date']}"
+        )
+    return "\n".join(lines)
+
+
+def format_admin_report(stats: dict) -> str:
+    today = datetime.now().strftime("%d/%m/%Y")
+    lines = [
+        f"📊 GLOBE GENIUS — Rapport {today}\n",
+        f"Scrapes : {stats['flight_scrapes']} vols ✅ | {stats['accommodation_scrapes']} hebergements ✅",
+        f"Donnees : {stats['total_flights']} vols | {stats['total_accommodations']} hebergements",
+        f"Erreurs : {stats['errors']}",
+        f"Packages qualifies : {stats['packages_qualified']} (taux : {stats['qualification_rate']}%)",
+        f"Alertes envoyees : {stats['alerts_sent']}",
+        f"Baselines actives : {stats['active_baselines']} routes",
+    ]
+
+    warnings = []
+    if stats["qualification_rate"] < 5:
+        warnings.append("⚠️ Taux qualification < 5% — surveiller les baselines")
+    if stats["errors"] > 0:
+        warnings.append(f"⚠️ {stats['errors']} erreurs detectees")
+
+    if warnings:
+        lines.append("")
+        lines.extend(warnings)
+
+    return "\n".join(lines)
+
+
+def format_flight_deal_alert(flight: dict, discount_pct: float, baseline_price: float) -> str:
+    """Format an alert message for a flight-only deal (no hotel package).
+
+    `flight` is expected to contain: origin, destination, departure_date,
+    return_date, price, airline, source_url, trip_duration_days (optional)."""
+    from app.config import IATA_TO_CITY
+    origin_city = IATA_TO_CITY.get(flight["origin"], flight["origin"])
+    dest_city = IATA_TO_CITY.get(flight["destination"], flight["destination"])
+
+    if discount_pct >= 60:
+        alert_badge = "🔴 ERREUR DE PRIX"
+    elif discount_pct >= 40:
+        alert_badge = "🟠 PROMO FLASH"
+    else:
+        alert_badge = "🟡 BON DEAL"
+
+    duration = flight.get("trip_duration_days")
+    duration_line = f"🗓 {duration} jours sur place\n" if duration else ""
+
+    return (
+        f"{alert_badge}\n\n"
+        f"🌍 {origin_city} → {dest_city}\n"
+        f"📅 {flight['departure_date']} – {flight['return_date']}\n"
+        f"{duration_line}"
+        f"✈️ {flight.get('airline', 'Compagnie')}\n\n"
+        f"💰 {flight['price']}€ au lieu de ~{round(baseline_price)}€  ·  🔥 -{round(discount_pct)}%\n\n"
+        f"👉 Réservation : {flight.get('source_url', 'N/A')}"
+    )
+
+
+async def send_flight_deal_alert(
+    chat_id: int,
+    flight: dict,
+    discount_pct: float,
+    baseline_price: float,
+    tier: str = "premium",
+) -> bool:
+    """Send a Telegram alert for a flight-only deal."""
+    bot = _get_bot()
+    if not bot:
+        logger.warning("Telegram bot not configured, skipping flight alert")
+        return False
+    msg = format_flight_deal_alert(flight, discount_pct, baseline_price)
+    if tier == "free":
+        msg += (
+            "\n\n💎 Réservation directe réservée aux abonnés premium. "
+            "Créez un compte premium pour débloquer les meilleurs deals."
+        )
+    try:
+        await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send flight alert to {chat_id}: {e}")
+        return False
+
+
+def format_grouped_flight_alerts(
+    origin_city: str,
+    dest_city: str,
+    destination_iata: str,
+    offers: list[dict],
+    tier: str = "premium",
+    user_id: str | None = None,
+    alert_key: str | None = None,
+    origin_iata: str | None = None,
+) -> str:
+    """Format a grouped Telegram alert for multiple flight offers to one destination.
+
+    REDESIGNED for better information hierarchy:
+    - Destination + count at top (scannable)
+    - Price isolated and prominent in each offer line
+    - Deal qualification tags (EXCELLENT/BON/CLASSIQUE)
+    - Simplified CTAs (Voir le vol, Voir les hôtels)
+    - Urgency signals (scarcity, frequency)
+
+    offers: list of dicts with keys:
+      - departure_date (YYYY-MM-DD, required)
+      - return_date (YYYY-MM-DD, required)
+      - price (required)
+      - discount_pct (required)
+      - score (optional, default 0)
+      - airline (optional, default empty string)
+      - booking_url (optional, default empty string → no CTA line)
+    """
+    from app.config import settings
+    from app.notifications.booking import build_booking_url
+
+    total = len(offers)
+    sorted_by_discount = sorted(offers, key=lambda o: o.get("discount_pct", 0), reverse=True)
+    shown = sorted_by_discount[:10]
+    remaining = total - len(shown)
+
+    max_discount = max(o.get("discount_pct", 0) for o in shown)
+
+    # Determine urgency badge based on best deal
+    if max_discount >= 60:
+        urgency_badge = "🔴 ERREUR DE PRIX"
+    elif max_discount >= 40:
+        urgency_badge = "🟠 PROMO FLASH"
+    else:
+        urgency_badge = "🟡 BON DEAL"
+
+    noun = "offre" if total == 1 else "offres"
+
+    # Origin airport in header (use first offer's origin if available)
+    origin_label = ""
+    if origin_iata:
+        first_offer_origin = (offers[0].get("origin") or origin_iata) if offers else origin_iata
+        origin_label = f"✈️ {first_offer_origin} → {destination_iata}\n"
+
+    header = (
+        f"🌍 {dest_city.upper()}\n"
+        f"{origin_label}"
+        f"{urgency_badge} — {total} {noun}"
+    )
+
+    # Group by (year, month) chronologically
+    by_month: dict[tuple[int, int], list[dict]] = {}
+    for o in shown:
+        d = datetime.strptime(o["departure_date"], "%Y-%m-%d")
+        key = (d.year, d.month)
+        by_month.setdefault(key, []).append(o)
+
+    lines: list[str] = []
+
+    for (year, month) in sorted(by_month.keys()):
+        month_offers = sorted(by_month[(year, month)], key=lambda o: o.get("price", 0))
+        lines.append("")
+        lines.append(f"📅 {_FR_MONTHS_LONG[month]} {year}")
+
+        for o in month_offers:
+            dep = datetime.strptime(o["departure_date"], "%Y-%m-%d")
+            ret = datetime.strptime(o["return_date"], "%Y-%m-%d")
+            duration = (ret - dep).days
+            dep_str = f"{dep.day:02d} {_FR_MONTHS_SHORT[dep.month]}"
+            ret_str = f"{ret.day:02d} {_FR_MONTHS_SHORT[ret.month]}"
+            price = int(round(o["price"]))
+            disc = int(round(o.get("discount_pct", 0)))
+            airline = o.get("airline", "").strip()
+
+            # **NEW: Deal qualification tag (EXCELLENT/BON/CLASSIQUE)**
+            if disc >= 60:
+                qual = "EXCELLENT"
+            elif disc >= 40:
+                qual = "BON"
+            else:
+                qual = "CLASSIQUE"
+
+            baseline = o.get("baseline_price")
+            baseline_str = f" (prix habituel {int(round(baseline))}€)" if baseline and baseline > price else ""
+
+            lines.append(f"{dep_str} – {ret_str}  |  {duration}j")
+            lines.append(f"💰 {price}€  ·  -{disc}% ({qual}){baseline_str}")
+
+            # **NEW: Airline and scarcity info on separate line**
+            if airline:
+                lines.append(f"✈️ {airline}")
+
+            # Cross-airline comparison context (Tier 1 only)
+            competitor_ctx = o.get("competitor_context", "").strip()
+            if competitor_ctx:
+                lines.append(f"📊 {competitor_ctx}")
+
+            booking_url = o.get("booking_url", "").strip()
+            if booking_url:
+                if user_id and alert_key and origin_iata:
+                    tracked = _make_redirect_token(
+                        user_id, alert_key, origin_iata, destination_iata, booking_url
+                    )
+                else:
+                    tracked = _add_utms(booking_url, origin_iata or "", destination_iata)
+                lines.append(f"[🔗 Voir le vol]({tracked})")
+
+            # Hotel CTA only for high-value deals
+            if disc >= 40:
+                hotel_url = build_booking_url(
+                    dest_city,
+                    o["departure_date"],
+                    o["return_date"],
+                    marker=settings.TRAVELPAYOUTS_MARKER or None,
+                )
+                hotel_tracked = _add_utms(hotel_url, origin_iata or "", destination_iata)
+                lines.append(f"[🏨 Voir les hôtels]({hotel_tracked})")
+
+            lines.append("")  # Spacing between offers
+
+    msg_parts = [header] + lines
+
+    if remaining > 0:
+        msg_parts.append(f"+ {remaining} autres offres disponibles")
+
+    # **NEW: Simple "See all" CTA instead of long URL**
+    msg_parts.append("")
+    msg_parts.append(f"👉 Voir toutes les offres → {settings.FRONTEND_URL}/home?dest={destination_iata}")
+
+    msg = "\n".join(msg_parts)
+
+    if tier == "free":
+        msg += (
+            "\n\n💎 Réservation directe réservée aux abonnés premium. "
+            "Passez à la version premium pour débloquer les meilleurs deals."
+        )
+    return msg
+
+
+async def send_grouped_flight_alerts(
+    chat_id: int,
+    origin_city: str,
+    dest_city: str,
+    destination_iata: str,
+    offers: list[dict],
+    tier: str = "premium",
+    user_id: str | None = None,
+    alert_key: str | None = None,
+    origin_iata: str | None = None,
+) -> bool:
+    """Send a grouped Telegram alert containing multiple flight offers for one destination."""
+    bot = _get_bot()
+    if not bot:
+        logger.warning("Telegram bot not configured, skipping grouped flight alert")
+        return False
+    msg = format_grouped_flight_alerts(
+        origin_city, dest_city, destination_iata, offers, tier,
+        user_id=user_id, alert_key=alert_key, origin_iata=origin_iata,
+    )
+
+    # Inline keyboard — quick actions without leaving Telegram
+    reply_markup = None
+    if user_id:
+        reply_markup = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("⏸ Pause", callback_data=f"pause:{user_id}"),
+                InlineKeyboardButton("🔕 Se désabonner", callback_data=f"unsub:{user_id}"),
+            ]
+        ])
+
+    try:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=msg,
+            parse_mode="Markdown",
+            reply_markup=reply_markup,
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send grouped flight alert to {chat_id}: {e}")
+        return False
+
+
+async def send_deal_alert(chat_id: int, package: dict, flight: dict, accommodation: dict, tier: str = "premium") -> bool:
+    bot = _get_bot()
+    if not bot:
+        logger.warning("Telegram bot not configured, skipping alert")
+        return False
+    msg = format_deal_alert(package, flight, accommodation)
+    if tier == "free":
+        msg += (
+            "\n\n💎 Réservation réservée aux abonnés premium. "
+            "Créez un compte premium pour débloquer ce deal."
+        )
+    try:
+        await bot.send_message(chat_id=chat_id, text=msg)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send Telegram alert to {chat_id}: {e}")
+        return False
+
+
+async def send_digest(chat_id: int, packages: list[dict]) -> bool:
+    bot = _get_bot()
+    if not bot:
+        return False
+    msg = format_digest(packages)
+    try:
+        await bot.send_message(chat_id=chat_id, text=msg)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send digest to {chat_id}: {e}")
+        return False
+
+
+async def send_admin_report(stats: dict) -> bool:
+    bot = _get_bot()
+    if not bot or not settings.TELEGRAM_ADMIN_CHAT_ID:
+        return False
+    msg = format_admin_report(stats)
+    try:
+        await bot.send_message(chat_id=int(settings.TELEGRAM_ADMIN_CHAT_ID), text=msg)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send admin report: {e}")
+        return False
+
+
+async def send_admin_alert(message: str) -> bool:
+    bot = _get_bot()
+    if not bot or not settings.TELEGRAM_ADMIN_CHAT_ID:
+        return False
+    try:
+        await bot.send_message(chat_id=int(settings.TELEGRAM_ADMIN_CHAT_ID), text=f"🚨 {message}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send admin alert: {e}")
+        return False

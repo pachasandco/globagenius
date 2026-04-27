@@ -1,0 +1,38 @@
+# Globe Genius
+
+> Globe Genius détecte automatiquement les vols aller-retour à prix anormalement bas au départ de 8 aéroports français (CDG, ORY, LYS, MRS, NCE, BOD, NTE, TLS). Chaque deal est statistiquement vérifié contre des baselines historiques et reconfirmé en temps réel avant d'envoyer une alerte Telegram instantanée.
+
+## Fonctionnement
+
+- Analyse de milliers de vols 12 fois par jour via l'API Travelpayouts/Aviasales
+- Détection d'anomalies statistiques (z-score ≥ 2.0, réduction ≥ 20%)
+- Vérification en temps réel du prix avant chaque alerte
+- Notification Telegram avec lien de réservation direct (Aviasales + Booking.com)
+
+## Offre
+
+- **Gratuit** : alertes pour les deals avec 20-29% de réduction
+- **Premium (2,99€/mois)** : alertes ≥30%, erreurs de prix, promos flash, liens Booking.com
+
+## Pages principales
+
+- https://globegenius.app/ — Page d'accueil avec deals en temps réel
+- https://globegenius.app/articles — Guides de destinations
+- https://globegenius.app/articles/marrakech — Guide Marrakech
+- https://globegenius.app/articles/lisbonne — Guide Lisbonne
+- https://globegenius.app/articles/barcelone — Guide Barcelone
+- https://globegenius.app/articles/rome — Guide Rome
+- https://globegenius.app/signup — Inscription
+
+## Aéroports couverts
+
+Paris CDG, Paris Orly, Lyon, Marseille, Nice, Bordeaux, Nantes, Toulouse
+
+## Destinations populaires
+
+Lisbonne, Barcelone, Marrakech, Rome, Athènes, Prague, Budapest, Porto, Naples, Istanbul, Dubaï, New York, Bangkok, Tokyo, et 80+ autres destinations.
+
+## Contact
+
+Site : https://globegenius.app
+Telegram : Globe Genius Bot

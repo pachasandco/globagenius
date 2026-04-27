@@ -1,0 +1,17 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /api
+Disallow: /onboarding
+Disallow: /dashboard
+Disallow: /home
+
+User-agent: GPTBot
+Allow: /
+Allow: /articles/
+
+User-agent: ClaudeBot
+Allow: /
+Allow: /articles/
+
+Sitemap: https://globegenius.app/sitemap.xml
