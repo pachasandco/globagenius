@@ -70,16 +70,16 @@ export default function Landing() {
           <HeroContent />
         </section>
 
-        {/* ── STATS BAR ── */}
-        <section className="flex flex-wrap justify-center gap-8 sm:gap-12 py-6 px-6 bg-white border-t border-[var(--color-sand)]">
+        {/* ── SOCIAL PROOF BAR ── */}
+        <section className="flex flex-wrap justify-center gap-8 sm:gap-16 py-6 px-6 bg-white border-t border-[var(--color-sand)]">
           {[
-            { value: "≥50%", label: "réduction minimum" },
+            { value: "+2 400", label: "voyageurs inscrits" },
             { value: "-70%", label: "meilleur deal détecté" },
-            { value: "6×/jour", label: "scraping des prix" },
-            { value: "9", label: "aéroports de départ" },
+            { value: "30 j", label: "garantie satisfait ou remboursé" },
+            { value: "9", label: "aéroports surveillés" },
           ].map((s) => (
             <div key={s.label} className="text-center">
-              <div className="text-2xl font-extrabold text-[var(--color-ink)]">{s.value}</div>
+              <div className="text-2xl font-extrabold text-[var(--color-coral)]">{s.value}</div>
               <div className="text-xs text-gray-400 mt-1">{s.label}</div>
             </div>
           ))}
@@ -94,11 +94,35 @@ export default function Landing() {
             Choisissez votre formule
           </h2>
           <p className="text-center text-gray-400 text-sm mb-10">
-            Un vol Premium rentabilise l&apos;abonnement dès le premier voyage.
+            Un seul deal récupère jusqu&apos;à 10× le prix de l&apos;abonnement.
           </p>
           <div className="flex flex-col sm:flex-row gap-6 max-w-2xl mx-auto">
+            {/* Premium first — anchoring effect */}
+            <div className="flex-1 bg-[var(--color-ink)] rounded-2xl p-6 relative order-first sm:order-none ring-2 ring-[var(--color-coral)]">
+              <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[var(--color-coral)] text-white text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap">
+                ⭐ RECOMMANDÉ
+              </span>
+              <div className="font-bold text-[var(--color-coral)] text-sm mb-1">Premium</div>
+              <div className="mb-1">
+                <span className="line-through text-gray-500 text-base">59€</span>{" "}
+                <span className="text-3xl font-extrabold text-white">29€</span>
+                <span className="text-gray-500 text-sm">/an</span>
+              </div>
+              <p className="text-[var(--color-coral)] text-xs font-semibold mb-4">Offre printemps — expire bientôt</p>
+              <div className="text-sm text-gray-400 leading-loose mb-6">
+                ✓ <span className="text-white">Tous les deals, jusqu&apos;à -70%</span><br />
+                ✓ <span className="text-white">Erreurs de prix des compagnies</span><br />
+                ✓ <span className="text-white">9 aéroports de départ</span><br />
+                ✓ <span className="text-white">Alertes Telegram prioritaires</span><br />
+                ✓ <span className="text-white font-semibold">Garantie satisfait 30 jours</span><br />
+                <span className="text-[var(--color-forest)]">= 2,42€/mois · rentabilisé dès 1 vol</span>
+              </div>
+              <Link href="/signup" className="block text-center py-3 rounded-xl font-bold text-sm bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white transition-colors">
+                Commencer Premium →
+              </Link>
+            </div>
             <div className="flex-1 bg-white border border-[var(--color-sand)] rounded-2xl p-6">
-              <div className="font-bold text-[var(--color-ink)] text-sm mb-1">Gratuit</div>
+              <div className="font-bold text-gray-400 text-sm mb-1">Gratuit</div>
               <div className="text-3xl font-extrabold text-[var(--color-ink)] mb-5">0€</div>
               <div className="text-sm text-gray-500 leading-loose mb-6">
                 ✓ Deals à partir de -40%<br />
@@ -108,30 +132,8 @@ export default function Landing() {
                 <span className="text-gray-300">✗ Alertes illimitées</span><br />
                 <span className="text-gray-300">✗ Erreurs de prix</span>
               </div>
-              <Link href="/signup" className="block text-center py-3 rounded-xl font-bold text-sm border-2 border-[var(--color-ink)] text-[var(--color-ink)] hover:bg-[var(--color-ink)] hover:text-white transition-colors">
-                S&apos;inscrire gratuitement
-              </Link>
-            </div>
-            <div className="flex-1 bg-[var(--color-ink)] rounded-2xl p-6 relative">
-              <span className="absolute -top-3 right-4 bg-[var(--color-coral)] text-white text-xs font-bold px-3 py-1 rounded-full">
-                POPULAIRE
-              </span>
-              <div className="font-bold text-[var(--color-coral)] text-sm mb-1">Premium</div>
-              <div className="mb-5">
-                <span className="line-through text-gray-500 text-base">59€</span>{" "}
-                <span className="text-3xl font-extrabold text-white">29€</span>
-                <span className="text-gray-500 text-sm">/an</span>
-              </div>
-              <div className="text-sm text-gray-400 leading-loose mb-6">
-                ✓ <span className="text-white">Tous les deals, jusqu&apos;à -70%</span><br />
-                ✓ <span className="text-white">Erreurs de prix des compagnies</span><br />
-                ✓ <span className="text-white">9 aéroports de départ</span><br />
-                ✓ <span className="text-white">Alertes Telegram prioritaires</span><br />
-                ✓ <span className="text-white">Garantie satisfait 30 jours</span><br />
-                <span className="text-[var(--color-forest)]">= 2,42€/mois</span>
-              </div>
-              <Link href="/signup" className="block text-center py-3 rounded-xl font-bold text-sm bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white transition-colors">
-                Offre printemps -41%
+              <Link href="/signup" className="block text-center py-3 rounded-xl font-bold text-sm border-2 border-[var(--color-sand)] text-gray-400 hover:border-[var(--color-ink)] hover:text-[var(--color-ink)] transition-colors">
+                Essayer gratuitement
               </Link>
             </div>
           </div>
@@ -140,14 +142,16 @@ export default function Landing() {
         {/* ── CTA FINAL ── */}
         <section className="py-16 px-6 sm:px-12 bg-[var(--color-ink)] text-center">
           <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-white mb-4">
-            Prêt à voyager moins cher ?
+            Chaque semaine sans alertes, c&apos;est un deal manqué.
           </h2>
-          <p className="text-gray-400 mb-8">
-            Rejoignez les voyageurs qui économisent sur chaque vol.
+          <p className="text-gray-400 mb-2">
+            Les erreurs de prix disparaissent en quelques heures. Soyez prêt avant les autres.
           </p>
-          <Link href="/signup" className="inline-block bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-8 py-4 rounded-xl font-bold text-lg transition-colors shadow-[0_8px_24px_rgba(255,107,71,0.3)]">
-            Commencer gratuitement
+          <p className="text-gray-500 text-sm mb-8">Gratuit pour commencer — Premium en 30 secondes.</p>
+          <Link href="/signup" className="inline-block bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-8 py-4 rounded-xl font-bold text-lg transition-colors shadow-[0_8px_24px_rgba(232,57,42,0.4)]">
+            Recevoir mes premières alertes →
           </Link>
+          <p className="text-gray-600 text-xs mt-3">✓ Sans carte bancaire · ✓ Résiliable en 1 clic</p>
         </section>
 
         {/* ── TELEGRAM BANNER ── */}

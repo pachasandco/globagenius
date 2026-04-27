@@ -54,25 +54,28 @@ export function HeroContent() {
       transition={{ duration: 0.6 }}
       className="relative z-10 px-6 sm:px-12 py-16 max-w-2xl"
     >
-      <span className="inline-block bg-[var(--color-coral)]/20 border border-[var(--color-coral)]/40 text-[#FF9B82] px-4 py-1.5 rounded-full text-sm font-bold mb-6 backdrop-blur-sm">
-        🔥 Offre printemps — Premium à 29€/an au lieu de 59€
+      <span className="inline-flex items-center gap-2 bg-[var(--color-coral)] text-white px-4 py-1.5 rounded-full text-sm font-bold mb-6">
+        🔥 Offre printemps — 29€/an · <span className="line-through opacity-70">59€</span> · Expire bientôt
       </span>
       <h1 className="font-[family-name:var(--font-dm-serif)] text-4xl sm:text-5xl font-bold text-white leading-tight mb-4">
-        Alertes vols pas chers,{" "}
+        Les vols à -70% partent{" "}
         <br className="hidden sm:block" />
-        détectées{" "}
-        <em className="not-italic text-[var(--color-coral)]">avant tout le monde</em>.
+        <em className="not-italic text-[var(--color-coral)]">en quelques heures.</em>
       </h1>
-      <p className="text-white/75 text-lg leading-relaxed mb-8 max-w-lg">
-        On surveille tous les vols au départ de la France et on vous envoie les meilleures offres sur Telegram. Jusqu&apos;à -70% sur vos billets.
+      <p className="text-white/80 text-lg leading-relaxed mb-3 max-w-lg">
+        Globe Genius surveille les prix 24h/24 et vous alerte sur Telegram dès qu&apos;une erreur de prix apparaît — avant qu&apos;elle disparaisse.
+      </p>
+      <p className="text-white/50 text-sm mb-8 flex items-center gap-2">
+        <span className="inline-block w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+        +2 400 voyageurs ont déjà économisé cette année
       </p>
       <Link
         href="/signup"
-        className="inline-block bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-8 py-4 rounded-xl font-bold text-lg transition-colors shadow-[0_8px_24px_rgba(255,107,71,0.3)]"
+        className="inline-block bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-8 py-4 rounded-xl font-bold text-lg transition-all shadow-[0_8px_32px_rgba(232,57,42,0.45)] hover:shadow-[0_12px_40px_rgba(232,57,42,0.55)] hover:-translate-y-0.5"
       >
-        Essayer gratuitement
+        Recevoir mes premières alertes gratuitement →
       </Link>
-      <p className="text-white/50 text-sm mt-3">Gratuit, sans carte bancaire</p>
+      <p className="text-white/40 text-sm mt-3">✓ Gratuit · ✓ Sans carte · ✓ Résiliable en 1 clic</p>
     </motion.div>
   );
 }
