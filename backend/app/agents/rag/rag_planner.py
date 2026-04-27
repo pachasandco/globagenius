@@ -26,17 +26,18 @@ def get_rag_retriever() -> Optional[RagRetriever]:
 
 
 def extract_destination(text: str) -> Optional[str]:
-    """
-    Try to extract destination from user message.
-
-    Examples:
-        "Je pars à Tokyo 7 jours" -> "Tokyo"
-        "Paris pour un weekend" -> "Paris"
-    """
-    # Simple pattern matching for French "à {destination}"
-    match = re.search(r"(?:à|vers|pour|aller à)\s+([A-Z][a-zA-Zéè\s]+?)(?:\s+\d|$|\.)", text)
-    if match:
-        return match.group(1).strip()
+    """Extract destination from user message (French)."""
+    patterns = [
+        r"destination\s*[:\-]\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s\-]+?)(?:\s*[,\n]|$)",
+        r"(?:à|vers|pour|aller à|planifie.*?)\s+([A-Z][A-Za-zÀ-ÿ\s\-]+?)(?:\s+\d|\s*[,\n]|$)",
+        r"(?:voyage|séjour|trip|week-end|weekend)\s+(?:à|en|au|aux)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s\-]+?)(?:\s+\d|\s*[,\n]|$)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            dest = match.group(1).strip().rstrip(",")
+            if len(dest) > 2:
+                return dest
     return None
 
 
