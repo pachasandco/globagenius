@@ -411,13 +411,17 @@ export default function HomePage() {
   async function sendChat(text: string) {
     if (!text.trim()) return;
     const userId = localStorage.getItem("gg_user_id") || "anonymous";
+    const token = localStorage.getItem("gg_token");
     setChatMessages(prev => [...prev, { role: "user", content: text }]);
     setChatInput("");
     setChatLoading(true);
     try {
       const res = await fetch(`${API_URL}/api/planner/${userId}/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ message: text }),
       });
       const data = await res.json();
