@@ -1,0 +1,13 @@
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER articles_updated_at
+  BEFORE UPDATE ON articles
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
