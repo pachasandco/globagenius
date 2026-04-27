@@ -1,9 +1,14 @@
-"use client";
-
-import { useEffect } from "react";
+import type { Metadata } from "next";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import RedirectIfLoggedIn from "./_components/RedirectIfLoggedIn";
+
+export const metadata: Metadata = {
+  alternates: {
+    canonical: "https://globegenius.app",
+  },
+};
 
 /* ─── DESTINATION IMAGES ───
    Mapped by IATA code so that live deals fetched from /api/packages can
@@ -173,23 +178,15 @@ const faqSchema = {
 
 /* ─── PAGE ─── */
 export default function Landing() {
-  const router = useRouter();
-  useEffect(() => {
-    const userId = localStorage.getItem("gg_user_id");
-    const token = localStorage.getItem("gg_token");
-    if (userId && token) {
-      router.replace("/home");
-    }
-  }, [router]);
-
   return (
     <div className="min-h-screen bg-[var(--color-cream)]">
+      <RedirectIfLoggedIn />
 
-      {/* ── FAQ JSON-LD (page-specific, complements layout.tsx schemas) ── */}
+      {/* ── FAQ JSON-LD — server-rendered, crawler-visible ── */}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />
 
       {/* ── NAVBAR ── */}
-      <nav className="sticky top-0 z-50 flex items-center justify-between px-6 sm:px-12 py-4 bg-[var(--color-cream)]/95 backdrop-blur-sm border-b border-[var(--color-sand)]">
+      <nav aria-label="Navigation principale" className="sticky top-0 z-50 flex items-center justify-between px-6 sm:px-12 py-4 bg-[var(--color-cream)]/95 backdrop-blur-sm border-b border-[var(--color-sand)]">
         <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-lg leading-none">
           Globe<span className="text-[var(--color-coral)]">Genius</span>
         </Link>
@@ -206,13 +203,16 @@ export default function Landing() {
         </div>
       </nav>
 
+      <main>
       {/* ── HERO ── */}
       <section className="relative min-h-[480px] flex items-center overflow-hidden">
-        <img
+        <Image
           src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1400&q=80"
-          alt=""
-          aria-hidden="true"
-          className="absolute inset-0 w-full h-full object-cover"
+          alt="Plage tropicale ensoleillée — voyagez moins cher avec Globe Genius"
+          fill
+          priority
+          className="object-cover"
+          sizes="100vw"
         />
         <div className="absolute inset-0 bg-gradient-to-r from-[var(--color-ink)]/90 via-[var(--color-ink)]/70 to-[var(--color-ink)]/30" />
 
@@ -466,6 +466,7 @@ export default function Landing() {
         </div>
       </section>
 
+      </main>
       {/* ── FOOTER ── */}
       <footer className="py-6 px-6 sm:px-12 bg-[#050e1a] flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-gray-500">
         <span>© 2026 Globe Genius</span>
