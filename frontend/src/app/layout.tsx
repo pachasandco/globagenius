@@ -33,9 +33,6 @@ export const metadata: Metadata = {
     "détecter deal vol",
   ],
   metadataBase: new URL("https://globegenius.app"),
-  alternates: {
-    canonical: "https://globegenius.app",
-  },
   openGraph: {
     title: "Globe Genius — Vols à Prix Cassés | Alertes Telegram temps réel",
     description:
