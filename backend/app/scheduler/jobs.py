@@ -202,10 +202,46 @@ async def _analyze_new_flights(flights: list[dict]):
     # analysis pass. Each entry: (flight, anomaly, tier).
     qualified_flights: list[tuple[dict, object, str]] = []
 
+    # Pre-compute all route keys needed, then bulk-fetch baselines in one query.
+    from app.analysis.baselines import lead_time_bucket as _lt_bucket
+
+    all_route_keys: set[str] = set()
+    flight_keys: list[tuple[str, str, str]] = []  # (seasonal_key, legacy_key, dest_key) per flight
+    for flight in flights:
+        days = flight.get("trip_duration_days") or 0
+        bucket = bucket_for_duration(days)
+        dep_date = flight.get("departure_date") or flight.get("departure_at", "")[:10]
+        scraped_at = flight.get("scraped_at", "")
+        try:
+            month_str = f"m{int(dep_date[5:7]):02d}"
+        except (ValueError, IndexError):
+            month_str = "m00"
+        lt_label = _lt_bucket(dep_date, scraped_at)
+        if bucket:
+            sk = f"{flight['origin']}-{flight['destination']}-bucket_{bucket}-{month_str}-{lt_label}"
+            lk = f"{flight['origin']}-{flight['destination']}-bucket_{bucket}"
+            dk = f"*-{flight['destination']}-bucket_{bucket}"
+            all_route_keys.update([sk, lk, dk])
+            flight_keys.append((sk, lk, dk))
+        else:
+            flight_keys.append(("", "", ""))
+
+    # Single bulk fetch — PostgREST `in` filter handles up to ~2000 values fine
+    baselines_cache: dict[str, dict] = {}
+    if all_route_keys:
+        resp = (
+            db.table("price_baselines")
+            .select("*")
+            .in_("route_key", list(all_route_keys))
+            .eq("type", "flight")
+            .execute()
+        )
+        for row in (resp.data or []):
+            baselines_cache[row["route_key"]] = row
+
     for idx, flight in enumerate(flights):
-        # Yield the event loop every 10 flights so HTTP requests
-        # don't stall during big analyze passes.
-        if idx % 10 == 9:
+        # Yield the event loop periodically so other coroutines can run.
+        if idx % 50 == 49:
             await asyncio.sleep(0)
 
         # Bucket lookup based on trip duration
@@ -223,34 +259,12 @@ async def _analyze_new_flights(flights: list[dict]):
             counters["rejected_stops"] += 1
             continue
 
-        # Lookup baseline — 3-level cascade (most specific → least specific):
-        # 1. Seasonal: route + bucket + departure_month + lead_time  (best quality)
-        # 2. Legacy:   route + bucket                                (fallback)
-        # 3. Dest-wide: any origin + bucket                         (cold-start)
-        from app.analysis.baselines import lead_time_bucket as _lt_bucket
-        dep_date = flight.get("departure_date") or flight.get("departure_at", "")[:10]
-        scraped_at = flight.get("scraped_at", "")
-        try:
-            month_str = f"m{int(dep_date[5:7]):02d}"
-        except (ValueError, IndexError):
-            month_str = "m00"
-        lt_label = _lt_bucket(dep_date, scraped_at)
-
-        seasonal_key = f"{flight['origin']}-{flight['destination']}-bucket_{bucket}-{month_str}-{lt_label}"
-        legacy_key   = f"{flight['origin']}-{flight['destination']}-bucket_{bucket}"
-        dest_key     = f"*-{flight['destination']}-bucket_{bucket}"
-
+        # Baseline cascade lookup — in-memory from pre-fetched cache
+        seasonal_key, legacy_key, dest_key = flight_keys[idx]
         baseline = None
         for rk in (seasonal_key, legacy_key, dest_key):
-            resp = (
-                db.table("price_baselines")
-                .select("*")
-                .eq("route_key", rk)
-                .eq("type", "flight")
-                .execute()
-            )
-            if resp.data:
-                baseline = resp.data[0]
+            if rk and rk in baselines_cache:
+                baseline = baselines_cache[rk]
                 break
 
         if not baseline:
