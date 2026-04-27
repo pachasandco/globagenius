@@ -1,0 +1,7 @@
+[build]
+dockerfilePath = "Dockerfile"
+dockerBuildArgs = ["NEXT_PUBLIC_API_URL"]
+
+[deploy]
+startCommand = "node start.js"
+healthcheckPath = "/"
