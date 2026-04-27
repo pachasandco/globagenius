@@ -86,7 +86,7 @@ export default function LandingAnimated() {
       {/* ── DEALS PASSÉS ── */}
       <section className="py-16 px-6 sm:px-12 bg-[var(--color-cream)] border-t border-[var(--color-sand)]">
         <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-[var(--color-ink)] text-center mb-2">
-          Ne cherchez plus, c&apos;est nous qui trouvons
+          Ne cherchez plus vos voyages. On vous alerte quand le prix est vraiment bon.
         </h2>
         <p className="text-center text-gray-400 text-sm mb-10">
           Exemples de vrais deals détectés par Globe Genius ces dernières semaines.
