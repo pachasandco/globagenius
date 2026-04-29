@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getPreferences, updatePreferences, changePassword, clearSessionCookie, type FlightTripType } from "@/lib/api";
+import { getPreferences, updatePreferences, changePassword, clearSessionCookie, getTelegramStatus, generateTelegramLink, type FlightTripType } from "@/lib/api";
 
 const AIRPORTS = [
   { code: "CDG", label: "Paris Charles de Gaulle" },
@@ -177,6 +177,11 @@ export default function ProfilePage() {
   const [success, setSuccess] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Telegram connection state. null = not yet known (avoids flashing the
+  // 'connect Telegram' card to users who are actually connected).
+  const [telegramConnected, setTelegramConnected] = useState<boolean | null>(null);
+  const [telegramLinking, setTelegramLinking] = useState(false);
+  const [telegramLinkOpened, setTelegramLinkOpened] = useState(false);
   const router = useRouter();
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -236,7 +241,57 @@ export default function ProfilePage() {
         .then((d) => setIsPremium(d.is_premium || false))
         .catch(() => {});
     }
+
+    // Initial Telegram status
+    getTelegramStatus(id)
+      .then((d) => setTelegramConnected(!!d.connected))
+      .catch(() => setTelegramConnected(false));
   }, [router, API_URL]);
+
+  // While the user is in the middle of linking (link opened in another tab),
+  // poll Telegram status every 4s so the UI flips to "connected" automatically
+  // when /start <token> hits the bot. Stop polling once connected or after the
+  // user has opened the link but hasn't completed within ~5 minutes.
+  useEffect(() => {
+    if (!telegramLinkOpened || telegramConnected || !userId) return;
+    let cancelled = false;
+    let pollCount = 0;
+    const interval = setInterval(async () => {
+      pollCount += 1;
+      if (pollCount > 75) {
+        clearInterval(interval); // give up after ~5 min
+        return;
+      }
+      try {
+        const d = await getTelegramStatus(userId);
+        if (!cancelled && d.connected) {
+          setTelegramConnected(true);
+          clearInterval(interval);
+        }
+      } catch { /* ignore */ }
+    }, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [telegramLinkOpened, telegramConnected, userId]);
+
+  async function handleConnectTelegram() {
+    if (!userId) return;
+    setTelegramLinking(true);
+    setError("");
+    try {
+      const { link } = await generateTelegramLink(userId);
+      // Open Telegram in a new tab/app. Once the user clicks Start there,
+      // our polling loop will detect telegram_connected=true within ~4s.
+      window.open(link, "_blank", "noopener,noreferrer");
+      setTelegramLinkOpened(true);
+    } catch {
+      setError("Impossible de générer le lien Telegram. Réessaie dans un instant.");
+    } finally {
+      setTelegramLinking(false);
+    }
+  }
 
   function blockDestination(code: string) {
     setBlockedDestinations((prev) => prev.includes(code) ? prev : [...prev, code]);
@@ -401,6 +456,64 @@ export default function ProfilePage() {
         {success && (
           <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">
             ✅ {success}
+          </div>
+        )}
+
+        {/* ── Telegram connection (visible only when NOT connected) ── */}
+        {/*
+          Stays hidden while telegramConnected === null (initial fetch in
+          flight) so connected users never see a flash of this card.
+          Once telegramLinkOpened is true and the user finishes /start in
+          Telegram, our polling effect flips telegramConnected to true and
+          this block disappears.
+        */}
+        {telegramConnected === false && (
+          <div className="mb-10 p-5 bg-[#0088cc]/5 border-2 border-[#0088cc]/30 rounded-2xl">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-xl bg-[#0088cc] text-white flex items-center justify-center text-xl shrink-0">
+                ✈️
+              </div>
+              <div className="flex-1">
+                <h2 className="text-lg font-semibold text-[#0A1F3D] mb-1">
+                  Connectez Telegram pour recevoir vos alertes
+                </h2>
+                <p className="text-sm text-gray-600 mb-4">
+                  {telegramLinkOpened
+                    ? "Telegram s'est ouvert dans un nouvel onglet. Cliquez sur \"Start\" dans la conversation avec @Globegenius_bot pour finaliser. Cette page se mettra à jour automatiquement."
+                    : "Vos préférences sont prêtes mais aucune alerte ne vous est envoyée tant que Telegram n'est pas relié à votre compte."}
+                </p>
+                {!telegramLinkOpened ? (
+                  <button
+                    onClick={handleConnectTelegram}
+                    disabled={telegramLinking}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0088cc] hover:bg-[#006daa] text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {telegramLinking ? "Génération du lien…" : "🔗 Connecter Telegram"}
+                  </button>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="inline-flex items-center gap-2 text-sm text-gray-500">
+                      <span className="inline-block w-2 h-2 rounded-full bg-[#0088cc] animate-pulse" />
+                      En attente de la confirmation Telegram…
+                    </span>
+                    <button
+                      onClick={handleConnectTelegram}
+                      disabled={telegramLinking}
+                      className="text-xs text-gray-500 underline hover:text-[#0088cc] transition-colors"
+                    >
+                      Renvoyer le lien
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Telegram connected confirmation (transient, shows once after linking) ── */}
+        {telegramConnected === true && telegramLinkOpened && (
+          <div className="mb-10 p-4 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">
+            ✅ Telegram connecté avec succès. Vous recevrez vos alertes au prochain cycle.
           </div>
         )}
 
