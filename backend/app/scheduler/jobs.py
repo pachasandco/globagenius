@@ -1199,6 +1199,160 @@ async def job_scrape_oneway_flights():
         f"One-way scrape complete: {inserted} inserted, {errors} errors, {duration_ms}ms"
     )
 
+    # V5+: scan freshly-scraped one-way data for split-ticket combos
+    if inserted > 0:
+        try:
+            await _detect_and_dispatch_split_ticket_combos()
+        except Exception as e:
+            logger.warning(f"Split-ticket detection failed: {e}")
+
+
+async def _detect_and_dispatch_split_ticket_combos() -> None:
+    """V5+: scan recent one-way rows for 'combo malin' opportunities.
+
+    For each (origin, destination) tracked in MVP_AIRPORTS × priority destinations,
+    pull recent one-way outbounds + inbounds, look up the round-trip baseline,
+    and run the matcher. Qualified combos are dispatched as Telegram alerts to
+    users who opted in to one_way in flight_trip_types.
+    """
+    if not db:
+        return
+
+    from app.analysis.split_ticket_matcher import find_split_ticket_combos
+    from app.notifications.telegram import send_split_ticket_alert
+
+    fresh_cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    destinations = get_priority_destinations(max_count=40, db=db)
+    combos_dispatched = 0
+
+    # Pre-fetch users who opted in to one_way (single round-trip).
+    opt_in_subs: list[dict] = []
+    try:
+        prefs_resp = (
+            db.table("user_preferences")
+            .select("user_id,telegram_chat_id,airport_codes,flight_trip_types,blocked_destinations")
+            .eq("telegram_connected", True)
+            .execute()
+        )
+        for pref in (prefs_resp.data or []):
+            ftt = pref.get("flight_trip_types") or ["round_trip"]
+            if "one_way" in ftt and pref.get("telegram_chat_id"):
+                opt_in_subs.append(pref)
+    except Exception as e:
+        logger.warning(f"Split-ticket: failed to load opt-in users: {e}")
+        return
+
+    if not opt_in_subs:
+        logger.info("Split-ticket: no users opted in to one-way alerts, skipping")
+        return
+
+    for origin in settings.MVP_AIRPORTS:
+        for dest in destinations:
+            if dest == origin:
+                continue
+            if is_long_haul(dest) and origin != "CDG":
+                continue
+
+            # Pull recent one-way rows for both directions in two queries
+            try:
+                out_resp = (
+                    db.table("raw_flights")
+                    .select("origin,destination,departure_date,price,airline,source_url,trip_type,direction")
+                    .eq("origin", origin)
+                    .eq("destination", dest)
+                    .eq("trip_type", "one_way")
+                    .eq("direction", "outbound")
+                    .gte("scraped_at", fresh_cutoff)
+                    .order("price")
+                    .limit(20)
+                    .execute()
+                )
+                in_resp = (
+                    db.table("raw_flights")
+                    .select("origin,destination,departure_date,price,airline,source_url,trip_type,direction")
+                    .eq("origin", dest)
+                    .eq("destination", origin)
+                    .eq("trip_type", "one_way")
+                    .eq("direction", "inbound")
+                    .gte("scraped_at", fresh_cutoff)
+                    .order("price")
+                    .limit(20)
+                    .execute()
+                )
+            except Exception as e:
+                logger.warning(f"Split-ticket: query failed {origin}-{dest}: {e}")
+                continue
+
+            outbounds = out_resp.data or []
+            inbounds = in_resp.data or []
+            if not outbounds or not inbounds:
+                continue
+
+            # Round-trip baseline lookup. We use the "all-buckets" legacy key
+            # as a coarse reference because the combo matcher doesn't slice
+            # by stay duration here — keep it conservative and only qualify
+            # combos with a comfortable margin.
+            baseline_avg = _lookup_roundtrip_baseline_avg(origin, dest)
+            if baseline_avg is None or baseline_avg <= 0:
+                continue
+
+            combos = find_split_ticket_combos(
+                outbounds=outbounds,
+                inbounds=inbounds,
+                roundtrip_baseline=baseline_avg,
+            )
+            if not combos:
+                continue
+            combo = combos[0]
+
+            for sub in opt_in_subs:
+                if origin not in (sub.get("airport_codes") or []):
+                    continue
+                blocked = set(sub.get("blocked_destinations") or [])
+                if dest in blocked:
+                    continue
+                chat_id = sub["telegram_chat_id"]
+                try:
+                    await send_split_ticket_alert(
+                        chat_id=chat_id,
+                        outbound=combo.outbound,
+                        inbound=combo.inbound,
+                        roundtrip_baseline=combo.roundtrip_baseline,
+                    )
+                    combos_dispatched += 1
+                except Exception as e:
+                    logger.warning(
+                        f"Split-ticket alert failed user={sub.get('user_id')}: {e}"
+                    )
+
+            await asyncio.sleep(0)
+
+    logger.info(f"Split-ticket detection complete: {combos_dispatched} alerts dispatched")
+
+
+def _lookup_roundtrip_baseline_avg(origin: str, dest: str) -> float | None:
+    """Return the cheapest legacy bucket baseline for a route, or None."""
+    if not db:
+        return None
+    try:
+        resp = (
+            db.table("price_baselines")
+            .select("avg_price,sample_count")
+            .like("route_key", f"{origin}-{dest}-bucket_%")
+            .eq("type", "flight")
+            .order("avg_price")
+            .limit(1)
+            .execute()
+        )
+        rows = resp.data or []
+        if not rows:
+            return None
+        avg = rows[0].get("avg_price")
+        return float(avg) if avg else None
+    except Exception as e:
+        logger.warning(f"Baseline lookup failed {origin}-{dest}: {e}")
+        return None
+
 
 async def job_travelpayouts_enrichment():
     """Build per-bucket baselines for all MVP routes via Travelpayouts."""
