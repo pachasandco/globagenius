@@ -81,8 +81,9 @@ export default function Landing() {
         */}
         <section className="relative min-h-[480px] sm:min-h-[560px] flex items-center overflow-hidden">
           <LandingDealsMap initialDeals={SEED_DEALS} />
-          {/* Soft left-side gradient so HeroContent text stays readable */}
-          <div className="absolute inset-0 bg-gradient-to-r from-[var(--color-ink)]/85 via-[var(--color-ink)]/55 to-transparent" />
+          {/* Subtle scrim under the headline — strong enough to keep text
+              legible, weak enough that the map's pins stay visible behind. */}
+          <div className="absolute inset-0 bg-gradient-to-r from-[var(--color-ink)]/65 via-[var(--color-ink)]/20 to-transparent pointer-events-none" />
           <HeroContent />
         </section>
 

@@ -38,22 +38,86 @@ const CITY_COORDS: Record<string, { x: number; y: number; label: string }> = {
   BOD: { x: 48, y: 43, label: "Bordeaux" },
   NTE: { x: 47, y: 41, label: "Nantes" },
   TLS: { x: 49, y: 44, label: "Toulouse" },
+  // Iberia
   LIS: { x: 43, y: 47, label: "Lisbonne" },
   OPO: { x: 43, y: 45, label: "Porto" },
+  FAO: { x: 43, y: 48, label: "Faro" },
   MAD: { x: 45, y: 46, label: "Madrid" },
   BCN: { x: 49, y: 45, label: "Barcelone" },
+  AGP: { x: 45, y: 48, label: "Malaga" },
+  PMI: { x: 49, y: 47, label: "Palma" },
+  ALC: { x: 47, y: 47, label: "Alicante" },
+  IBZ: { x: 48, y: 47, label: "Ibiza" },
+  SVQ: { x: 44, y: 48, label: "Séville" },
+  VLC: { x: 47, y: 46, label: "Valence" },
+  TFS: { x: 38, y: 53, label: "Ténérife" },
+  ACE: { x: 39, y: 53, label: "Lanzarote" },
+  LPA: { x: 38, y: 54, label: "Las Palmas" },
+  FUE: { x: 39, y: 54, label: "Fuerteventura" },
+  FNC: { x: 38, y: 51, label: "Madère" },
+  PDL: { x: 35, y: 47, label: "Açores" },
+  // Italy
   FCO: { x: 55, y: 46, label: "Rome" },
+  MXP: { x: 53, y: 42, label: "Milan" },
+  LIN: { x: 53, y: 42, label: "Milan" },
+  BGY: { x: 54, y: 42, label: "Bergame" },
+  VCE: { x: 55, y: 41, label: "Venise" },
+  TSF: { x: 55, y: 41, label: "Trévise" },
+  NAP: { x: 56, y: 47, label: "Naples" },
+  BLQ: { x: 54, y: 43, label: "Bologne" },
+  BRI: { x: 57, y: 47, label: "Bari" },
+  CTA: { x: 56, y: 49, label: "Catane" },
+  CAG: { x: 54, y: 47, label: "Cagliari" },
+  OLB: { x: 54, y: 45, label: "Olbia" },
+  // Greece / Balkans / Eastern Europe
   ATH: { x: 60, y: 47, label: "Athènes" },
+  HER: { x: 61, y: 49, label: "Héraklion" },
+  JMK: { x: 61, y: 47, label: "Mykonos" },
+  JTR: { x: 61, y: 48, label: "Santorin" },
+  RHO: { x: 62, y: 48, label: "Rhodes" },
+  CFU: { x: 59, y: 46, label: "Corfou" },
+  SKG: { x: 59, y: 45, label: "Thessalonique" },
+  SPU: { x: 57, y: 44, label: "Split" },
+  DBV: { x: 58, y: 44, label: "Dubrovnik" },
+  TIV: { x: 58, y: 44, label: "Tivat" },
+  ZAG: { x: 56, y: 42, label: "Zagreb" },
+  TIA: { x: 58, y: 45, label: "Tirana" },
+  BEG: { x: 58, y: 43, label: "Belgrade" },
+  SOF: { x: 59, y: 44, label: "Sofia" },
+  OTP: { x: 60, y: 42, label: "Bucarest" },
+  SKP: { x: 59, y: 44, label: "Skopje" },
   IST: { x: 63, y: 44, label: "Istanbul" },
+  SAW: { x: 63, y: 44, label: "Istanbul" },
+  // Northern Europe
   AMS: { x: 51, y: 34, label: "Amsterdam" },
   BER: { x: 55, y: 34, label: "Berlin" },
+  BRU: { x: 51, y: 35, label: "Bruxelles" },
   LHR: { x: 47, y: 33, label: "Londres" },
+  LGW: { x: 47, y: 33, label: "Londres" },
+  STN: { x: 47, y: 32, label: "Londres Stansted" },
+  LTN: { x: 47, y: 33, label: "Londres Luton" },
+  MAN: { x: 46, y: 31, label: "Manchester" },
+  BHX: { x: 46, y: 32, label: "Birmingham" },
+  GLA: { x: 45, y: 29, label: "Glasgow" },
+  EDI: { x: 46, y: 29, label: "Édimbourg" },
   DUB: { x: 44, y: 32, label: "Dublin" },
   PRG: { x: 56, y: 36, label: "Prague" },
   VIE: { x: 57, y: 38, label: "Vienne" },
+  BUD: { x: 58, y: 39, label: "Budapest" },
+  WAW: { x: 58, y: 34, label: "Varsovie" },
+  KRK: { x: 58, y: 36, label: "Cracovie" },
   CPH: { x: 54, y: 30, label: "Copenhague" },
   HEL: { x: 60, y: 26, label: "Helsinki" },
   ARN: { x: 56, y: 28, label: "Stockholm" },
+  OSL: { x: 54, y: 27, label: "Oslo" },
+  RIX: { x: 60, y: 30, label: "Riga" },
+  TLL: { x: 60, y: 28, label: "Tallinn" },
+  VNO: { x: 60, y: 31, label: "Vilnius" },
+  // Switzerland
+  ZRH: { x: 53, y: 39, label: "Zurich" },
+  GVA: { x: 52, y: 40, label: "Genève" },
+  BSL: { x: 53, y: 39, label: "Bâle" },
+  LUX: { x: 52, y: 36, label: "Luxembourg" },
   // Americas
   JFK: { x: 22, y: 42, label: "New York" },
   EWR: { x: 21, y: 42, label: "Newark" },
@@ -103,12 +167,30 @@ export function LandingDealsMap({ initialDeals }: { initialDeals: LandingDeal[] 
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${API_URL}/api/landing/deals?limit=6`)
+    fetch(`${API_URL}/api/landing/deals?limit=12`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (cancelled || !data) return;
-        const items = (data as { items?: LandingDeal[] }).items;
-        if (items && items.length >= 3) setDeals(items);
+        const items = (data as { items?: LandingDeal[] }).items ?? [];
+        // Keep only items we can actually pin on the map. If the API returns
+        // mostly unmapped destinations, stay on the seeds rather than show a
+        // sparse map (which is what was happening before).
+        const mapped = items.filter((d) => lookupCoords(d.destination) !== null);
+        if (mapped.length >= 4) {
+          setDeals(mapped.slice(0, 6));
+        } else if (mapped.length > 0) {
+          // Augment seeds with any new mapped picks from the API, dedup by
+          // destination, cap at 6.
+          const existing = new Set(initialDeals.map((d) => d.destination));
+          const augmented = [...initialDeals];
+          for (const d of mapped) {
+            if (existing.has(d.destination)) continue;
+            existing.add(d.destination);
+            augmented.push(d);
+          }
+          setDeals(augmented.slice(0, 6));
+        }
+        // else: API returned 0 mapped picks → keep seeds untouched.
       })
       .catch(() => {
         // Stay on seed deals — map is decorative, no need to surface a failure.
@@ -116,7 +198,7 @@ export function LandingDealsMap({ initialDeals }: { initialDeals: LandingDeal[] 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [initialDeals]);
 
   // Filter out unmapped destinations + dedup by destination so we never pin
   // the same city twice if the API returns duplicates.
