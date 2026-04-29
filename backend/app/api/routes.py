@@ -407,15 +407,16 @@ def list_packages(
     is_premium = _is_premium_user(user)
     user_id = (user.get("sub") or user.get("user_id")) if user else None
 
-    # Single fetch for both blocked_destinations and flight_trip_types
-    # (avoids two round-trips to user_preferences for the same user_id).
+    # Single fetch for blocked_destinations, flight_trip_types and airport_codes
+    # (avoids multiple round-trips to user_preferences for the same user_id).
     allowed_trip_types: set[str] = {"round_trip"}
     user_blocked: set[str] = set()
+    user_airports: set[str] = set()
     if user_id:
         try:
             up_resp = (
                 db.table("user_preferences")
-                .select("blocked_destinations, flight_trip_types")
+                .select("blocked_destinations, flight_trip_types, airport_codes")
                 .eq("user_id", user_id)
                 .single()
                 .execute()
@@ -425,6 +426,7 @@ def list_packages(
             ftt = up_data.get("flight_trip_types") or ["round_trip"]
             if ftt:
                 allowed_trip_types = set(ftt)
+            user_airports = set(up_data.get("airport_codes") or [])
         except Exception as e:
             logger.warning(f"Failed to fetch user preferences for {user_id}: {e}")
 
@@ -476,6 +478,18 @@ def list_packages(
         dest = flight.get("destination", "")
         if dest and dest in user_blocked:
             continue
+        # Filter by user's home airports — anonymous users see everything,
+        # authenticated users only see deals departing from airports they
+        # actually track. For one-way inbound rows the origin is the foreign
+        # city, so we check the destination too (it's the user's airport).
+        if user_id and user_airports:
+            f_origin = flight.get("origin", "")
+            f_direction = flight.get("direction") or ""
+            relevant = f_origin in user_airports or (
+                f_direction == "inbound" and dest in user_airports
+            )
+            if not relevant:
+                continue
         flight_trip_type = flight.get("trip_type") or qi.get("trip_type") or "round_trip"
         flight_direction = flight.get("direction") or qi.get("direction") or ""
         dedup_key = (

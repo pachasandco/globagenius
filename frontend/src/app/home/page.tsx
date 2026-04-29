@@ -503,9 +503,6 @@ export default function HomePage() {
           <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-[19px] leading-none">
             Globe<span className="text-[#FF6B47]">Genius</span>
           </Link>
-          <div className="hidden md:flex items-center gap-5 text-sm text-gray-500">
-            <Link href="/home" className="text-gray-900 font-medium">Deals</Link>
-          </div>
           <div className="flex items-center gap-2 md:gap-3">
             <span className="text-sm text-gray-400 hidden md:block">{isPremium === true ? "🌟 Premium" : isPremium === false ? "Free" : ""}</span>
             <Link href="/profile" className="text-sm text-gray-400 hover:text-gray-900 transition-colors">
