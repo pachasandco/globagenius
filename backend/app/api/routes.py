@@ -1537,10 +1537,11 @@ def admin_ctr(request: Request, days: int = 30):
     )
     total_sent = sent_resp.count or 0
 
-    # Clicks recorded (tokens created in window)
+    # Clicks recorded (tokens created in window). V5+ P1: also pull
+    # trip_type and qualification_method so we can break down CTR.
     tokens_resp = (
         db.table("alert_redirect_tokens")
-        .select("destination,origin,click_count,clicked_at")
+        .select("destination,origin,click_count,clicked_at,trip_type,qualification_method")
         .gte("created_at", since)
         .execute()
     )
@@ -1552,30 +1553,50 @@ def admin_ctr(request: Request, days: int = 30):
 
     ctr = round(total_clicked / total_tokens * 100, 1) if total_tokens > 0 else 0.0
 
-    # CTR per destination (top 10)
-    by_dest: dict[str, dict] = {}
-    for t in tokens:
-        dest = t.get("destination") or "?"
-        entry = by_dest.setdefault(dest, {"tokens": 0, "clicked": 0, "clicks": 0})
-        entry["tokens"] += 1
-        if t.get("click_count", 0) > 0:
-            entry["clicked"] += 1
-            entry["clicks"] += t["click_count"]
-
-    top_destinations = sorted(
-        [
+    def _bucket_stats(tokens: list[dict], key_fn) -> list[dict]:
+        """Aggregate tokens by an arbitrary key extractor and compute CTR."""
+        agg: dict[str, dict] = {}
+        for t in tokens:
+            key = key_fn(t) or "unknown"
+            entry = agg.setdefault(key, {"tokens": 0, "clicked": 0, "clicks": 0})
+            entry["tokens"] += 1
+            if t.get("click_count", 0) > 0:
+                entry["clicked"] += 1
+                entry["clicks"] += t["click_count"]
+        return [
             {
-                "destination": dest,
+                "key": k,
                 "tokens": v["tokens"],
                 "clicked": v["clicked"],
                 "clicks": v["clicks"],
                 "ctr": round(v["clicked"] / v["tokens"] * 100, 1) if v["tokens"] else 0,
             }
-            for dest, v in by_dest.items()
-        ],
+            for k, v in agg.items()
+        ]
+
+    # CTR per destination (top 10 by CTR, requires ≥3 tokens to avoid noise)
+    by_dest = _bucket_stats(tokens, lambda t: t.get("destination"))
+    top_destinations = sorted(
+        [d for d in by_dest if d["tokens"] >= 3],
         key=lambda x: x["ctr"],
         reverse=True,
     )[:10]
+    # Rename 'key' → 'destination' for backwards compat with the frontend.
+    top_destinations = [{**d, "destination": d.pop("key")} for d in top_destinations]
+
+    # V5+ P1: CTR breakdown by trip_type (round_trip vs one_way vs split_ticket)
+    by_trip_type = sorted(
+        _bucket_stats(tokens, lambda t: t.get("trip_type")),
+        key=lambda x: x["tokens"],
+        reverse=True,
+    )
+
+    # V5+ P1: CTR breakdown by qualification_method
+    by_qualification = sorted(
+        _bucket_stats(tokens, lambda t: t.get("qualification_method")),
+        key=lambda x: x["tokens"],
+        reverse=True,
+    )
 
     return {
         "period_days": days,
@@ -1585,4 +1606,6 @@ def admin_ctr(request: Request, days: int = 30):
         "total_clicks": total_clicks,
         "ctr_pct": ctr,
         "top_destinations": top_destinations,
+        "by_trip_type": by_trip_type,
+        "by_qualification_method": by_qualification,
     }

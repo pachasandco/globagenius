@@ -35,3 +35,43 @@ def compute_alert_key(
     ret = return_date[:10] if return_date else ""
     raw = f"{user_id}|{destination}|{dep}|{ret}|{bucket}"
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+
+def compute_oneway_alert_key(
+    user_id: str,
+    origin: str,
+    destination: str,
+    direction: str,
+    departure_date: str = "",
+    price: float = 0,
+) -> str:
+    """V5+ P1: dedup key for one-way alerts.
+
+    Direction matters here (CDG→JFK outbound ≠ JFK→CDG inbound), unlike
+    round-trip where origin is dropped. Same price-bucket logic as round-trip.
+    """
+    bucket = _price_bucket(price)
+    dep = departure_date[:10] if departure_date else ""
+    raw = f"{user_id}|ow|{origin}|{destination}|{direction}|{dep}|{bucket}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+
+def compute_split_ticket_alert_key(
+    user_id: str,
+    origin: str,
+    destination: str,
+    outbound_date: str,
+    inbound_date: str,
+    total_price: float,
+) -> str:
+    """V5+ P1: dedup key for split-ticket combo alerts.
+
+    A combo is conceptually an A/R sold as 2 tickets — the dedup key
+    mirrors round-trip's shape but is namespaced separately so an A/R and
+    a combo on the same dates don't collide.
+    """
+    bucket = _price_bucket(total_price)
+    out = outbound_date[:10] if outbound_date else ""
+    inb = inbound_date[:10] if inbound_date else ""
+    raw = f"{user_id}|st|{destination}|{out}|{inb}|{bucket}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]

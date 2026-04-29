@@ -36,20 +36,33 @@ def _make_redirect_token(
     origin: str,
     dest: str,
     url: str,
+    trip_type: str | None = None,
+    qualification_method: str | None = None,
 ) -> str:
-    """Persist a short opaque token → URL mapping and return the tracking URL."""
+    """Persist a short opaque token → URL mapping and return the tracking URL.
+
+    `trip_type` and `qualification_method` are optional analytics tags so
+    /api/admin/ctr can break clicks down by round_trip vs one_way vs
+    split_ticket and by zscore_* vs fallback_discount vs oneway_discount.
+    Falls back to UTM-tagged URL on insert failure to never block the alert.
+    """
     from app.db import db
     token = f"{dest}-{secrets.token_urlsafe(6)}"
     if db:
+        row = {
+            "token": token,
+            "user_id": user_id,
+            "alert_key": alert_key,
+            "origin": origin,
+            "destination": dest,
+            "url": url,
+        }
+        if trip_type is not None:
+            row["trip_type"] = trip_type
+        if qualification_method is not None:
+            row["qualification_method"] = qualification_method
         try:
-            db.table("alert_redirect_tokens").insert({
-                "token": token,
-                "user_id": user_id,
-                "alert_key": alert_key,
-                "origin": origin,
-                "destination": dest,
-                "url": url,
-            }).execute()
+            db.table("alert_redirect_tokens").insert(row).execute()
         except Exception:
             return _add_utms(url, origin, dest)
     return f"{settings.FRONTEND_URL}/r/{token}"
@@ -214,6 +227,8 @@ def format_oneway_deal_alert(
     discount_pct: float,
     baseline_price: float,
     return_estimate: float | None = None,
+    user_id: str | None = None,
+    alert_key: str | None = None,
 ) -> str:
     """V5: format an alert for a one-way flight deal (no return leg).
 
@@ -250,10 +265,16 @@ def format_oneway_deal_alert(
         lines.append(f"↩️ Retour estimé : ~{int(round(return_estimate))} €")
     lines.append("✅ Vol vérifié")
     if url and url != "N/A":
-        # Tag with UTMs so clicks land in Travelpayouts analytics with a
-        # source/medium/campaign signal. Redirect tokens (per-user click
-        # tracking) require an alert_key — added in P2.
-        tracked_url = _add_utms(url, origin, dest)
+        # When called with a user_id + alert_key, route through /r/:token so
+        # the click is attributable to the user. Otherwise fall back to UTMs.
+        if user_id and alert_key:
+            tracked_url = _make_redirect_token(
+                user_id, alert_key, origin, dest, url,
+                trip_type="one_way",
+                qualification_method="oneway_discount",
+            )
+        else:
+            tracked_url = _add_utms(url, origin, dest)
         lines += ["", f"👉 [Voir le deal]({tracked_url})"]
 
     return "\n".join(lines)
@@ -263,6 +284,8 @@ def format_split_ticket_alert(
     outbound: dict,
     inbound: dict,
     roundtrip_baseline: float,
+    user_id: str | None = None,
+    alert_key: str | None = None,
 ) -> str:
     """V5: format a 'combo malin' 2x one-way alert when buying two separate
     one-way tickets is cheaper than the round-trip baseline on the same route.
@@ -299,12 +322,22 @@ def format_split_ticket_alert(
     ]
     out_url = outbound.get("source_url", "")
     in_url = inbound.get("source_url", "")
+
+    def _wrap(url: str) -> str:
+        # Both legs share the same alert_key — a click on either counts
+        # as engagement on the combo (per V5+ P1 product decision).
+        if user_id and alert_key:
+            return _make_redirect_token(
+                user_id, alert_key, origin, dest, url,
+                trip_type="split_ticket",
+                qualification_method="oneway_discount",
+            )
+        return _add_utms(url, origin, dest)
+
     if out_url and out_url != "N/A":
-        lines.append(f"👉 Aller : [Réserver]({_add_utms(out_url, origin, dest)})")
+        lines.append(f"👉 Aller : [Réserver]({_wrap(out_url)})")
     if in_url and in_url != "N/A":
-        # Inbound has reversed origin/destination, but the route token for
-        # UTM should reflect the user-facing route, not the API direction.
-        lines.append(f"👉 Retour : [Réserver]({_add_utms(in_url, origin, dest)})")
+        lines.append(f"👉 Retour : [Réserver]({_wrap(in_url)})")
 
     return "\n".join(lines)
 
@@ -315,13 +348,22 @@ async def send_oneway_deal_alert(
     discount_pct: float,
     baseline_price: float,
     return_estimate: float | None = None,
+    user_id: str | None = None,
+    alert_key: str | None = None,
 ) -> bool:
-    """V5: send a Telegram alert for a one-way flight deal."""
+    """V5: send a Telegram alert for a one-way flight deal.
+
+    When user_id+alert_key are provided, the booking link is wrapped in a
+    /r/:token redirect for per-user click tracking. Otherwise UTMs only.
+    """
     bot = _get_bot()
     if not bot:
         logger.warning("Telegram bot not configured, skipping one-way alert")
         return False
-    msg = format_oneway_deal_alert(flight, discount_pct, baseline_price, return_estimate)
+    msg = format_oneway_deal_alert(
+        flight, discount_pct, baseline_price, return_estimate,
+        user_id=user_id, alert_key=alert_key,
+    )
     try:
         await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
         return True
@@ -335,13 +377,22 @@ async def send_split_ticket_alert(
     outbound: dict,
     inbound: dict,
     roundtrip_baseline: float,
+    user_id: str | None = None,
+    alert_key: str | None = None,
 ) -> bool:
-    """V5: send a Telegram alert for a 2x one-way (split-ticket) combo."""
+    """V5: send a Telegram alert for a 2x one-way (split-ticket) combo.
+
+    user_id+alert_key enable /r/:token tracking on both legs (clicks on
+    either leg count as engagement on the combo, per product decision).
+    """
     bot = _get_bot()
     if not bot:
         logger.warning("Telegram bot not configured, skipping split-ticket alert")
         return False
-    msg = format_split_ticket_alert(outbound, inbound, roundtrip_baseline)
+    msg = format_split_ticket_alert(
+        outbound, inbound, roundtrip_baseline,
+        user_id=user_id, alert_key=alert_key,
+    )
     try:
         await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
         return True
@@ -465,7 +516,9 @@ def format_grouped_flight_alerts(
             if booking_url:
                 if user_id and alert_key and origin_iata:
                     tracked = _make_redirect_token(
-                        user_id, alert_key, origin_iata, destination_iata, booking_url
+                        user_id, alert_key, origin_iata, destination_iata, booking_url,
+                        trip_type="round_trip",
+                        qualification_method=o.get("qualification_method"),
                     )
                 else:
                     tracked = _add_utms(booking_url, origin_iata or "", destination_iata)

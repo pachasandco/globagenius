@@ -375,6 +375,9 @@ async def _analyze_new_flights(flights: list[dict]):
             # Stash score back on the flight dict so the grouped dispatcher
             # can surface it in offers without re-computing.
             flight["score"] = score
+            # Propagate qualification_method for downstream click-tracking
+            # analytics (CTR breakdown by qualification path).
+            flight["_qualification_method"] = qualification_method or "unknown"
             qualified_flights.append((flight, anomaly, tier))
 
     logger.info(f"Analyze pipeline counters: {counters}")
@@ -797,6 +800,9 @@ async def _dispatch_grouped_flight_alerts(
                         "discount_pct": anomaly.discount_pct,
                         "score": flight.get("score", 0),
                         "airline": flight.get("airline", ""),
+                        # Propagate the qualification path so click tracking
+                        # can break CTR down by zscore_* vs fallback_discount.
+                        "qualification_method": flight.get("_qualification_method"),
                         "booking_url": build_aviasales_url(
                             flight["origin"],
                             flight["destination"],
@@ -1373,6 +1379,21 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
             if travel_dest in blocked:
                 continue
             chat_id = sub["telegram_chat_id"]
+            sub_user_id = sub.get("user_id")
+            # Per-user dedup + click-tracking key.
+            from app.notifications.dedup import compute_oneway_alert_key
+            alert_key = (
+                compute_oneway_alert_key(
+                    user_id=sub_user_id,
+                    origin=origin,
+                    destination=destination,
+                    direction=direction,
+                    departure_date=candidate.get("departure_date") or "",
+                    price=qualification.price,
+                )
+                if sub_user_id
+                else None
+            )
             try:
                 await send_oneway_deal_alert(
                     chat_id=chat_id,
@@ -1387,11 +1408,13 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                     },
                     discount_pct=qualification.discount_pct,
                     baseline_price=qualification.median,
+                    user_id=sub_user_id,
+                    alert_key=alert_key,
                 )
                 dispatched += 1
             except Exception as e:
                 logger.warning(
-                    f"One-way alert send failed user={sub.get('user_id')}: {e}"
+                    f"One-way alert send failed user={sub_user_id}: {e}"
                 )
 
         await asyncio.sleep(0)
@@ -1505,6 +1528,8 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                 continue
             combo = combos[0]
 
+            from app.notifications.dedup import compute_split_ticket_alert_key
+
             for sub in opt_in_subs:
                 if origin not in (sub.get("airport_codes") or []):
                     continue
@@ -1512,17 +1537,32 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                 if dest in blocked:
                     continue
                 chat_id = sub["telegram_chat_id"]
+                sub_user_id = sub.get("user_id")
+                alert_key = (
+                    compute_split_ticket_alert_key(
+                        user_id=sub_user_id,
+                        origin=origin,
+                        destination=dest,
+                        outbound_date=combo.outbound.get("departure_date") or "",
+                        inbound_date=combo.inbound.get("departure_date") or "",
+                        total_price=combo.total,
+                    )
+                    if sub_user_id
+                    else None
+                )
                 try:
                     await send_split_ticket_alert(
                         chat_id=chat_id,
                         outbound=combo.outbound,
                         inbound=combo.inbound,
                         roundtrip_baseline=combo.roundtrip_baseline,
+                        user_id=sub_user_id,
+                        alert_key=alert_key,
                     )
                     combos_dispatched += 1
                 except Exception as e:
                     logger.warning(
-                        f"Split-ticket alert failed user={sub.get('user_id')}: {e}"
+                        f"Split-ticket alert failed user={sub_user_id}: {e}"
                     )
 
             await asyncio.sleep(0)
