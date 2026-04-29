@@ -2,29 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import RedirectIfLoggedIn from "./_components/RedirectIfLoggedIn";
 import LandingAnimated, { HeroContent } from "./_components/LandingAnimated";
-import { LandingDealsMap, type LandingDeal } from "./_components/LandingDealsMap";
+import { LandingNotificationHero } from "./_components/LandingNotificationHero";
 
 export const metadata: Metadata = {
   alternates: {
     canonical: "https://globegenius.app",
   },
 };
-
-// Static seed deals for the hero map. The map component fetches live deals
-// client-side via /api/landing/deals after hydration; if the API is slow or
-// down, these stay shown so the hero is never empty.
-//
-// Note: we tried server-fetching during the static build, but Next 16 ISR
-// turns failed fetches into a 404 page instead of falling back to the
-// catch branch. Client-only fetch keeps the build deterministic.
-const SEED_DEALS: LandingDeal[] = [
-  { origin: "CDG", destination: "NRT", discount_pct: 43 }, // Tokyo
-  { origin: "CDG", destination: "JFK", discount_pct: 66 }, // New York
-  { origin: "CDG", destination: "BKK", discount_pct: 31 }, // Bangkok
-  { origin: "ORY", destination: "LIS", discount_pct: 77 }, // Lisbonne
-  { origin: "CDG", destination: "RAK", discount_pct: 58 }, // Marrakech
-  { origin: "MRS", destination: "BCN", discount_pct: 35 }, // Barcelone
-];
 
 const faqs = [
   { q: "Comment fonctionne Globe Genius ?", a: "On surveille en permanence les prix des vols au départ de 9 aéroports français. Dès qu’on détecte une baisse de prix significative, on vous envoie une alerte sur Telegram avec tous les détails pour réserver." },
@@ -74,16 +58,14 @@ export default function Landing() {
       <main>
         {/* ── HERO ── */}
         {/*
-          The hero used to show a tropical beach photo. Replaced by an
-          editorial-style world map of live (or fallback) flight deals,
-          centred on Paris — shows the product in action instead of a
-          generic travel metaphor.
+          The hero used to show a tropical beach photo, then a clumsy
+          stylised world map. Replaced by a floating Telegram-style
+          notification card that loops through the three V5 deal flavours
+          (round-trip, one-way, split-ticket combo). Shows the product in
+          action: the user receives an alert and reads the price drop.
         */}
-        <section className="relative min-h-[480px] sm:min-h-[560px] flex items-center overflow-hidden">
-          <LandingDealsMap initialDeals={SEED_DEALS} />
-          {/* Subtle scrim under the headline — strong enough to keep text
-              legible, weak enough that the map's pins stay visible behind. */}
-          <div className="absolute inset-0 bg-gradient-to-r from-[var(--color-ink)]/65 via-[var(--color-ink)]/20 to-transparent pointer-events-none" />
+        <section className="relative min-h-[520px] sm:min-h-[600px] flex items-center overflow-hidden">
+          <LandingNotificationHero />
           <HeroContent />
         </section>
 
