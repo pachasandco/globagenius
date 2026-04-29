@@ -210,7 +210,9 @@ def format_flight_deal_alert(flight: dict, discount_pct: float, baseline_price: 
     lines = [
         f"*{badge}*",
         "",
-        f"✈️ *{origin_label} ({origin}) → {dest_label} ({dest})*",
+        f"🛫 *{origin_label} → {dest_label}*",
+        f"🛬 *{dest_label} → {origin_label}*",
+        "",
         f"💰 *{price} € A/R · -{disc} %*",
         f"📅 {dep_str} – {ret_str}{duration_str}",
         f"Prix habituel : ~{baseline} €~",
@@ -251,12 +253,22 @@ def format_oneway_deal_alert(
     origin_label = iata_label(origin)
     dest_label = iata_label(dest)
 
-    direction_label = "Aller simple" if direction == "outbound" else "Retour simple"
+    # One-way alert: the user's home airport is the origin for outbound,
+    # the destination for inbound. Tell them in their own perspective:
+    #   outbound → 🛫 départ de Paris (CDG) → Tokyo (NRT)
+    #   inbound  → 🛬 retour de Tokyo (NRT) → Paris (CDG)
+    if direction == "outbound":
+        route_line = f"🛫 *Départ de {origin_label} → {dest_label}*"
+        direction_label = "Aller simple"
+    else:
+        route_line = f"🛬 *Retour de {origin_label} → {dest_label}*"
+        direction_label = "Retour simple"
 
     lines = [
         f"*{badge}*",
         "",
-        f"✈️ *{origin_label} ({origin}) → {dest_label} ({dest})*",
+        route_line,
+        "",
         f"💰 *{price} € · {direction_label} · -{disc} %*",
         f"📅 {dep_str}",
         f"Prix habituel : ~{baseline} €~",
@@ -309,7 +321,9 @@ def format_split_ticket_alert(
     lines = [
         "*💡 Combo malin · 2 billets séparés*",
         "",
-        f"✈️ *{origin_label} ({origin}) ⇄ {dest_label} ({dest})*",
+        f"🛫 *{origin_label} → {dest_label}*",
+        f"🛬 *{dest_label} → {origin_label}*",
+        "",
         f"💰 *{total} € total · économie {savings} € (-{saving_pct} %)*",
         f"Prix habituel A/R : ~{rt_baseline} €~",
         "",
@@ -470,13 +484,15 @@ def format_grouped_flight_alerts(
     origin_display = origin_iata or (offers[0].get("origin") if offers else "")
     origin_label = iata_label(origin_display)
     dest_label = iata_label(destination_iata)
-    noun = "offre" if total == 1 else "offres"
+    noun = "offre disponible" if total == 1 else "offres disponibles"
 
     header = (
         f"*{badge}*\n"
         f"\n"
-        f"✈️ *{origin_label} ({origin_display}) → {dest_label} ({destination_iata})*\n"
-        f"🗓 {total} {noun} disponibles"
+        f"🛫 *{origin_label} → {dest_label}*\n"
+        f"🛬 *{dest_label} → {origin_label}*\n"
+        f"\n"
+        f"🗓 {total} {noun}"
     )
 
     # Group by (year, month) chronologically
