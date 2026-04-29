@@ -250,7 +250,11 @@ def format_oneway_deal_alert(
         lines.append(f"↩️ Retour estimé : ~{int(round(return_estimate))} €")
     lines.append("✅ Vol vérifié")
     if url and url != "N/A":
-        lines += ["", f"👉 [Voir le deal]({url})"]
+        # Tag with UTMs so clicks land in Travelpayouts analytics with a
+        # source/medium/campaign signal. Redirect tokens (per-user click
+        # tracking) require an alert_key — added in P2.
+        tracked_url = _add_utms(url, origin, dest)
+        lines += ["", f"👉 [Voir le deal]({tracked_url})"]
 
     return "\n".join(lines)
 
@@ -296,9 +300,11 @@ def format_split_ticket_alert(
     out_url = outbound.get("source_url", "")
     in_url = inbound.get("source_url", "")
     if out_url and out_url != "N/A":
-        lines.append(f"👉 Aller : [Réserver]({out_url})")
+        lines.append(f"👉 Aller : [Réserver]({_add_utms(out_url, origin, dest)})")
     if in_url and in_url != "N/A":
-        lines.append(f"👉 Retour : [Réserver]({in_url})")
+        # Inbound has reversed origin/destination, but the route token for
+        # UTM should reflect the user-facing route, not the API direction.
+        lines.append(f"👉 Retour : [Réserver]({_add_utms(in_url, origin, dest)})")
 
     return "\n".join(lines)
 

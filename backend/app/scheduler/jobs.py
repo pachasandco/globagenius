@@ -1209,12 +1209,194 @@ async def job_scrape_oneway_flights():
         f"One-way scrape complete: {inserted} inserted, {errors} errors, {duration_ms}ms"
     )
 
+    # V5+ P1: detect standalone one-way deals (option C — pre-baseline,
+    # discount vs 30-day median).
+    if inserted > 0:
+        try:
+            await _detect_and_dispatch_oneway_alerts()
+        except Exception as e:
+            logger.warning(f"One-way detection failed: {e}")
+
     # V5+: scan freshly-scraped one-way data for split-ticket combos
     if inserted > 0:
         try:
             await _detect_and_dispatch_split_ticket_combos()
         except Exception as e:
             logger.warning(f"Split-ticket detection failed: {e}")
+
+
+async def _detect_and_dispatch_oneway_alerts() -> None:
+    """V5+ P1: scan recent one-way rows for standalone deals.
+
+    For each (origin, destination, direction) seen in the last 24h, fetch
+    the 30-day price history and run the qualifier. Qualified rows are
+    persisted to qualified_items (with qualification_method='oneway_discount')
+    and dispatched as Telegram alerts to users who opted in to one_way in
+    flight_trip_types.
+    """
+    if not db:
+        return
+
+    from app.analysis.oneway_qualifier import qualify_oneway
+    from app.notifications.telegram import send_oneway_deal_alert
+    from app.thresholds import (
+        ONEWAY_MEDIAN_LOOKBACK_DAYS,
+    )
+
+    now = datetime.now(timezone.utc)
+    fresh_cutoff = (now - timedelta(hours=24)).isoformat()
+    history_cutoff = (now - timedelta(days=ONEWAY_MEDIAN_LOOKBACK_DAYS)).isoformat()
+
+    # Fetch users who opted in to one_way alerts (single round-trip).
+    opt_in_subs: list[dict] = []
+    try:
+        prefs_resp = (
+            db.table("user_preferences")
+            .select("user_id,telegram_chat_id,airport_codes,flight_trip_types,blocked_destinations")
+            .eq("telegram_connected", True)
+            .execute()
+        )
+        for pref in (prefs_resp.data or []):
+            ftt = pref.get("flight_trip_types") or ["round_trip"]
+            if "one_way" in ftt and pref.get("telegram_chat_id"):
+                opt_in_subs.append(pref)
+    except Exception as e:
+        logger.warning(f"One-way: failed to load opt-in users: {e}")
+        return
+
+    if not opt_in_subs:
+        logger.info("One-way: no users opted in, skipping detection")
+        return
+
+    # Pull the freshest one-way candidates of the last 24h. We cap at 200 to
+    # avoid scanning the entire one-way table on each run.
+    try:
+        cand_resp = (
+            db.table("raw_flights")
+            .select("id,origin,destination,departure_date,direction,price,airline,source_url,scraped_at")
+            .eq("trip_type", "one_way")
+            .gte("scraped_at", fresh_cutoff)
+            .order("price")
+            .limit(200)
+            .execute()
+        )
+    except Exception as e:
+        logger.warning(f"One-way: candidate fetch failed: {e}")
+        return
+
+    candidates = cand_resp.data or []
+    if not candidates:
+        return
+
+    # Group candidates by (origin, destination, direction) and keep the
+    # cheapest one in each cell — that's the pertinent deal candidate.
+    cells: dict[tuple[str, str, str], dict] = {}
+    for c in candidates:
+        key = (c.get("origin", ""), c.get("destination", ""), c.get("direction", ""))
+        if not all(key):
+            continue
+        existing = cells.get(key)
+        if existing is None or (c.get("price") or 0) < (existing.get("price") or 0):
+            cells[key] = c
+
+    dispatched = 0
+    for (origin, destination, direction), candidate in cells.items():
+        # Pull the 30-day history for this exact (origin, destination, direction).
+        try:
+            hist_resp = (
+                db.table("raw_flights")
+                .select("price")
+                .eq("origin", origin)
+                .eq("destination", destination)
+                .eq("direction", direction)
+                .eq("trip_type", "one_way")
+                .gte("scraped_at", history_cutoff)
+                .execute()
+            )
+        except Exception as e:
+            logger.warning(f"One-way history fetch failed for {origin}->{destination}/{direction}: {e}")
+            continue
+
+        history = [float(r["price"]) for r in (hist_resp.data or []) if r.get("price")]
+        qualification = qualify_oneway(
+            price=float(candidate.get("price") or 0),
+            recent_prices=history,
+        )
+        if qualification is None:
+            continue
+
+        # Persist as a qualified_item so the homepage and analytics can see it.
+        flight_id = candidate.get("id")
+        if not flight_id:
+            continue
+        score = compute_score(
+            discount_pct=qualification.discount_pct,
+            destination_code=destination,
+            date_flexibility=0,
+        )
+        # One-way deals never enter the round-trip premium tier (no A/R baseline).
+        # We treat ≥60% as "premium-grade" for masking, ≥40% as free.
+        tier = "premium" if qualification.discount_pct >= 60 else "free"
+        try:
+            db.table("qualified_items").upsert(
+                {
+                    "type": "flight",
+                    "item_id": flight_id,
+                    "price": qualification.price,
+                    "baseline_price": qualification.median,
+                    "discount_pct": qualification.discount_pct,
+                    "score": score,
+                    "tier": tier,
+                    "status": "active",
+                    "reverified_at": now.isoformat(),
+                    "qualification_method": "oneway_discount",
+                    "trip_type": "one_way",
+                    "direction": direction,
+                },
+                on_conflict="item_id",
+            ).execute()
+        except Exception as e:
+            logger.warning(f"One-way qualified_item upsert failed: {e}")
+            continue
+
+        # Dispatch Telegram alerts to opt-in users tracking this airport.
+        # For inbound, the user's home airport is the destination of the
+        # candidate (since we flipped origin/destination at scrape time).
+        user_airport_for_filter = origin if direction == "outbound" else destination
+        for sub in opt_in_subs:
+            airports = sub.get("airport_codes") or []
+            if user_airport_for_filter not in airports:
+                continue
+            blocked = set(sub.get("blocked_destinations") or [])
+            # Block check uses the actual destination city the user flies to.
+            travel_dest = destination if direction == "outbound" else origin
+            if travel_dest in blocked:
+                continue
+            chat_id = sub["telegram_chat_id"]
+            try:
+                await send_oneway_deal_alert(
+                    chat_id=chat_id,
+                    flight={
+                        "origin": origin,
+                        "destination": destination,
+                        "departure_date": candidate.get("departure_date"),
+                        "price": qualification.price,
+                        "source_url": candidate.get("source_url"),
+                        "direction": direction,
+                        "airline": candidate.get("airline"),
+                    },
+                    discount_pct=qualification.discount_pct,
+                    baseline_price=qualification.median,
+                )
+                dispatched += 1
+            except Exception as e:
+                logger.warning(
+                    f"One-way alert send failed user={sub.get('user_id')}: {e}"
+                )
+
+        await asyncio.sleep(0)
+
+    logger.info(f"One-way detection complete: {dispatched} alerts dispatched")
 
 
 async def _detect_and_dispatch_split_ticket_combos() -> None:
