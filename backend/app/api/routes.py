@@ -1336,6 +1336,42 @@ def admin_reset_prefs(user_id: str, request: Request):
     return {"ok": True, "reset": bool(resp.data)}
 
 
+@router.post("/api/admin/users/{user_id}/telegram/generate-link")
+def admin_generate_telegram_link(user_id: str, request: Request):
+    """Generate a Telegram connection link on behalf of a user.
+
+    Use case: a premium user signed up but never connected Telegram (skipped
+    onboarding step, or hit the broken-webhook bug from April 2026). Ops can
+    paste the resulting deep_link into a personal email — when the user
+    taps it, Telegram opens, /start <token> fires, our webhook consumes
+    the token and flips telegram_connected to true.
+    """
+    _require_admin(request)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    # Sanity: confirm user exists
+    user_row = db.table("users").select("id, email").eq("id", user_id).execute()
+    if not user_row.data:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    token = secrets.token_urlsafe(16)
+    db.table("user_preferences").update({
+        "telegram_connect_token": token,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("user_id", user_id).execute()
+
+    bot_username = "Globegenius_bot"
+    deep_link = f"https://t.me/{bot_username}?start={token}"
+    return {
+        "ok": True,
+        "user_id": user_id,
+        "email": user_row.data[0].get("email"),
+        "link": deep_link,
+        "token": token,
+    }
+
+
 @router.get("/api/admin/routes")
 def admin_routes(request: Request):
     """Return all monitored routes with scraping source and baseline status."""
