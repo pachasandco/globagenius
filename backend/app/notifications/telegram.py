@@ -209,6 +209,141 @@ def format_flight_deal_alert(flight: dict, discount_pct: float, baseline_price: 
     return "\n".join(lines)
 
 
+def format_oneway_deal_alert(
+    flight: dict,
+    discount_pct: float,
+    baseline_price: float,
+    return_estimate: float | None = None,
+) -> str:
+    """V5: format an alert for a one-way flight deal (no return leg).
+
+    `flight` must include origin, destination, departure_date, price, source_url,
+    direction ('outbound' | 'inbound'). `return_estimate` is the typical price for
+    the reverse leg if known — surfaced as a hint to defuse the "is this really
+    a deal?" doubt mentioned in V5 design notes."""
+    origin = flight["origin"]
+    dest = flight["destination"]
+    direction = flight.get("direction") or "outbound"
+
+    dep_str = _fmt_date_fr(flight["departure_date"])
+    price = int(round(flight["price"]))
+    disc = int(round(discount_pct))
+    baseline = int(round(baseline_price))
+    badge = _deal_badge(discount_pct)
+    url = flight.get("source_url", "")
+
+    from app.config import iata_label
+    origin_label = iata_label(origin)
+    dest_label = iata_label(dest)
+
+    direction_label = "Aller simple" if direction == "outbound" else "Retour simple"
+
+    lines = [
+        f"*{badge}*",
+        "",
+        f"✈️ *{origin_label} ({origin}) → {dest_label} ({dest})*",
+        f"💰 *{price} € · {direction_label} · -{disc} %*",
+        f"📅 {dep_str}",
+        f"Prix habituel : ~{baseline} €~",
+    ]
+    if return_estimate is not None:
+        lines.append(f"↩️ Retour estimé : ~{int(round(return_estimate))} €")
+    lines.append("✅ Vol vérifié")
+    if url and url != "N/A":
+        lines += ["", f"👉 [Voir le deal]({url})"]
+
+    return "\n".join(lines)
+
+
+def format_split_ticket_alert(
+    outbound: dict,
+    inbound: dict,
+    roundtrip_baseline: float,
+) -> str:
+    """V5: format a 'combo malin' 2x one-way alert when buying two separate
+    one-way tickets is cheaper than the round-trip baseline on the same route.
+
+    Both `outbound` and `inbound` must include origin, destination, departure_date,
+    price, source_url, airline."""
+    from app.config import iata_label
+    origin = outbound["origin"]
+    dest = outbound["destination"]
+    origin_label = iata_label(origin)
+    dest_label = iata_label(dest)
+
+    total = int(round(outbound["price"] + inbound["price"]))
+    rt_baseline = int(round(roundtrip_baseline))
+    savings = max(0, rt_baseline - total)
+    saving_pct = int(round((savings / rt_baseline) * 100)) if rt_baseline > 0 else 0
+
+    out_dep = _fmt_date_fr(outbound["departure_date"])
+    in_dep = _fmt_date_fr(inbound["departure_date"])
+
+    lines = [
+        "*💡 Combo malin · 2 billets séparés*",
+        "",
+        f"✈️ *{origin_label} ({origin}) ⇄ {dest_label} ({dest})*",
+        f"💰 *{total} € total · économie {savings} € (-{saving_pct} %)*",
+        f"Prix habituel A/R : ~{rt_baseline} €~",
+        "",
+        f"↳ Aller : {outbound.get('airline') or '—'} · "
+        f"{int(round(outbound['price']))} € · {out_dep}",
+        f"↳ Retour : {inbound.get('airline') or '—'} · "
+        f"{int(round(inbound['price']))} € · {in_dep}",
+        "",
+        "⚠️ Bagages et annulation gérés séparément",
+    ]
+    out_url = outbound.get("source_url", "")
+    in_url = inbound.get("source_url", "")
+    if out_url and out_url != "N/A":
+        lines.append(f"👉 Aller : [Réserver]({out_url})")
+    if in_url and in_url != "N/A":
+        lines.append(f"👉 Retour : [Réserver]({in_url})")
+
+    return "\n".join(lines)
+
+
+async def send_oneway_deal_alert(
+    chat_id: int,
+    flight: dict,
+    discount_pct: float,
+    baseline_price: float,
+    return_estimate: float | None = None,
+) -> bool:
+    """V5: send a Telegram alert for a one-way flight deal."""
+    bot = _get_bot()
+    if not bot:
+        logger.warning("Telegram bot not configured, skipping one-way alert")
+        return False
+    msg = format_oneway_deal_alert(flight, discount_pct, baseline_price, return_estimate)
+    try:
+        await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send one-way alert to {chat_id}: {e}")
+        return False
+
+
+async def send_split_ticket_alert(
+    chat_id: int,
+    outbound: dict,
+    inbound: dict,
+    roundtrip_baseline: float,
+) -> bool:
+    """V5: send a Telegram alert for a 2x one-way (split-ticket) combo."""
+    bot = _get_bot()
+    if not bot:
+        logger.warning("Telegram bot not configured, skipping split-ticket alert")
+        return False
+    msg = format_split_ticket_alert(outbound, inbound, roundtrip_baseline)
+    try:
+        await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send split-ticket alert to {chat_id}: {e}")
+        return False
+
+
 async def send_flight_deal_alert(
     chat_id: int,
     flight: dict,

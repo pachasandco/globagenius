@@ -20,9 +20,25 @@ def _title_case_city(city: str) -> str:
 
 
 def compute_flight_hash(
-    origin: str, destination: str, departure_date: str, return_date: str, price: float, source: str
+    origin: str,
+    destination: str,
+    departure_date: str,
+    return_date: str | None,
+    price: float,
+    source: str,
+    trip_type: str = "round_trip",
+    direction: str | None = None,
 ) -> str:
-    raw = f"{origin}|{destination}|{departure_date}|{return_date}|{price}|{source}"
+    # Backward-compat: legacy round-trip hash format must stay byte-identical
+    # so existing raw_flights.hash rows continue to dedupe via on_conflict.
+    # One-way rows are new in V5 and embed the discriminators in the digest.
+    if trip_type == "round_trip" and direction is None:
+        raw = f"{origin}|{destination}|{departure_date}|{return_date}|{price}|{source}"
+    else:
+        raw = (
+            f"{origin}|{destination}|{departure_date}|{return_date or ''}"
+            f"|{price}|{source}|{trip_type}|{direction or ''}"
+        )
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
@@ -36,21 +52,33 @@ def compute_accommodation_hash(
 def normalize_flight(raw: dict, source: str) -> dict:
     price = _to_eur(raw["price"], raw.get("currency", "EUR"))
     now = datetime.now(timezone.utc)
+    trip_type = raw.get("tripType") or raw.get("trip_type") or "round_trip"
+    direction = raw.get("direction")
+    if trip_type == "one_way":
+        return_date: str | None = None
+        if direction not in ("outbound", "inbound"):
+            raise ValueError("one_way flight requires direction='outbound' or 'inbound'")
+    else:
+        trip_type = "round_trip"
+        return_date = raw["returnDate"]
+        direction = None
     return {
         "hash": compute_flight_hash(
             raw["origin"], raw["destination"],
-            raw["departureDate"], raw["returnDate"],
-            price, source,
+            raw["departureDate"], return_date,
+            price, source, trip_type, direction,
         ),
         "origin": raw["origin"],
         "destination": raw["destination"],
         "departure_date": raw["departureDate"],
-        "return_date": raw["returnDate"],
+        "return_date": return_date,
         "price": price,
         "airline": raw.get("airline"),
         "stops": raw.get("stops", 0),
         "source_url": raw.get("url"),
         "source": source,
+        "trip_type": trip_type,
+        "direction": direction,
         "scraped_at": now.isoformat(),
         "expires_at": (now + timedelta(hours=settings.DATA_FRESHNESS_HOURS)).isoformat(),
     }

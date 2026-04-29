@@ -22,6 +22,7 @@ security = HTTPBearer(auto_error=False)
 
 VALID_AIRPORTS = settings.MVP_AIRPORTS
 VALID_OFFER_TYPES = ["package", "flight", "accommodation"]
+VALID_FLIGHT_TRIP_TYPES = ["round_trip", "one_way"]
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 # Simple in-memory rate limiter
@@ -205,6 +206,7 @@ class PreferencesRequest(BaseModel):
     preferred_destinations: list[str] | None = None
     deal_tier: str = "regular"
     blocked_destinations: list[str] = []
+    flight_trip_types: list[str] = ["round_trip"]
 
     @field_validator("deal_tier")
     @classmethod
@@ -213,6 +215,20 @@ class PreferencesRequest(BaseModel):
         if v not in allowed:
             raise ValueError(f"deal_tier must be one of {sorted(allowed)}")
         return v
+
+    @field_validator("flight_trip_types")
+    @classmethod
+    def validate_flight_trip_types(cls, v: list[str]) -> list[str]:
+        if not v:
+            return ["round_trip"]
+        invalid = [t for t in v if t not in VALID_FLIGHT_TRIP_TYPES]
+        if invalid:
+            raise ValueError(
+                f"flight_trip_types must be subset of {VALID_FLIGHT_TRIP_TYPES}, got invalid: {invalid}"
+            )
+        # Dedup while preserving order
+        seen: set[str] = set()
+        return [t for t in v if not (t in seen or seen.add(t))]
 
 
 class TelegramConnectRequest(BaseModel):
@@ -387,6 +403,35 @@ def list_packages(
     )
     qualified = qi_resp.data or []
 
+    is_premium = _is_premium_user(user)
+    user_id = (user.get("sub") or user.get("user_id")) if user else None
+
+    # Single fetch for both blocked_destinations and flight_trip_types
+    # (avoids two round-trips to user_preferences for the same user_id).
+    allowed_trip_types: set[str] = {"round_trip"}
+    user_blocked: set[str] = set()
+    if user_id:
+        try:
+            up_resp = (
+                db.table("user_preferences")
+                .select("blocked_destinations, flight_trip_types")
+                .eq("user_id", user_id)
+                .single()
+                .execute()
+            )
+            up_data = up_resp.data or {}
+            user_blocked = set(up_data.get("blocked_destinations") or [])
+            ftt = up_data.get("flight_trip_types") or ["round_trip"]
+            if ftt:
+                allowed_trip_types = set(ftt)
+        except Exception as e:
+            logger.warning(f"Failed to fetch user preferences for {user_id}: {e}")
+
+    qualified = [
+        q for q in qualified
+        if (q.get("trip_type") or "round_trip") in allowed_trip_types
+    ]
+
     if not qualified:
         return {"items": [], "plan": plan}
 
@@ -396,31 +441,12 @@ def list_packages(
     if item_ids:
         rf_resp = (
             db.table("raw_flights")
-            .select("id, origin, destination, departure_date, return_date, airline, stops, source_url, trip_duration_days, duration_minutes")
+            .select("id, origin, destination, departure_date, return_date, airline, stops, source_url, trip_duration_days, duration_minutes, trip_type, direction")
             .in_("id", item_ids)
             .execute()
         )
         for f in (rf_resp.data or []):
             flights_by_id[f["id"]] = f
-
-    is_premium = _is_premium_user(user)
-    user_id = (user.get("sub") or user.get("user_id")) if user else None
-
-    # Fetch blocked destinations for this user (if logged in)
-    user_blocked: set[str] = set()
-    if user_id:
-        try:
-            bp_resp = (
-                db.table("user_preferences")
-                .select("blocked_destinations")
-                .eq("user_id", user_id)
-                .single()
-                .execute()
-            )
-            blocked_list = (bp_resp.data or {}).get("blocked_destinations") or []
-            user_blocked = set(blocked_list)
-        except Exception:
-            pass
 
     # For free users: count how many deals they've already received this week
     # via Telegram (sent_alerts) — the homepage quota mirrors Telegram's.
@@ -449,9 +475,12 @@ def list_packages(
         dest = flight.get("destination", "")
         if dest and dest in user_blocked:
             continue
+        flight_trip_type = flight.get("trip_type") or qi.get("trip_type") or "round_trip"
+        flight_direction = flight.get("direction") or qi.get("direction") or ""
         dedup_key = (
             f"{flight.get('origin','')}-{dest}"
-            f"-{flight.get('departure_date','')}-{flight.get('return_date','')}"
+            f"-{flight.get('departure_date','')}-{flight.get('return_date','') or ''}"
+            f"-{flight_trip_type}-{flight_direction}"
         )
         if dedup_key in seen_flights:
             continue
@@ -480,11 +509,13 @@ def list_packages(
             "origin": flight.get("origin", ""),
             "destination": flight.get("destination", ""),
             "departure_date": flight.get("departure_date", ""),
-            "return_date": flight.get("return_date", ""),
+            "return_date": flight.get("return_date"),
             "airline": flight.get("airline"),
             "stops": flight.get("stops", 0),
             "trip_duration_days": flight.get("trip_duration_days"),
             "duration_minutes": flight.get("duration_minutes"),
+            "trip_type": flight.get("trip_type") or qi.get("trip_type") or "round_trip",
+            "direction": flight.get("direction") or qi.get("direction"),
             "price": qi["price"] if unlocked else None,
             "baseline_price": qi["baseline_price"] if unlocked else None,
             "source_url": flight.get("source_url", "") if unlocked else None,
@@ -646,6 +677,7 @@ def update_preferences(user_id: str, req: PreferencesRequest, user: dict = Depen
         "preferred_destinations": req.preferred_destinations or [],
         "deal_tier": effective_deal_tier,
         "blocked_destinations": req.blocked_destinations,
+        "flight_trip_types": req.flight_trip_types,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 

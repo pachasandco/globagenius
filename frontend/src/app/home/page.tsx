@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getFlightDeals, getPipelineStatus, clearSessionCookie, type FlightDeal, type PipelineStatus } from "@/lib/api";
+import { getFlightDeals, getPipelineStatus, getPreferences, clearSessionCookie, type FlightDeal, type FlightTripType, type PipelineStatus } from "@/lib/api";
 import { initSession } from "@/lib/session";
 import { FlightDealCard } from "@/components/FlightDealCard";
 import ReactMarkdown from "react-markdown";
@@ -345,6 +345,8 @@ export default function HomePage() {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [showPlanner, setShowPlanner] = useState(true);
+  const [flightTripTypes, setFlightTripTypes] = useState<FlightTripType[]>(["round_trip"]);
+  const [onewayBannerDismissed, setOnewayBannerDismissed] = useState(true);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
@@ -397,6 +399,22 @@ export default function HomePage() {
       setLoading(false);
     }
     load();
+
+    // Load user preferences once for the one-way banner — they don't change
+    // every 60s, so keep them out of the polling loop.
+    (async () => {
+      try {
+        const prefs = await getPreferences(userId!);
+        const ftt = prefs.flight_trip_types && prefs.flight_trip_types.length > 0
+          ? prefs.flight_trip_types
+          : ["round_trip" as FlightTripType];
+        setFlightTripTypes(ftt);
+        const dismissed = typeof window !== "undefined"
+          && localStorage.getItem("gg_oneway_banner_dismissed") === "1";
+        setOnewayBannerDismissed(dismissed);
+      } catch { /* ignore */ }
+    })();
+
     const interval = setInterval(load, 60000);
     return () => {
       clearInterval(interval);
@@ -499,6 +517,35 @@ export default function HomePage() {
       </nav>
 
       <div className="max-w-6xl mx-auto px-4 md:px-5 py-6 md:py-8">
+        {/* One-way migration banner — soft invitation for round-trip-only users */}
+        {!onewayBannerDismissed && !flightTripTypes.includes("one_way") && (
+          <div className="mb-6 bg-cyan-50 border border-cyan-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="text-sm text-[#0A1F3D]">
+              <span className="font-semibold">🆕 Nouveaux deals « aller simple » disponibles.</span>{" "}
+              Activez-les dans votre profil pour recevoir aussi les promos un sens et les combos malins « 2 billets » moins chers qu&apos;un A/R.
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Link
+                href="/profile"
+                className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white text-sm font-semibold rounded-lg transition-colors"
+              >
+                Activer →
+              </Link>
+              <button
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    localStorage.setItem("gg_oneway_banner_dismissed", "1");
+                  }
+                  setOnewayBannerDismissed(true);
+                }}
+                className="px-3 py-2 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+              >
+                Plus tard
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Premium banner */}
         {!isPremium && (
           <div className="mb-6 bg-[#FFFEF9] border border-[#FF6B47] rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">

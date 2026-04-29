@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getPreferences, updatePreferences, changePassword, clearSessionCookie } from "@/lib/api";
+import { getPreferences, updatePreferences, changePassword, clearSessionCookie, type FlightTripType } from "@/lib/api";
 
 const AIRPORTS = [
   { code: "CDG", label: "Paris Charles de Gaulle" },
@@ -156,6 +156,7 @@ const ALL_DESTINATIONS = [
 export default function ProfilePage() {
   const [airports, setAirports] = useState<string[]>([]);
   const [offerTypes, setOfferTypes] = useState<string[]>([]);
+  const [flightTripTypes, setFlightTripTypes] = useState<FlightTripType[]>(["round_trip"]);
   const [dealTier, setDealTier] = useState<string>("regular");
   const [blockedDestinations, setBlockedDestinations] = useState<string[]>([]);
   const [destSearch, setDestSearch] = useState("");
@@ -213,6 +214,9 @@ export default function ProfilePage() {
         if (prefs.blocked_destinations) {
           setBlockedDestinations(prefs.blocked_destinations);
         }
+        if (prefs.flight_trip_types && prefs.flight_trip_types.length > 0) {
+          setFlightTripTypes(prefs.flight_trip_types);
+        }
       })
       .catch(() => {
         setError("Erreur lors du chargement des préférences");
@@ -255,6 +259,7 @@ export default function ProfilePage() {
         offer_types: offerTypes.length > 0 ? offerTypes : ["flight"],
         deal_tier: dealTier,
         blocked_destinations: blockedDestinations,
+        flight_trip_types: flightTripTypes.length > 0 ? flightTripTypes : ["round_trip"],
       });
       setSuccess("Préférences mises à jour avec succès !");
       setTimeout(() => setSuccess(""), 3000);
@@ -566,6 +571,57 @@ export default function ProfilePage() {
               );
             })}
           </div>
+        </div>
+
+        {/* ── Types de vols ── */}
+        <div className="mb-12">
+          <h2 className="text-xl font-semibold mb-1">Types de vols</h2>
+          <p className="text-gray-400 text-sm mb-6">
+            Choisissez les types d&apos;alertes que vous souhaitez recevoir sur Telegram.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {[
+              { id: "round_trip" as FlightTripType, label: "Aller-retour", desc: "Vols A/R en promo (par défaut)", icon: "🔄" },
+              { id: "one_way" as FlightTripType, label: "Aller simple", desc: "Aller seul ou retour seul · combos malins 2 billets", icon: "➡️" },
+            ].map((tt) => {
+              const selected = flightTripTypes.includes(tt.id);
+              return (
+                <button
+                  key={tt.id}
+                  type="button"
+                  onClick={() =>
+                    setFlightTripTypes((prev) =>
+                      selected
+                        ? (prev.length > 1 ? prev.filter((t) => t !== tt.id) : prev)
+                        : [...prev, tt.id]
+                    )
+                  }
+                  className="text-left p-4 rounded-xl border-2 transition-all relative"
+                  style={{
+                    borderColor: selected ? "#06b6d4" : "#e5e7eb",
+                    background: selected ? "#ecfeff" : "white",
+                  }}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span>{tt.icon}</span>
+                    <span className="font-semibold text-sm">{tt.label}</span>
+                  </div>
+                  <div className="text-xs text-gray-500">{tt.desc}</div>
+                  {selected && (
+                    <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-cyan-500 flex items-center justify-center">
+                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-gray-400 mt-2">
+            Au moins un type doit rester sélectionné.
+          </p>
         </div>
 
         {/* ── Destinations masquées ── */}

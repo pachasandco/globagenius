@@ -62,6 +62,8 @@ export function changePassword(userId: string, currentPassword: string, newPassw
 
 // ─── Preferences ───
 
+export type FlightTripType = "round_trip" | "one_way";
+
 export interface UserPreferences {
   id: string;
   user_id: string;
@@ -75,6 +77,7 @@ export interface UserPreferences {
   notifications_enabled: boolean;
   deal_tier: string;
   blocked_destinations: string[];
+  flight_trip_types: FlightTripType[];
 }
 
 export function getPreferences(userId: string) {
@@ -88,6 +91,7 @@ export function updatePreferences(userId: string, prefs: {
   preferred_destinations?: string[] | null;
   deal_tier?: string;
   blocked_destinations?: string[];
+  flight_trip_types?: FlightTripType[];
 }) {
   return fetchAPI<UserPreferences>(`/api/users/${userId}/preferences`, {
     method: "PUT",
@@ -129,11 +133,13 @@ export interface FlightDeal {
   origin: string;
   destination: string;
   departure_date: string;
-  return_date: string;
+  return_date: string | null;
   airline: string | null;
   stops: number;
   trip_duration_days: number | null;
   duration_minutes: number | null;
+  trip_type: FlightTripType;
+  direction: "outbound" | "inbound" | null;
   // Nullable when locked
   price: number | null;
   baseline_price: number | null;

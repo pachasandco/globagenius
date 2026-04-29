@@ -7,7 +7,8 @@ from app.db import db
 from app.scraper.travelpayouts_flights import scrape_all_flights
 from app.scraper.tier1_scraper import scrape_all_tier1
 from app.analysis.baselines import compute_baseline, compute_baselines_by_bucket, MIN_SAMPLE_COUNT
-from app.scraper.travelpayouts import get_prices_for_dates
+from app.scraper.travelpayouts import get_prices_for_dates, get_oneway_calendar
+from app.scraper.normalizer import normalize_flight
 from app.scraper.travelpayouts_flights import _normalize_priced_entry
 from app.analysis.route_selector import get_priority_destinations, is_long_haul
 from app.analysis.destination_updater import update_priority_destinations_in_db
@@ -44,6 +45,16 @@ def get_scheduler_jobs() -> list[dict]:
             "trigger": "cron",
             "hour": h,
         } for h in [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22]],
+        # ── VOLS ONE-WAY : toutes les 4h, décalées de 30min du round-trip ──
+        # V5 : récupère les aller-simples (outbound + inbound) pour les routes priorité.
+        # Cadence + faible que les A/R car volume API plus faible.
+        *[{
+            "id": f"scrape_oneway_{h:02d}",
+            "func": job_scrape_oneway_flights,
+            "trigger": "cron",
+            "hour": h,
+            "minute": 30,
+        } for h in [1, 5, 9, 13, 17, 21]],
         # ── TRAVELPAYOUTS ENRICHMENT : 1x/jour a 4h ──
         {
             "id": "travelpayouts_enrichment",
@@ -461,14 +472,14 @@ async def _dispatch_grouped_flight_alerts(
     try:
         prefs_resp = (
             db.table("user_preferences")
-            .select("user_id,telegram_chat_id,telegram_connected,airport_codes,alerts_paused_until,deal_tier,blocked_destinations")
+            .select("user_id,telegram_chat_id,telegram_connected,airport_codes,alerts_paused_until,deal_tier,blocked_destinations,flight_trip_types")
             .eq("telegram_connected", True)
             .execute()
         )
         all_prefs = prefs_resp.data or []
     except Exception as e:
         err_msg = str(e)
-        if "alerts_paused_until" in err_msg or "deal_tier" in err_msg or "blocked_destinations" in err_msg:
+        if any(col in err_msg for col in ("alerts_paused_until", "deal_tier", "blocked_destinations", "flight_trip_types")):
             logger.warning("Migration not yet applied — fetching prefs without optional columns")
             try:
                 prefs_resp = (
@@ -531,6 +542,7 @@ async def _dispatch_grouped_flight_alerts(
     paused_until_by_user: dict[str, str] = {}
     deal_tier_by_user: dict[str, str] = {}
     blocked_by_user: dict[str, set] = {}
+    trip_types_by_user: dict[str, set[str]] = {}
     for pref in all_prefs:
         if isinstance(pref, dict) and pref.get("user_id"):
             uid = pref["user_id"]
@@ -540,6 +552,9 @@ async def _dispatch_grouped_flight_alerts(
             blocked = pref.get("blocked_destinations") or []
             if blocked:
                 blocked_by_user[uid] = set(blocked)
+            # V5: flight trip type filter — default to round-trip only
+            # to preserve pre-V5 behaviour for migrated users.
+            trip_types_by_user[uid] = set(pref.get("flight_trip_types") or ["round_trip"])
 
     # Track teasers already sent this run — at most once per user per run
     teaser_sent_quota: set[str] = set()
@@ -640,8 +655,15 @@ async def _dispatch_grouped_flight_alerts(
                 FREE_TIER_FULL_MAX = 50   # above this → masked for free users
                 GLOBAL_MIN_DISCOUNT = 40  # below this → no alert for anyone
 
+                # V5: per-user trip-type filter. Default to round-trip-only
+                # so existing users keep their current Telegram experience.
+                user_allowed_trip_types = trip_types_by_user.get(user_id or "", {"round_trip"})
+
                 candidates: list[tuple[str | None, dict, object, str]] = []
                 for flight, anomaly, tier in flight_tuples:
+                    flight_trip_type = flight.get("trip_type") or "round_trip"
+                    if flight_trip_type not in user_allowed_trip_types:
+                        continue
                     if matching_wl is not None:
                         max_price = matching_wl.get("max_price")
                         if max_price is not None and flight.get("price", 9999) > max_price:
@@ -669,6 +691,7 @@ async def _dispatch_grouped_flight_alerts(
                     masked = [
                         (f, a) for f, a, _ in flight_tuples
                         if a.discount_pct > FREE_TIER_FULL_MAX
+                        and (f.get("trip_type") or "round_trip") in user_allowed_trip_types
                     ]
                     if masked:
                         teaser_sent_premium.add(user_id)
@@ -1081,6 +1104,100 @@ async def job_qualify_and_alert():
 
     logger.info(f"Qualify pipeline (Tier 1): {len(flights)} recent flights to evaluate")
     await _analyze_new_flights(flights)
+
+
+async def job_scrape_oneway_flights():
+    """V5: scrape one-way flights for priority routes via Travelpayouts.
+
+    Two passes per route: outbound (home → destination) + inbound (destination → home).
+    Inserts into raw_flights with trip_type='one_way' and the matching direction.
+    Cadence: every 4h (offset 30min from round-trip job) — half the volume of the
+    round-trip job since one-way is opt-in and we lighten the API load."""
+    logger.info("Starting one-way flight scraping job (V5)")
+    started_at = datetime.now(timezone.utc)
+
+    if not db or not settings.TRAVELPAYOUTS_TOKEN:
+        logger.warning("DB or Travelpayouts token not configured — skipping one-way scrape")
+        return
+
+    destinations = get_priority_destinations(max_count=40, db=db)
+    inserted = 0
+    errors = 0
+
+    for origin in settings.MVP_AIRPORTS:
+        for dest in destinations:
+            if dest == origin:
+                continue
+            if is_long_haul(dest) and origin != "CDG":
+                continue
+
+            for direction in ("outbound", "inbound"):
+                api_origin = origin if direction == "outbound" else dest
+                api_destination = dest if direction == "outbound" else origin
+
+                try:
+                    api_entries = get_oneway_calendar(api_origin, api_destination)
+                except Exception as e:
+                    logger.warning(
+                        f"One-way fetch failed {api_origin}->{api_destination}: {e}"
+                    )
+                    errors += 1
+                    continue
+
+                for entry in api_entries:
+                    departure_at = entry.get("departure_at") or ""
+                    if not departure_at:
+                        continue
+                    try:
+                        flight = normalize_flight(
+                            {
+                                "origin": api_origin,
+                                "destination": api_destination,
+                                "departureDate": departure_at[:10],
+                                "returnDate": None,
+                                "price": entry.get("price", 0),
+                                "currency": "EUR",
+                                "airline": entry.get("airline"),
+                                "stops": entry.get("transfers", 0),
+                                "tripType": "one_way",
+                                "direction": direction,
+                            },
+                            source="travelpayouts",
+                        )
+                        db.table("raw_flights").upsert(
+                            flight, on_conflict="hash"
+                        ).execute()
+                        inserted += 1
+                    except Exception as e:
+                        logger.warning(f"One-way insert failed: {e}")
+                        errors += 1
+
+            # Yield event loop after each route (both directions) so HTTP requests
+            # don't stall during the scrape pass.
+            await asyncio.sleep(0)
+
+    completed_at = datetime.now(timezone.utc)
+    duration_ms = int((completed_at - started_at).total_seconds() * 1000)
+    status = "success" if errors == 0 else ("partial" if inserted > 0 else "failed")
+
+    try:
+        db.table("scrape_logs").insert({
+            "actor_id": "flights_oneway",
+            "source": "travelpayouts",
+            "type": "flights",
+            "items_count": inserted,
+            "errors_count": errors,
+            "duration_ms": duration_ms,
+            "status": status,
+            "started_at": started_at.isoformat(),
+            "completed_at": completed_at.isoformat(),
+        }).execute()
+    except Exception as e:
+        logger.warning(f"Failed to write one-way scrape_log: {e}")
+
+    logger.info(
+        f"One-way scrape complete: {inserted} inserted, {errors} errors, {duration_ms}ms"
+    )
 
 
 async def job_travelpayouts_enrichment():

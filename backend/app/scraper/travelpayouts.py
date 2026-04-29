@@ -191,6 +191,44 @@ def get_prices_for_dates(
     return result
 
 
+def get_oneway_calendar(origin: str, destination: str, depart_month: str = "") -> list[dict]:
+    """Cheapest one-way prices for a route via /v1/prices/cheap.
+
+    The endpoint may return both one-way and round-trip rows (return_at present).
+    We keep only entries where return_at is empty (true one-way).
+    `depart_month` format: YYYY-MM (optional)."""
+    params = {
+        "origin": origin,
+        "destination": destination,
+        "currency": "eur",
+    }
+    if depart_month:
+        params["depart_date"] = depart_month
+    data = _get(f"{REST_URL}/v1/prices/cheap", params)
+    if not data or not data.get("success"):
+        return []
+
+    result = []
+    for _dest_code, flights in (data.get("data") or {}).items():
+        if not isinstance(flights, dict):
+            continue
+        for _key, flight in flights.items():
+            if not isinstance(flight, dict):
+                continue
+            if flight.get("return_at"):
+                # Skip round-trip rows; we only want one-way here.
+                continue
+            result.append({
+                "departure_at": flight.get("departure_at", ""),
+                "expires_at": flight.get("expires_at", ""),
+                "price": flight.get("price", 0),
+                "airline": flight.get("airline", ""),
+                "flight_number": flight.get("flight_number", 0),
+                "transfers": flight.get("transfers", 0),
+            })
+    return result
+
+
 def get_prices_graphql(origin: str, destination: str, depart_month: str, limit: int = 20) -> list[dict]:
     """Get prices via GraphQL — more flexible than REST."""
     query = f"""{{
