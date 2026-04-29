@@ -35,9 +35,13 @@ When an item ships, **move it to "Done"** with the commit SHA. Never delete.
   (`qualification_method` column)
 - `afc3856` — One-way qualifier + Telegram dispatch (option C, pre-baseline)
   + UTMs on one-way / split-ticket booking links
+- `51531b0` — Per-user click tracking on one-way + split-ticket alerts
+  (migration 029, dedup keys, /api/admin/ctr breakdowns by trip_type
+  and qualification_method)
 
 **Migrations to apply on Supabase prod (in order):**
-025_flight_trip_types · 026_oneway_flights · 027_include_split_tickets · 028_qualification_method
+025_flight_trip_types · 026_oneway_flights · 027_include_split_tickets ·
+028_qualification_method · 029_redirect_tokens_trip_type
 
 ---
 
@@ -145,23 +149,6 @@ with the rest of the cleanup.
 ---
 
 ## 🎯 Next (P1) — Active sprint
-
-### Engagement instrumentation — round-trip alerts already covered, extend to one-way
-
-Round-trip Telegram alerts use `_make_redirect_token()` for per-user click
-tracking via `/r/:token`. One-way and split-ticket alerts only have UTMs
-today (Travelpayouts-side only). Per-user attribution requires:
-
-1. An `alert_key` for one-way (today's `compute_alert_key` is round-trip
-   shaped — needs a one-way variant, probably keyed on
-   `(user, dest, dep_date, direction, price_bucket)`).
-2. A new dedup table or a `trip_type` column on `sent_alerts`.
-
-**Why it matters:** without per-user clicks, we can't measure if a
-specific user dismisses one-way alerts (signal to auto-disable). We're
-flying blind on the value of the V5 promise.
-
-**Effort:** ~1.5 days. Blocked on agreeing on the dedup key shape.
 
 ### CTR dashboard surface admin UI
 
@@ -332,3 +319,8 @@ When a roadmap item changes status (e.g. P2 → P1, or moves to "Done" /
 - **2026-04-29** — Roadmap created (this file).
 - **2026-04-29** — UI/UX audit logged as P0 (split P0a quick-fix
   + P0b landing rewrite). Not started yet — owner to schedule.
+- **2026-04-29** — Per-user engagement instrumentation shipped
+  (`51531b0`). Decision: 1 click on either leg of a split-ticket combo
+  counts as 1 engagement (simpler signal, captures real interest).
+  CTR dashboard frontend deferred — `/api/admin/ctr` curl-only stays
+  acceptable until we have real volume to look at.
