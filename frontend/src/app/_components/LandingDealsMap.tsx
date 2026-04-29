@@ -6,15 +6,18 @@ import { useEffect, useState } from "react";
 /**
  * Editorial-style world map for the landing hero.
  *
- * Not a real geographic projection — three stylised continent blobs on an
- * equirectangular-ish canvas, Paris pinned at the centre. The point is
- * "look, real deals from your home airport", not a Google-Maps lookalike.
+ * Style brief: deep-navy datavis, à la Bloomberg / The Guardian / FT.
+ * - Continents drawn as a *stipple* of small dots (denser inside land,
+ *   nothing outside) rather than solid blobs. Reads as datavis, not as
+ *   a cartoon map.
+ * - Route arcs run from Paris (anchor) to each pinned deal, dashed coral.
+ * - Each pin shows: city / striked usual price → deal price / -X%.
+ *   Usual prices are baseline reference fares per IATA — not the real
+ *   booking price (the API never exposes that to anonymous visitors).
+ * - "EN DIRECT" status pill top-left to signal live data.
  *
- * Pin positions are coarse approximations sufficient for the editorial vibe.
- * If we ever need true geography, swap in a topojson world-110m via d3-geo.
- *
- * Fetches live deals client-side from /api/landing/deals after hydration.
- * Seeds with the parent's initialDeals so the map never appears empty.
+ * Pin positions are coarse approximations on a 0-100 viewBox (Paris ≈
+ * (50, 38)). Good enough for an editorial vibe; not a real projection.
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -25,10 +28,9 @@ export type LandingDeal = {
   discount_pct: number;
 };
 
-// IATA → (x, y) in 0-100 viewBox space. Paris (CDG) anchored at (50, 38).
-// Latitudes mapped logarithmically because a flat lat→y crowds Northern Europe.
+// IATA → (x, y) on a 0-100 viewBox, label for the pin card.
 const CITY_COORDS: Record<string, { x: number; y: number; label: string }> = {
-  // Europe
+  // France
   CDG: { x: 50, y: 38, label: "Paris" },
   ORY: { x: 50, y: 38, label: "Paris" },
   BVA: { x: 50, y: 37, label: "Paris" },
@@ -94,8 +96,8 @@ const CITY_COORDS: Record<string, { x: number; y: number; label: string }> = {
   BRU: { x: 51, y: 35, label: "Bruxelles" },
   LHR: { x: 47, y: 33, label: "Londres" },
   LGW: { x: 47, y: 33, label: "Londres" },
-  STN: { x: 47, y: 32, label: "Londres Stansted" },
-  LTN: { x: 47, y: 33, label: "Londres Luton" },
+  STN: { x: 47, y: 32, label: "Londres" },
+  LTN: { x: 47, y: 33, label: "Londres" },
   MAN: { x: 46, y: 31, label: "Manchester" },
   BHX: { x: 46, y: 32, label: "Birmingham" },
   GLA: { x: 45, y: 29, label: "Glasgow" },
@@ -113,7 +115,6 @@ const CITY_COORDS: Record<string, { x: number; y: number; label: string }> = {
   RIX: { x: 60, y: 30, label: "Riga" },
   TLL: { x: 60, y: 28, label: "Tallinn" },
   VNO: { x: 60, y: 31, label: "Vilnius" },
-  // Switzerland
   ZRH: { x: 53, y: 39, label: "Zurich" },
   GVA: { x: 52, y: 40, label: "Genève" },
   BSL: { x: 53, y: 39, label: "Bâle" },
@@ -154,15 +155,60 @@ const CITY_COORDS: Record<string, { x: number; y: number; label: string }> = {
   ZNZ: { x: 64, y: 70, label: "Zanzibar" },
 };
 
+// Reference round-trip fare per destination (€). Used to render the
+// striked-out "usual price" on each pin. These are illustrative anchors,
+// not the live booking price — we never expose the true booking fare on
+// the anonymous landing.
+const USUAL_PRICE_EUR: Record<string, number> = {
+  // Long-haul
+  NRT: 850, HND: 850, ICN: 800, HKG: 780, BKK: 780, SIN: 850, KUL: 750,
+  JFK: 580, EWR: 580, LAX: 720, SFO: 720, MIA: 620, YUL: 560,
+  GIG: 850, EZE: 950, SYD: 1300,
+  BOM: 700, DEL: 720, DXB: 480, DOH: 520, TLV: 380, CAI: 380,
+  // Africa
+  RAK: 220, CMN: 200, TUN: 240, ALG: 220, ZNZ: 700, JNB: 850, CPT: 900,
+  // Caribbean
+  CUN: 720, PUJ: 750,
+  // Iberia / Mediterranean (low-cost)
+  LIS: 180, OPO: 170, FAO: 190, MAD: 160, BCN: 150, AGP: 180, PMI: 160,
+  ALC: 160, IBZ: 180, SVQ: 180, VLC: 150,
+  TFS: 280, ACE: 280, LPA: 290, FUE: 280, FNC: 280, PDL: 320,
+  // Italy
+  FCO: 180, MXP: 150, LIN: 150, BGY: 140, VCE: 170, TSF: 170, NAP: 200,
+  BLQ: 170, BRI: 220, CTA: 220, CAG: 200, OLB: 200,
+  // Greece / Balkans / Turkey
+  ATH: 220, HER: 280, JMK: 320, JTR: 320, RHO: 280, CFU: 240, SKG: 240,
+  SPU: 220, DBV: 240, TIV: 250, ZAG: 200, TIA: 200, BEG: 200, SOF: 220,
+  OTP: 180, SKP: 220, IST: 240, SAW: 240,
+  // Northern / Eastern Europe
+  AMS: 150, BER: 160, BRU: 150, LHR: 150, LGW: 150, STN: 130, LTN: 140,
+  MAN: 180, BHX: 180, GLA: 200, EDI: 200, DUB: 180,
+  PRG: 180, VIE: 180, BUD: 180, WAW: 180, KRK: 180,
+  CPH: 200, HEL: 280, ARN: 240, OSL: 220, RIX: 220, TLL: 220, VNO: 220,
+  ZRH: 180, GVA: 160, BSL: 160, LUX: 200,
+};
+
 const PARIS = { x: 50, y: 38 };
 
 function lookupCoords(iata: string): { x: number; y: number; label: string } | null {
   return CITY_COORDS[iata] ?? null;
 }
 
+// Round to a "nice" price near the value (10€ for cheap, 5€ for very cheap, 50€ for expensive).
+function niceRound(eur: number): number {
+  if (eur < 60) return Math.max(9, Math.round(eur / 5) * 5);
+  if (eur < 250) return Math.round(eur / 10) * 10;
+  return Math.round(eur / 10) * 10;
+}
+
+function pricesFor(deal: LandingDeal): { usual: number; deal: number } | null {
+  const usual = USUAL_PRICE_EUR[deal.destination];
+  if (!usual) return null;
+  const dealPrice = niceRound(usual * (1 - deal.discount_pct / 100));
+  return { usual, deal: dealPrice };
+}
+
 export function LandingDealsMap({ initialDeals }: { initialDeals: LandingDeal[] }) {
-  // Start with the seed deals provided by the parent (always renders something
-  // even if the API is slow/down). After hydration, replace with live data.
   const [deals, setDeals] = useState<LandingDeal[]>(initialDeals);
 
   useEffect(() => {
@@ -172,128 +218,221 @@ export function LandingDealsMap({ initialDeals }: { initialDeals: LandingDeal[] 
       .then((data) => {
         if (cancelled || !data) return;
         const items = (data as { items?: LandingDeal[] }).items ?? [];
-        // Keep only items we can actually pin on the map. If the API returns
-        // mostly unmapped destinations, stay on the seeds rather than show a
-        // sparse map (which is what was happening before).
-        const mapped = items.filter((d) => lookupCoords(d.destination) !== null);
-        if (mapped.length >= 4) {
-          setDeals(mapped.slice(0, 6));
-        } else if (mapped.length > 0) {
-          // Augment seeds with any new mapped picks from the API, dedup by
-          // destination, cap at 6.
+        // Keep only items that have both coords *and* a reference price —
+        // missing either = no usable card.
+        const usable = items.filter(
+          (d) => lookupCoords(d.destination) !== null && pricesFor(d) !== null
+        );
+        if (usable.length >= 4) {
+          setDeals(usable.slice(0, 6));
+        } else if (usable.length > 0) {
+          // Augment seeds with extra mapped picks from API, dedup by destination.
           const existing = new Set(initialDeals.map((d) => d.destination));
           const augmented = [...initialDeals];
-          for (const d of mapped) {
+          for (const d of usable) {
             if (existing.has(d.destination)) continue;
             existing.add(d.destination);
             augmented.push(d);
           }
           setDeals(augmented.slice(0, 6));
         }
-        // else: API returned 0 mapped picks → keep seeds untouched.
       })
       .catch(() => {
-        // Stay on seed deals — map is decorative, no need to surface a failure.
+        // Stay on seed deals — map is decorative.
       });
     return () => {
       cancelled = true;
     };
   }, [initialDeals]);
 
-  // Filter out unmapped destinations + dedup by destination so we never pin
-  // the same city twice if the API returns duplicates.
+  // Dedup + filter to renderable pins.
   const seen = new Set<string>();
   const visiblePins = deals
     .filter((d) => {
       if (seen.has(d.destination)) return false;
       seen.add(d.destination);
-      return lookupCoords(d.destination) !== null;
+      return lookupCoords(d.destination) !== null && pricesFor(d) !== null;
     })
     .slice(0, 6)
-    .map((d) => ({ ...d, coords: lookupCoords(d.destination)! }));
+    .map((d) => ({
+      ...d,
+      coords: lookupCoords(d.destination)!,
+      prices: pricesFor(d)!,
+    }));
 
   return (
-    <div className="absolute inset-0 w-full h-full">
+    <div className="absolute inset-0 w-full h-full overflow-hidden">
       {/* Background gradient */}
-      <div className="absolute inset-0 bg-gradient-to-br from-[#0A1F3D] via-[#10284D] to-[#0A1F3D]" />
+      <div className="absolute inset-0 bg-gradient-to-br from-[#0A1F3D] via-[#10284D] to-[#081830]" />
 
-      {/* Subtle grain dots — hint of latitude/longitude grid without being a real graticule */}
+      {/* Faint latitude grid — three dashed lines for a subtle datavis hint */}
       <svg
         viewBox="0 0 100 100"
         preserveAspectRatio="none"
-        className="absolute inset-0 w-full h-full opacity-[0.07]"
+        className="absolute inset-0 w-full h-full"
         aria-hidden="true"
       >
-        <defs>
-          <pattern id="grid-dots" x="0" y="0" width="5" height="5" patternUnits="userSpaceOnUse">
-            <circle cx="0.3" cy="0.3" r="0.15" fill="#FFFEF9" />
-          </pattern>
-        </defs>
-        <rect width="100" height="100" fill="url(#grid-dots)" />
+        {[25, 50, 75].map((y) => (
+          <line
+            key={y}
+            x1="0"
+            y1={y}
+            x2="100"
+            y2={y}
+            stroke="#FFFEF9"
+            strokeOpacity="0.05"
+            strokeWidth="0.1"
+            strokeDasharray="0.6 0.8"
+          />
+        ))}
       </svg>
 
-      {/* Stylised continent blobs — coarse silhouettes, not real shapes */}
+      {/* Stippled continents — denser dot pattern clipped to land paths */}
       <svg
         viewBox="0 0 100 100"
         preserveAspectRatio="xMidYMid meet"
         className="absolute inset-0 w-full h-full"
         aria-hidden="true"
       >
-        <g fill="#FFFEF9" fillOpacity="0.06" stroke="#FFFEF9" strokeOpacity="0.12" strokeWidth="0.15">
+        <defs>
+          <pattern
+            id="land-stipple"
+            x="0"
+            y="0"
+            width="0.9"
+            height="0.9"
+            patternUnits="userSpaceOnUse"
+          >
+            <circle cx="0.18" cy="0.18" r="0.16" fill="#7FA8D6" fillOpacity="0.55" />
+          </pattern>
+          <pattern
+            id="ocean-dust"
+            x="0"
+            y="0"
+            width="2.4"
+            height="2.4"
+            patternUnits="userSpaceOnUse"
+          >
+            <circle cx="0.2" cy="0.2" r="0.08" fill="#FFFEF9" fillOpacity="0.18" />
+          </pattern>
+        </defs>
+
+        {/* Faint ocean dust across the whole frame */}
+        <rect width="100" height="100" fill="url(#ocean-dust)" />
+
+        {/* Continent silhouettes filled with the stipple pattern.
+            Paths are stylised but recognisable: more vertices than blobs,
+            still abstract. Coordinates roughly match an equirectangular
+            projection on the 0-100 viewBox. */}
+        <g fill="url(#land-stipple)" stroke="#7FA8D6" strokeOpacity="0.18" strokeWidth="0.12">
           {/* North America */}
-          <path d="M 5 28 Q 12 24 18 28 L 24 32 Q 27 38 24 44 L 20 48 Q 15 50 12 53 L 8 50 Q 4 42 5 28 Z" />
+          <path d="M 4 24 L 9 22 L 14 22 L 17 24 L 20 23 L 23 25 L 24 28 L 25 32 L 24 36 L 22 40 L 20 42 L 19 45 L 17 48 L 15 52 L 13 55 L 11 53 L 9 50 L 7 46 L 5 40 L 4 33 Z" />
+          {/* Greenland (small) */}
+          <path d="M 28 18 L 33 17 L 35 21 L 33 24 L 29 23 Z" />
           {/* Central America */}
-          <path d="M 12 53 Q 16 56 18 60 L 21 60 L 18 62 Q 14 60 12 56 Z" />
+          <path d="M 13 55 L 16 57 L 18 60 L 20 60 L 17 62 L 14 60 L 12 57 Z" />
           {/* South America */}
-          <path d="M 24 60 Q 30 62 32 70 L 30 80 Q 27 86 24 84 L 22 76 Q 22 66 24 60 Z" />
-          {/* Europe */}
-          <path d="M 44 28 Q 50 25 56 28 L 60 32 Q 60 40 56 44 L 50 46 Q 44 44 42 38 Q 42 32 44 28 Z" />
+          <path d="M 22 58 L 26 58 L 30 62 L 32 68 L 32 74 L 30 80 L 27 84 L 24 84 L 22 78 L 21 70 L 22 64 Z" />
+          {/* Iberian peninsula + W. Europe lobe */}
+          <path d="M 41 44 L 44 42 L 47 41 L 48 43 L 47 47 L 44 49 L 42 48 Z" />
+          {/* Continental Europe / British Isles cluster */}
+          <path d="M 44 28 L 48 26 L 52 27 L 55 28 L 58 30 L 60 33 L 60 37 L 58 40 L 55 42 L 52 42 L 48 41 L 46 38 L 44 34 Z" />
+          {/* British Isles (separate) */}
+          <path d="M 43 30 L 46 28 L 47 31 L 46 34 L 44 33 Z" />
+          {/* Scandinavia */}
+          <path d="M 53 22 L 57 21 L 60 24 L 60 30 L 57 32 L 54 30 L 53 26 Z" />
+          {/* Eastern Europe / W. Russia */}
+          <path d="M 58 27 L 64 26 L 68 28 L 68 33 L 65 36 L 60 36 L 58 33 Z" />
           {/* Africa */}
-          <path d="M 46 48 Q 54 48 60 52 L 64 60 Q 64 70 60 78 L 54 82 Q 48 78 46 72 L 44 60 Q 44 52 46 48 Z" />
-          {/* Middle East */}
-          <path d="M 60 44 Q 68 44 70 50 L 68 56 Q 64 56 60 52 Z" />
-          {/* Asia (huge blob) */}
-          <path d="M 60 28 Q 70 24 82 26 L 90 30 Q 92 38 90 44 L 86 48 Q 78 52 72 50 L 66 46 Q 60 38 60 28 Z" />
-          {/* SE Asia / India */}
-          <path d="M 70 50 Q 76 52 82 56 L 84 62 Q 80 66 76 64 L 72 58 Z" />
-          {/* Oceania */}
-          <path d="M 86 72 Q 94 72 96 78 L 94 82 Q 88 84 84 80 Q 84 74 86 72 Z" />
+          <path d="M 46 48 L 50 47 L 54 48 L 58 50 L 61 53 L 63 58 L 64 64 L 62 70 L 59 76 L 55 80 L 52 80 L 49 76 L 46 70 L 44 62 L 44 54 Z" />
+          {/* Arabia / Middle East */}
+          <path d="M 60 46 L 65 46 L 68 48 L 70 52 L 68 55 L 64 55 L 61 53 L 60 50 Z" />
+          {/* Asia (mainland) */}
+          <path d="M 60 27 L 66 25 L 73 25 L 80 26 L 86 28 L 90 32 L 91 38 L 89 42 L 86 44 L 82 45 L 78 44 L 73 42 L 68 40 L 64 38 L 61 35 Z" />
+          {/* India */}
+          <path d="M 70 46 L 74 46 L 76 50 L 75 55 L 72 56 L 70 52 Z" />
+          {/* SE Asia / Indochina */}
+          <path d="M 76 50 L 80 50 L 82 53 L 82 58 L 79 60 L 77 56 Z" />
+          {/* Indonesia (smudge) */}
+          <path d="M 78 62 L 84 62 L 86 64 L 84 66 L 80 66 L 78 64 Z" />
+          {/* Japan */}
+          <path d="M 87 38 L 90 37 L 91 40 L 89 43 L 87 41 Z" />
+          {/* Australia */}
+          <path d="M 84 72 L 90 71 L 95 73 L 96 77 L 94 81 L 89 82 L 85 80 L 83 76 Z" />
         </g>
+      </svg>
 
-        {/* Dotted route lines from Paris to each pin */}
-        {visiblePins.map((p) => (
-          <line
-            key={`route-${p.destination}`}
-            x1={PARIS.x}
-            y1={PARIS.y}
-            x2={p.coords.x}
-            y2={p.coords.y}
-            stroke="#FF6B47"
-            strokeOpacity="0.35"
-            strokeWidth="0.2"
-            strokeDasharray="0.6 0.8"
-          />
-        ))}
+      {/* Route arcs from Paris — drawn as quadratic curves so they feel like
+          flight paths rather than rulers. Stroke length animates in. */}
+      <svg
+        viewBox="0 0 100 100"
+        preserveAspectRatio="xMidYMid meet"
+        className="absolute inset-0 w-full h-full"
+        aria-hidden="true"
+      >
+        {visiblePins.map((p, i) => {
+          const dx = p.coords.x - PARIS.x;
+          const dy = p.coords.y - PARIS.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          // Arc bulges perpendicular to the line, more for longer routes.
+          const bulge = Math.min(dist * 0.28, 14);
+          const mx = (PARIS.x + p.coords.x) / 2;
+          const my = (PARIS.y + p.coords.y) / 2 - bulge;
+          const d = `M ${PARIS.x} ${PARIS.y} Q ${mx} ${my} ${p.coords.x} ${p.coords.y}`;
+          return (
+            <motion.path
+              key={`route-${p.destination}`}
+              d={d}
+              fill="none"
+              stroke="#FF6B47"
+              strokeOpacity="0.45"
+              strokeWidth="0.18"
+              strokeDasharray="0.8 0.9"
+              strokeLinecap="round"
+              initial={{ pathLength: 0, opacity: 0 }}
+              animate={{ pathLength: 1, opacity: 1 }}
+              transition={{ delay: 0.2 + i * 0.18, duration: 0.9, ease: "easeOut" }}
+            />
+          );
+        })}
 
-        {/* Paris anchor (subtle, not a deal pin) */}
-        <circle cx={PARIS.x} cy={PARIS.y} r="0.7" fill="#FFFEF9" fillOpacity="0.7" />
+        {/* Paris anchor */}
+        <circle cx={PARIS.x} cy={PARIS.y} r="0.85" fill="#FFFEF9" fillOpacity="0.85" />
+        <circle cx={PARIS.x} cy={PARIS.y} r="1.6" fill="none" stroke="#FFFEF9" strokeOpacity="0.35" strokeWidth="0.15" />
         <text
           x={PARIS.x}
-          y={PARIS.y - 1.5}
+          y={PARIS.y - 1.8}
           textAnchor="middle"
           fill="#FFFEF9"
-          fontSize="1.3"
+          fontSize="1.4"
           fontFamily="var(--font-dm-serif), serif"
-          fillOpacity="0.6"
+          fillOpacity="0.7"
+          letterSpacing="0.08"
         >
-          Paris
+          PARIS
         </text>
       </svg>
 
-      {/* Pins (HTML overlay so we can use real Tailwind typography + DOM events) */}
+      {/* "EN DIRECT" status pill, top-right of the map (out of the hero
+          headline area on the left). */}
+      <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-10 flex items-center gap-2 rounded-full bg-[#FFFEF9]/8 backdrop-blur-sm border border-[#FFFEF9]/15 px-3 py-1.5">
+        <span className="relative flex h-2 w-2">
+          <motion.span
+            className="absolute inset-0 rounded-full bg-emerald-400"
+            animate={{ scale: [1, 2.5, 1], opacity: [0.7, 0, 0.7] }}
+            transition={{ duration: 2, repeat: Infinity, ease: "easeOut" }}
+          />
+          <span className="relative h-2 w-2 rounded-full bg-emerald-400" />
+        </span>
+        <span className="text-[10px] sm:text-xs font-semibold tracking-[0.15em] text-white/85 uppercase">
+          En direct
+        </span>
+      </div>
+
+      {/* Pin overlay (HTML, so we can use Tailwind typography + tabular nums). */}
       <div className="absolute inset-0 pointer-events-none">
         {visiblePins.map((p, i) => (
-          <DealPin key={p.destination} pin={p} delay={i * 0.4} />
+          <DealPin key={p.destination} pin={p} delay={0.3 + i * 0.18} />
         ))}
       </div>
     </div>
@@ -304,37 +443,52 @@ function DealPin({
   pin,
   delay,
 }: {
-  pin: LandingDeal & { coords: { x: number; y: number; label: string } };
+  pin: LandingDeal & {
+    coords: { x: number; y: number; label: string };
+    prices: { usual: number; deal: number };
+  };
   delay: number;
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.6 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ delay, duration: 0.5 }}
+      initial={{ opacity: 0, y: 6, scale: 0.92 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ delay, duration: 0.5, ease: "easeOut" }}
       className="absolute -translate-x-1/2 -translate-y-full"
       style={{ left: `${pin.coords.x}%`, top: `${pin.coords.y}%` }}
     >
       <div className="relative">
-        {/* Pulse halo */}
+        {/* Pulse halo + solid dot at the bottom of the card (the "pin tip") */}
         <motion.span
-          className="absolute left-1/2 -bottom-1 h-2 w-2 -translate-x-1/2 rounded-full bg-[#FF6B47]"
-          animate={{ scale: [1, 2.6, 1], opacity: [0.55, 0, 0.55] }}
+          className="absolute left-1/2 -bottom-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-[#FF6B47]"
+          animate={{ scale: [1, 2.6, 1], opacity: [0.6, 0, 0.6] }}
           transition={{ duration: 2.4, repeat: Infinity, delay, ease: "easeOut" }}
         />
-        {/* Solid pin dot */}
-        <span className="absolute left-1/2 -bottom-1 h-2 w-2 -translate-x-1/2 rounded-full bg-[#FF6B47] ring-2 ring-[#0A1F3D]" />
+        <span className="absolute left-1/2 -bottom-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-[#FF6B47] ring-2 ring-[#0A1F3D]" />
 
         {/* Card */}
-        <div className="mb-2 rounded-lg bg-[#FFFEF9] px-2.5 py-1.5 shadow-[0_4px_12px_rgba(0,0,0,0.25)] whitespace-nowrap">
-          <div
-            className="text-[11px] sm:text-xs font-semibold leading-tight text-[#0A1F3D]"
-            style={{ fontFamily: "var(--font-dm-serif), serif" }}
-          >
-            {pin.coords.label}
-          </div>
-          <div className="text-[10px] sm:text-[11px] font-bold text-[#FF6B47] leading-tight">
-            -{pin.discount_pct}%
+        <div className="mb-2.5 rounded-lg bg-[#FFFEF9] pl-3 pr-2.5 py-2 shadow-[0_6px_18px_rgba(0,0,0,0.35)] whitespace-nowrap border border-[#0A1F3D]/5">
+          <div className="flex items-center gap-2.5">
+            <div>
+              <div
+                className="text-[12px] sm:text-[13px] font-semibold leading-none text-[#0A1F3D]"
+                style={{ fontFamily: "var(--font-dm-serif), serif" }}
+              >
+                {pin.coords.label}
+              </div>
+              <div className="mt-1 flex items-baseline gap-1.5 tabular-nums">
+                <span className="text-[10px] sm:text-[11px] text-[#0A1F3D]/40 line-through leading-none">
+                  {pin.prices.usual}€
+                </span>
+                <span className="text-[10px] sm:text-[11px] text-[#0A1F3D]/40 leading-none">→</span>
+                <span className="text-[13px] sm:text-[14px] font-extrabold text-[#0A1F3D] leading-none">
+                  {pin.prices.deal}€
+                </span>
+              </div>
+            </div>
+            <span className="ml-1 inline-flex items-center rounded-md bg-[#FF6B47] text-white text-[10px] sm:text-[11px] font-bold leading-none px-1.5 py-1 tabular-nums">
+              −{pin.discount_pct}%
+            </span>
           </div>
         </div>
       </div>
