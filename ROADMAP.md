@@ -38,6 +38,15 @@ When an item ships, **move it to "Done"** with the commit SHA. Never delete.
 - `51531b0` — Per-user click tracking on one-way + split-ticket alerts
   (migration 029, dedup keys, /api/admin/ctr breakdowns by trip_type
   and qualification_method)
+- `8c47991` — Drop the 'Se désabonner' button from Telegram alerts +
+  webhook URL re-pinned (out-of-band fix for stale Railway domain)
+- `e3f5134` — Telegram alert headers redesigned: 🛫/🛬 split lines,
+  fix double-IATA bug, one-way uses 'Départ de' / 'Retour de' phrasing
+- `b5d7f8a` — Admin endpoint `POST /api/admin/users/{id}/telegram/generate-link`
+  for manual recovery of users who never finished onboarding
+- `f8b0b5a` — Self-service Telegram reconnect card in /profile (poll
+  loop confirms when /start <token> lands on the webhook, no manual
+  refresh needed)
 
 **Migrations to apply on Supabase prod (in order):**
 025_flight_trip_types · 026_oneway_flights · 027_include_split_tickets ·
@@ -149,6 +158,31 @@ with the rest of the cleanup.
 ---
 
 ## 🎯 Next (P1) — Active sprint
+
+### Configure SMTP for transactional outreach from contact@globegenius.app
+
+Welcome emails ship today via `app/notifications/welcome_email.py` but
+SMTP is not configured on Railway prod (HOST/PORT/USER/PASS all unset),
+so the welcome flow runs no-op. Once a provider is wired:
+
+- Welcome emails actually go out.
+- Ops can email premium users who never completed Telegram onboarding
+  with their personal connect link (the admin endpoint added in `b5d7f8a`
+  produces the link; SMTP is what's missing to automate the send).
+- Future use cases: digest opt-out, premium expiry reminders, etc.
+
+**Suggested provider:** Resend or Brevo. Both accept a single API key
+and "From: contact@globegenius.app" once the domain DNS is verified
+(SPF + DKIM TXT records). ~1 hour including DNS.
+
+**Action:**
+1. Pick provider, verify the domain.
+2. Set `SMTP_HOST/PORT/USER/PASS` (or swap `welcome_email.py` for the
+   provider's HTTP API).
+3. Add a thin `send_telegram_invite_email(user_id)` helper that pulls
+   the personal link via `admin_generate_telegram_link` and emails it.
+4. Schedule a weekly job that picks up premium users with
+   `telegram_connected=false` and emails them the link.
 
 ### CTR dashboard surface admin UI
 
@@ -391,3 +425,11 @@ When a roadmap item changes status (e.g. P2 → P1, or moves to "Done" /
   domain. Fixed by re-running setWebhook (`8c47991`); 'Se désabonner'
   button removed at the same time (too aggressive for an accidental tap).
   Logged as a runbook gotcha in the new "Runbook / Ops gotchas" section.
+- **2026-04-29** — Discovered 8 of 9 users have never connected Telegram,
+  3 of them are paying premium. Root cause split: (a) onboarding never
+  forced the Telegram step, (b) the broken-webhook incident swallowed
+  /start <token> attempts for days. Fix landed in two parts:
+  `b5d7f8a` admin endpoint to generate links by hand for ops, and
+  `f8b0b5a` self-service reconnect card on /profile so users can recover
+  without us. Email automation deferred (SMTP not configured) — logged
+  as P1 'Configure SMTP for transactional outreach'.
