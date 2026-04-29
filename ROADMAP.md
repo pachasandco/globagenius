@@ -43,6 +43,76 @@ When an item ships, **move it to "Done"** with the commit SHA. Never delete.
 
 ## 🔥 Now (P0) — Open items
 
+### UI/UX out of sync with V5/P0/P1 backend changes
+
+The pipeline has evolved (one-way deals, split-ticket combos, scorer
+60/25/15, navbar cleanup, airport-scoped homepage) but parts of the UI
+still tell the pre-V5 story. Audit done 2026-04-29.
+
+**External / marketing layer (highest leak):**
+- `app/layout.tsx` lines 21, 27, 39, 57, 103, 124 — six occurrences
+  of "vols aller-retour" in metadata, og:image alt, schema.org. Google
+  + social shares advertise an outdated product promise.
+- `app/page.tsx` FAQ doesn't mention one-way alerts or split-ticket
+  combos. A user who receives a "Combo malin" Telegram alert and
+  searches the FAQ finds nothing.
+- `app/page.tsx` pricing grid doesn't position the new offer types as
+  features (acceptable as they're not premium-gated, but the story
+  isn't told).
+- `app/_components/LandingAnimated.tsx:113` — every example deal card
+  hard-codes "A/R" and never shows a one-way or combo card.
+
+**Authenticated app layer (mid leak):**
+- `app/profile/page.tsx:21` and `app/onboarding/page.tsx:23` — the
+  legacy "Vols à prix cassés" offer-type card still describes itself as
+  "Billets d'avion **aller-retour** en promo". It's also a ghost UI:
+  it gates the whole flight pipeline but uncoking it has no real
+  alternative since `package` and `accommodation` were dropped.
+  Either reword + remove the alternatives, or remove the picker.
+- `app/home/page.tsx:521` one-way migration banner — the
+  `gg_oneway_banner_dismissed` flag in localStorage isn't cleared when
+  the user actively unchecks `one_way` in their profile. They get
+  re-prompted to enable an option they just opted out of. Subtle but
+  user-hostile.
+- `app/profile/page.tsx` `includeSplitTickets` state stays `true` in
+  memory after the user unchecks "Aller-retour", so re-checking
+  surfaces a sub-option they may not have intentionally re-validated.
+
+**Dead code / zombie pages:**
+- `app/dashboard/page.tsx` — orphaned. No navigation links to it. Has
+  its own local `<FlightDealCard>` (different from the shared V5 one),
+  free/premium tabs that no longer exist on `/home`, and a "Deals" nav
+  link we just removed. Either delete the page or expose it. Today's
+  state forces us to maintain it (we already had to fix
+  `return_date: null` typing in it).
+- `app/articles/[slug]/page.tsx:179` — same nav as `/home` but slightly
+  different. Worth extracting a shared `<AppNav>` component.
+
+**Compliance / transparency:**
+- `app/mentions-legales/page.tsx` and `app/confidentialite/page.tsx`
+  document the `/r/:token` redirect tokens but not the UTM tagging
+  added in P1. Minor, but RGPD transparency benefits from being
+  exhaustive.
+
+**Recommended split:**
+
+P0a — quick fixes that affect existing users (~2h total):
+1. Reset `gg_oneway_banner_dismissed` when user unchecks `one_way`.
+2. Reset `includeSplitTickets` to `false` when user unchecks
+   `round_trip` in profile (state mirrors save behaviour).
+3. Decide on `/dashboard`: delete OR un-orphan with a real entry point.
+
+P0b — landing rewrite (~1.5 days):
+1. Update metadata in `app/layout.tsx` to drop the "aller-retour" lock-in.
+2. Add 2 example deal cards in `LandingAnimated` (one-way + combo) with
+   the corresponding badges.
+3. Add 2 FAQ entries: "Qu'est-ce qu'un combo malin ?" + "Recevez-vous
+   aussi des aller simples ?"
+4. Reword (or remove) the "Vols à prix cassés" picker in profile +
+   onboarding so it doesn't say "aller-retour" anymore.
+5. Update `og:image` if it still says "aller-retour".
+6. Add UTM tagging to legal docs.
+
 ### Velocity drops bypass `qualified_items`
 
 The Tier-1 velocity detector dispatches Telegram alerts directly without
@@ -260,3 +330,5 @@ When a roadmap item changes status (e.g. P2 → P1, or moves to "Done" /
   (median-based qualifier) now, option A (full baseline) deferred to P2
   pending 4 weeks of one-way data.
 - **2026-04-29** — Roadmap created (this file).
+- **2026-04-29** — UI/UX audit logged as P0 (split P0a quick-fix
+  + P0b landing rewrite). Not started yet — owner to schedule.
