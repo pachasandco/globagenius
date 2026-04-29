@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
 
 /**
  * Editorial-style world map for the landing hero.
@@ -11,7 +12,12 @@ import { motion } from "framer-motion";
  *
  * Pin positions are coarse approximations sufficient for the editorial vibe.
  * If we ever need true geography, swap in a topojson world-110m via d3-geo.
+ *
+ * Fetches live deals client-side from /api/landing/deals after hydration.
+ * Seeds with the parent's initialDeals so the map never appears empty.
  */
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export type LandingDeal = {
   origin: string;
@@ -90,7 +96,28 @@ function lookupCoords(iata: string): { x: number; y: number; label: string } | n
   return CITY_COORDS[iata] ?? null;
 }
 
-export function LandingDealsMap({ deals }: { deals: LandingDeal[] }) {
+export function LandingDealsMap({ initialDeals }: { initialDeals: LandingDeal[] }) {
+  // Start with the seed deals provided by the parent (always renders something
+  // even if the API is slow/down). After hydration, replace with live data.
+  const [deals, setDeals] = useState<LandingDeal[]>(initialDeals);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_URL}/api/landing/deals?limit=6`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        const items = (data as { items?: LandingDeal[] }).items;
+        if (items && items.length >= 3) setDeals(items);
+      })
+      .catch(() => {
+        // Stay on seed deals — map is decorative, no need to surface a failure.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Filter out unmapped destinations + dedup by destination so we never pin
   // the same city twice if the API returns duplicates.
   const seen = new Set<string>();

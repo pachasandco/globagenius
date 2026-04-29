@@ -10,11 +10,14 @@ export const metadata: Metadata = {
   },
 };
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-// Static fallback: shown if /api/landing/deals returns empty (cold start, API
-// down, etc.). Six anchored cities so the map never looks broken on first paint.
-const FALLBACK_DEALS: LandingDeal[] = [
+// Static seed deals for the hero map. The map component fetches live deals
+// client-side via /api/landing/deals after hydration; if the API is slow or
+// down, these stay shown so the hero is never empty.
+//
+// Note: we tried server-fetching during the static build, but Next 16 ISR
+// turns failed fetches into a 404 page instead of falling back to the
+// catch branch. Client-only fetch keeps the build deterministic.
+const SEED_DEALS: LandingDeal[] = [
   { origin: "CDG", destination: "NRT", discount_pct: 43 }, // Tokyo
   { origin: "CDG", destination: "JFK", discount_pct: 66 }, // New York
   { origin: "CDG", destination: "BKK", discount_pct: 31 }, // Bangkok
@@ -22,21 +25,6 @@ const FALLBACK_DEALS: LandingDeal[] = [
   { origin: "CDG", destination: "RAK", discount_pct: 58 }, // Marrakech
   { origin: "MRS", destination: "BCN", discount_pct: 35 }, // Barcelone
 ];
-
-async function fetchLandingDeals(): Promise<LandingDeal[]> {
-  try {
-    const res = await fetch(`${API_URL}/api/landing/deals?limit=6`, {
-      // Re-fetch every 10 minutes — landing is mostly cached but the deals
-      // shown should reflect what's actually live in qualified_items.
-      next: { revalidate: 600 },
-    });
-    if (!res.ok) return FALLBACK_DEALS;
-    const data = (await res.json()) as { items?: LandingDeal[] };
-    return data.items && data.items.length >= 3 ? data.items : FALLBACK_DEALS;
-  } catch {
-    return FALLBACK_DEALS;
-  }
-}
 
 const faqs = [
   { q: "Comment fonctionne Globe Genius ?", a: "On surveille en permanence les prix des vols au départ de 9 aéroports français. Dès qu’on détecte une baisse de prix significative, on vous envoie une alerte sur Telegram avec tous les détails pour réserver." },
@@ -57,9 +45,7 @@ const faqSchema = {
   })),
 };
 
-export default async function Landing() {
-  const heroDeals = await fetchLandingDeals();
-
+export default function Landing() {
   return (
     <div className="min-h-screen bg-[var(--color-cream)]">
       <RedirectIfLoggedIn />
@@ -94,7 +80,7 @@ export default async function Landing() {
           generic travel metaphor.
         */}
         <section className="relative min-h-[480px] sm:min-h-[560px] flex items-center overflow-hidden">
-          <LandingDealsMap deals={heroDeals} />
+          <LandingDealsMap initialDeals={SEED_DEALS} />
           {/* Soft left-side gradient so HeroContent text stays readable */}
           <div className="absolute inset-0 bg-gradient-to-r from-[var(--color-ink)]/85 via-[var(--color-ink)]/55 to-transparent" />
           <HeroContent />
