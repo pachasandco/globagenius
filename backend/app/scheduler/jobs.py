@@ -1225,25 +1225,33 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
     destinations = get_priority_destinations(max_count=40, db=db)
     combos_dispatched = 0
 
-    # Pre-fetch users who opted in to one_way (single round-trip).
+    # Pre-fetch users who opted in to split-ticket combos.
+    # A combo is conceptually an A/R (just sold as 2 separate tickets), so
+    # we require:
+    #   - 'round_trip' in flight_trip_types (the user wants A/R-style deals)
+    #   - include_split_tickets = true (explicit consent for 2-booking format)
     opt_in_subs: list[dict] = []
     try:
         prefs_resp = (
             db.table("user_preferences")
-            .select("user_id,telegram_chat_id,airport_codes,flight_trip_types,blocked_destinations")
+            .select("user_id,telegram_chat_id,airport_codes,flight_trip_types,blocked_destinations,include_split_tickets")
             .eq("telegram_connected", True)
             .execute()
         )
         for pref in (prefs_resp.data or []):
             ftt = pref.get("flight_trip_types") or ["round_trip"]
-            if "one_way" in ftt and pref.get("telegram_chat_id"):
+            if (
+                pref.get("include_split_tickets") is True
+                and "round_trip" in ftt
+                and pref.get("telegram_chat_id")
+            ):
                 opt_in_subs.append(pref)
     except Exception as e:
         logger.warning(f"Split-ticket: failed to load opt-in users: {e}")
         return
 
     if not opt_in_subs:
-        logger.info("Split-ticket: no users opted in to one-way alerts, skipping")
+        logger.info("Split-ticket: no users opted in to combo alerts, skipping")
         return
 
     for origin in settings.MVP_AIRPORTS:

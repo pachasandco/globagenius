@@ -207,6 +207,7 @@ class PreferencesRequest(BaseModel):
     deal_tier: str = "regular"
     blocked_destinations: list[str] = []
     flight_trip_types: list[str] = ["round_trip"]
+    include_split_tickets: bool = False
 
     @field_validator("deal_tier")
     @classmethod
@@ -678,6 +679,7 @@ def update_preferences(user_id: str, req: PreferencesRequest, user: dict = Depen
         "deal_tier": effective_deal_tier,
         "blocked_destinations": req.blocked_destinations,
         "flight_trip_types": req.flight_trip_types,
+        "include_split_tickets": req.include_split_tickets,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 

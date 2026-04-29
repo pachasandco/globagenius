@@ -157,6 +157,7 @@ export default function ProfilePage() {
   const [airports, setAirports] = useState<string[]>([]);
   const [offerTypes, setOfferTypes] = useState<string[]>([]);
   const [flightTripTypes, setFlightTripTypes] = useState<FlightTripType[]>(["round_trip"]);
+  const [includeSplitTickets, setIncludeSplitTickets] = useState<boolean>(false);
   const [dealTier, setDealTier] = useState<string>("regular");
   const [blockedDestinations, setBlockedDestinations] = useState<string[]>([]);
   const [destSearch, setDestSearch] = useState("");
@@ -217,6 +218,9 @@ export default function ProfilePage() {
         if (prefs.flight_trip_types && prefs.flight_trip_types.length > 0) {
           setFlightTripTypes(prefs.flight_trip_types);
         }
+        if (typeof prefs.include_split_tickets === "boolean") {
+          setIncludeSplitTickets(prefs.include_split_tickets);
+        }
       })
       .catch(() => {
         setError("Erreur lors du chargement des préférences");
@@ -260,6 +264,8 @@ export default function ProfilePage() {
         deal_tier: dealTier,
         blocked_destinations: blockedDestinations,
         flight_trip_types: flightTripTypes.length > 0 ? flightTripTypes : ["round_trip"],
+        // Combos require A/R tracking — silently disable if user dropped round_trip.
+        include_split_tickets: includeSplitTickets && flightTripTypes.includes("round_trip"),
       });
       setSuccess("Préférences mises à jour avec succès !");
       setTimeout(() => setSuccess(""), 3000);
@@ -583,7 +589,7 @@ export default function ProfilePage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {[
               { id: "round_trip" as FlightTripType, label: "Aller-retour", desc: "Vols A/R en promo (par défaut)", icon: "🔄" },
-              { id: "one_way" as FlightTripType, label: "Aller simple", desc: "Aller seul ou retour seul · combos malins 2 billets", icon: "➡️" },
+              { id: "one_way" as FlightTripType, label: "Aller simple", desc: "Aller seul ou retour seul en promo", icon: "➡️" },
             ].map((tt) => {
               const selected = flightTripTypes.includes(tt.id);
               return (
@@ -619,6 +625,32 @@ export default function ProfilePage() {
               );
             })}
           </div>
+
+          {/* Sub-option of 'Aller-retour' — combos malins (2x one-way) */}
+          {flightTripTypes.includes("round_trip") && (
+            <div className="mt-3 ml-4 pl-4 border-l-2 border-cyan-100">
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={includeSplitTickets}
+                  onChange={(e) => setIncludeSplitTickets(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-cyan-500 cursor-pointer"
+                />
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-[#0A1F3D] group-hover:text-cyan-700 transition-colors">
+                    💡 Inclure les combos malins (2 billets)
+                  </div>
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    Recevez aussi les A/R reconstitués avec 2 aller simples séparés quand c&apos;est moins cher.
+                    <span className="block mt-0.5 text-gray-400">
+                      ⚠️ Bagages et annulation gérés séparément pour chaque billet.
+                    </span>
+                  </div>
+                </div>
+              </label>
+            </div>
+          )}
+
           <p className="text-xs text-gray-400 mt-2">
             Au moins un type doit rester sélectionné.
           </p>

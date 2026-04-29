@@ -78,6 +78,7 @@ export interface UserPreferences {
   deal_tier: string;
   blocked_destinations: string[];
   flight_trip_types: FlightTripType[];
+  include_split_tickets: boolean;
 }
 
 export function getPreferences(userId: string) {
@@ -92,6 +93,7 @@ export function updatePreferences(userId: string, prefs: {
   deal_tier?: string;
   blocked_destinations?: string[];
   flight_trip_types?: FlightTripType[];
+  include_split_tickets?: boolean;
 }) {
   return fetchAPI<UserPreferences>(`/api/users/${userId}/preferences`, {
     method: "PUT",
