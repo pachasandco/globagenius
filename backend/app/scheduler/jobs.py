@@ -273,7 +273,12 @@ async def _analyze_new_flights(flights: list[dict]):
 
         # Anomaly detection (existing helper)
         anomaly = detect_anomaly(price=flight["price"], baseline=baseline)
-        if not anomaly:
+        # Track which qualification path succeeded — needed downstream to
+        # measure baseline maturity (fallback share) and to filter analytics.
+        qualification_method: str | None = None
+        if anomaly:
+            qualification_method = f"zscore_{anomaly.alert_level}"
+        else:
             # Fallback: qualify on raw discount alone when z-score is unreliable
             # (high variance baselines or young seasonal cells with few samples).
             # A deal ≥40% below avg_price is worth showing regardless of z-score.
@@ -291,6 +296,7 @@ async def _analyze_new_flights(flights: list[dict]):
                         z_score=round(raw_z, 2),
                         alert_level="good_deal",
                     )
+                    qualification_method = "fallback_discount"
             if not anomaly:
                 counters["rejected_no_anomaly"] += 1
                 continue
@@ -349,6 +355,7 @@ async def _analyze_new_flights(flights: list[dict]):
             "tier": tier,
             "status": "active",
             "reverified_at": now_utc,
+            "qualification_method": qualification_method or "unknown",
         }
         if competitor_prices is not None:
             qualified_item_row["competitor_prices"] = competitor_prices
@@ -594,8 +601,8 @@ async def _dispatch_grouped_flight_alerts(
             if not sub_origin or chat_id is None:
                 continue
 
-            # Free tier weekly quota
-            FREE_TIER_WEEKLY_LIMIT = 3
+            # Free tier weekly quota — sourced from app.thresholds
+            from app.thresholds import FREE_TIER_WEEKLY_LIMIT
             weekly_sent_count = 0
             if sub_tier == "free" and user_id:
                 week_start = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
@@ -652,8 +659,11 @@ async def _dispatch_grouped_flight_alerts(
                 # Only deals ≥40% pass for everyone.
                 # Free:    40–50% → full info (max 3/week), >50% → masked teaser
                 # Premium: ≥40%  → full info, no limit
-                FREE_TIER_FULL_MAX = 50   # above this → masked for free users
-                GLOBAL_MIN_DISCOUNT = 40  # below this → no alert for anyone
+                # Thresholds sourced from app.thresholds (single source of truth).
+                from app.thresholds import (
+                    FREE_TIER_FULL_MAX_DISCOUNT_PCT as FREE_TIER_FULL_MAX,
+                    GLOBAL_MIN_DISCOUNT_PCT as GLOBAL_MIN_DISCOUNT,
+                )
 
                 # V5: per-user trip-type filter. Default to round-trip-only
                 # so existing users keep their current Telegram experience.
