@@ -338,7 +338,9 @@ export default function HomePage() {
   const [, setStatus] = useState<PipelineStatus | null>(null);
   const [, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isPremium, setIsPremium] = useState(false);
+  // null = unknown (Stripe check not back yet). Avoids flashing the premium
+  // upsell banner to users who turn out to be premium.
+  const [isPremium, setIsPremium] = useState<boolean | null>(null);
   const [showAllDeals, setShowAllDeals] = useState(false);
   const [destFilter, setDestFilter] = useState<string>("all");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -505,7 +507,7 @@ export default function HomePage() {
             <Link href="/home" className="text-gray-900 font-medium">Deals</Link>
           </div>
           <div className="flex items-center gap-2 md:gap-3">
-            <span className="text-sm text-gray-400 hidden md:block">{isPremium ? "🌟 Premium" : "Free"}</span>
+            <span className="text-sm text-gray-400 hidden md:block">{isPremium === true ? "🌟 Premium" : isPremium === false ? "Free" : ""}</span>
             <Link href="/profile" className="text-sm text-gray-400 hover:text-gray-900 transition-colors">
               Profil
             </Link>
@@ -546,8 +548,10 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Premium banner */}
-        {!isPremium && (
+        {/* Premium banner — only show once we know the user is NOT premium.
+            isPremium === null means the Stripe check hasn't returned yet,
+            and showing the banner during that window flashes it to premium users. */}
+        {isPremium === false && (
           <div className="mb-6 bg-[#FFFEF9] border border-[#FF6B47] rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
@@ -656,7 +660,7 @@ export default function HomePage() {
             )}
 
             {/* Masked deals — quota atteinte ou >55% pour les free */}
-            {!isPremium && filteredLocked.length > 0 && (
+            {isPremium === false && filteredLocked.length > 0 && (
               <div className="mt-10">
                 <div className="flex items-center gap-3 mb-4">
                   <h3 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#0A1F3D]">
@@ -695,8 +699,10 @@ export default function HomePage() {
         </div>
 
 
-        {/* Planificateur de voyage integre — Premium only */}
-        {!isPremium ? (
+        {/* Planificateur de voyage integre — Premium only.
+            Same null-guard as the premium banner above to avoid the upsell
+            flashing for premium users while the Stripe check is in flight. */}
+        {isPremium === false ? (
           <div className="mb-8 bg-[#FFFEF9] border border-[#FF6B47] rounded-2xl p-5">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -711,7 +717,7 @@ export default function HomePage() {
               </button>
             </div>
           </div>
-        ) : (
+        ) : isPremium === true ? (
           <PlannerBlock
             chatMessages={chatMessages}
             chatLoading={chatLoading}
@@ -722,7 +728,7 @@ export default function HomePage() {
             showPlanner={showPlanner}
             setShowPlanner={setShowPlanner}
           />
-        )}
+        ) : null}
 
       </div>
 
