@@ -576,14 +576,14 @@ async def send_grouped_flight_alerts(
         user_id=user_id, alert_key=alert_key, origin_iata=origin_iata,
     )
 
-    # Inline keyboard — quick actions without leaving Telegram
+    # Inline keyboard — quick action without leaving Telegram.
+    # 'Se désabonner' was removed (full opt-out is too aggressive for an
+    # accidental tap; users can disconnect Telegram from /profile if they
+    # really want out). The Pause button toggles indefinitely.
     reply_markup = None
     if user_id:
         reply_markup = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("⏸ Pause", callback_data=f"pause:{user_id}"),
-                InlineKeyboardButton("🔕 Se désabonner", callback_data=f"unsub:{user_id}"),
-            ]
+            [InlineKeyboardButton("⏸ Pause les alertes", callback_data=f"pause:{user_id}")]
         ])
 
     try:
