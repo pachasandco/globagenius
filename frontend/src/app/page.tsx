@@ -1,14 +1,42 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import RedirectIfLoggedIn from "./_components/RedirectIfLoggedIn";
 import LandingAnimated, { HeroContent } from "./_components/LandingAnimated";
+import { LandingDealsMap, type LandingDeal } from "./_components/LandingDealsMap";
 
 export const metadata: Metadata = {
   alternates: {
     canonical: "https://globegenius.app",
   },
 };
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+// Static fallback: shown if /api/landing/deals returns empty (cold start, API
+// down, etc.). Six anchored cities so the map never looks broken on first paint.
+const FALLBACK_DEALS: LandingDeal[] = [
+  { origin: "CDG", destination: "NRT", discount_pct: 43 }, // Tokyo
+  { origin: "CDG", destination: "JFK", discount_pct: 66 }, // New York
+  { origin: "CDG", destination: "BKK", discount_pct: 31 }, // Bangkok
+  { origin: "ORY", destination: "LIS", discount_pct: 77 }, // Lisbonne
+  { origin: "CDG", destination: "RAK", discount_pct: 58 }, // Marrakech
+  { origin: "MRS", destination: "BCN", discount_pct: 35 }, // Barcelone
+];
+
+async function fetchLandingDeals(): Promise<LandingDeal[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/landing/deals?limit=6`, {
+      // Re-fetch every 10 minutes — landing is mostly cached but the deals
+      // shown should reflect what's actually live in qualified_items.
+      next: { revalidate: 600 },
+    });
+    if (!res.ok) return FALLBACK_DEALS;
+    const data = (await res.json()) as { items?: LandingDeal[] };
+    return data.items && data.items.length >= 3 ? data.items : FALLBACK_DEALS;
+  } catch {
+    return FALLBACK_DEALS;
+  }
+}
 
 const faqs = [
   { q: "Comment fonctionne Globe Genius ?", a: "On surveille en permanence les prix des vols au départ de 9 aéroports français. Dès qu’on détecte une baisse de prix significative, on vous envoie une alerte sur Telegram avec tous les détails pour réserver." },
@@ -29,7 +57,9 @@ const faqSchema = {
   })),
 };
 
-export default function Landing() {
+export default async function Landing() {
+  const heroDeals = await fetchLandingDeals();
+
   return (
     <div className="min-h-screen bg-[var(--color-cream)]">
       <RedirectIfLoggedIn />
@@ -57,16 +87,16 @@ export default function Landing() {
 
       <main>
         {/* ── HERO ── */}
-        <section className="relative min-h-[480px] flex items-center overflow-hidden">
-          <Image
-            src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1400&q=80"
-            alt="Plage tropicale ensoleillée — voyagez moins cher avec Globe Genius"
-            fill
-            priority
-            className="object-cover"
-            sizes="100vw"
-          />
-          <div className="absolute inset-0 bg-gradient-to-r from-[var(--color-ink)]/90 via-[var(--color-ink)]/70 to-[var(--color-ink)]/30" />
+        {/*
+          The hero used to show a tropical beach photo. Replaced by an
+          editorial-style world map of live (or fallback) flight deals,
+          centred on Paris — shows the product in action instead of a
+          generic travel metaphor.
+        */}
+        <section className="relative min-h-[480px] sm:min-h-[560px] flex items-center overflow-hidden">
+          <LandingDealsMap deals={heroDeals} />
+          {/* Soft left-side gradient so HeroContent text stays readable */}
+          <div className="absolute inset-0 bg-gradient-to-r from-[var(--color-ink)]/85 via-[var(--color-ink)]/55 to-transparent" />
           <HeroContent />
         </section>
 

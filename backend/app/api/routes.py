@@ -368,6 +368,73 @@ from app.thresholds import (
 )
 
 
+@router.get("/api/landing/deals")
+def landing_deals(limit: int = 6):
+    """Public endpoint: top current deals for the landing page hero map.
+
+    Anonymous-safe: returns origin, destination, discount_pct only.
+    Real prices are NOT exposed — the landing pitches social proof
+    ('there really are deals'), not free booking access.
+    """
+    if not db:
+        return {"items": []}
+
+    if limit < 1:
+        limit = 1
+    if limit > 12:
+        limit = 12
+
+    freshness_cutoff = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat()
+    qi_resp = (
+        db.table("qualified_items")
+        .select("id, type, discount_pct, score, created_at, item_id, trip_type")
+        .eq("status", "active")
+        .eq("type", "flight")
+        .gte("discount_pct", GLOBAL_MIN_DISCOUNT)
+        .gte("reverified_at", freshness_cutoff)
+        .order("discount_pct", desc=True)
+        .limit(limit * 4)
+        .execute()
+    )
+    qualified = qi_resp.data or []
+    if not qualified:
+        return {"items": []}
+
+    item_ids = [q["item_id"] for q in qualified if q.get("item_id")]
+    flights_by_id: dict[str, dict] = {}
+    if item_ids:
+        rf_resp = (
+            db.table("raw_flights")
+            .select("id, origin, destination, trip_type, direction")
+            .in_("id", item_ids)
+            .execute()
+        )
+        for f in (rf_resp.data or []):
+            flights_by_id[f["id"]] = f
+
+    # Dedup by destination so the map doesn't pin the same city twice
+    seen_dests: set[str] = set()
+    items: list[dict] = []
+    for q in qualified:
+        flight = flights_by_id.get(q.get("item_id")) or {}
+        origin = flight.get("origin") or ""
+        destination = flight.get("destination") or ""
+        if not origin or not destination or destination in seen_dests:
+            continue
+        seen_dests.add(destination)
+        items.append({
+            "origin": origin,
+            "destination": destination,
+            "discount_pct": int(round(q["discount_pct"])),
+            "trip_type": flight.get("trip_type") or q.get("trip_type") or "round_trip",
+            "direction": flight.get("direction"),
+        })
+        if len(items) >= limit:
+            break
+
+    return {"items": items}
+
+
 @router.get("/api/packages")
 def list_packages(
     min_score: int = 0,
