@@ -190,6 +190,47 @@ const USUAL_PRICE_EUR: Record<string, number> = {
 
 const PARIS = { x: 50, y: 38 };
 
+// Stylised continent silhouettes on the 0-100 viewBox. More vertices than
+// blob shapes (so they actually read as continents) but still abstract — a
+// real Mercator dump would crush the editorial vibe. Drawn three times
+// (fill / stipple / outline) in render.
+const CONTINENT_PATHS: string[] = [
+  // North America
+  "M 4 24 L 9 22 L 14 22 L 17 24 L 20 23 L 23 25 L 24 28 L 25 32 L 24 36 L 22 40 L 20 42 L 19 45 L 17 48 L 15 52 L 13 55 L 11 53 L 9 50 L 7 46 L 5 40 L 4 33 Z",
+  // Greenland
+  "M 28 18 L 33 17 L 35 21 L 33 24 L 29 23 Z",
+  // Central America
+  "M 13 55 L 16 57 L 18 60 L 20 60 L 17 62 L 14 60 L 12 57 Z",
+  // South America
+  "M 22 58 L 26 58 L 30 62 L 32 68 L 32 74 L 30 80 L 27 84 L 24 84 L 22 78 L 21 70 L 22 64 Z",
+  // Iberian peninsula
+  "M 41 44 L 44 42 L 47 41 L 48 43 L 47 47 L 44 49 L 42 48 Z",
+  // Continental Europe
+  "M 44 28 L 48 26 L 52 27 L 55 28 L 58 30 L 60 33 L 60 37 L 58 40 L 55 42 L 52 42 L 48 41 L 46 38 L 44 34 Z",
+  // British Isles
+  "M 43 30 L 46 28 L 47 31 L 46 34 L 44 33 Z",
+  // Scandinavia
+  "M 53 22 L 57 21 L 60 24 L 60 30 L 57 32 L 54 30 L 53 26 Z",
+  // Eastern Europe / W. Russia
+  "M 58 27 L 64 26 L 68 28 L 68 33 L 65 36 L 60 36 L 58 33 Z",
+  // Africa
+  "M 46 48 L 50 47 L 54 48 L 58 50 L 61 53 L 63 58 L 64 64 L 62 70 L 59 76 L 55 80 L 52 80 L 49 76 L 46 70 L 44 62 L 44 54 Z",
+  // Arabia / Middle East
+  "M 60 46 L 65 46 L 68 48 L 70 52 L 68 55 L 64 55 L 61 53 L 60 50 Z",
+  // Asia mainland
+  "M 60 27 L 66 25 L 73 25 L 80 26 L 86 28 L 90 32 L 91 38 L 89 42 L 86 44 L 82 45 L 78 44 L 73 42 L 68 40 L 64 38 L 61 35 Z",
+  // India
+  "M 70 46 L 74 46 L 76 50 L 75 55 L 72 56 L 70 52 Z",
+  // SE Asia / Indochina
+  "M 76 50 L 80 50 L 82 53 L 82 58 L 79 60 L 77 56 Z",
+  // Indonesia
+  "M 78 62 L 84 62 L 86 64 L 84 66 L 80 66 L 78 64 Z",
+  // Japan
+  "M 87 38 L 90 37 L 91 40 L 89 43 L 87 41 Z",
+  // Australia
+  "M 84 72 L 90 71 L 95 73 L 96 77 L 94 81 L 89 82 L 85 80 L 83 76 Z",
+];
+
 function lookupCoords(iata: string): { x: number; y: number; label: string } | null {
   return CITY_COORDS[iata] ?? null;
 }
@@ -208,8 +249,40 @@ function pricesFor(deal: LandingDeal): { usual: number; deal: number } | null {
   return { usual, deal: dealPrice };
 }
 
+// Greedy spread selector: walk the candidate list in order, skip any pick
+// whose destination is too close (in viewBox units) to one we've already
+// taken, or whose card would land outside the visible area.
+//
+// Why: when the live API returns 5+ European destinations they all collapse
+// into a single overlapping mess in the Europe area. We'd rather show 4
+// visually distinct pins covering the world than 6 stacked rectangles.
+const MIN_PIN_DIST = 14;
+
+function withSpread(deals: LandingDeal[], maxCount: number): LandingDeal[] {
+  const picked: LandingDeal[] = [];
+  const taken: Array<{ x: number; y: number; dest: string }> = [];
+  for (const d of deals) {
+    if (taken.some((p) => p.dest === d.destination)) continue;
+    const c = lookupCoords(d.destination);
+    if (!c) continue;
+    if (pricesFor(d) === null) continue;
+    // Card needs ~10 units of margin on the right and 8 on the top to render
+    // its label without clipping. Anything past x=92 or y<7 is rejected.
+    if (c.x > 92 || c.y < 7) continue;
+    if (taken.some((p) => Math.hypot(p.x - c.x, p.y - c.y) < MIN_PIN_DIST)) continue;
+    picked.push(d);
+    taken.push({ x: c.x, y: c.y, dest: d.destination });
+    if (picked.length >= maxCount) break;
+  }
+  return picked;
+}
+
 export function LandingDealsMap({ initialDeals }: { initialDeals: LandingDeal[] }) {
-  const [deals, setDeals] = useState<LandingDeal[]>(initialDeals);
+  // Apply spread to the initial seeds too — the seed list itself is already
+  // diverse, but this guarantees the invariant in one place.
+  const [deals, setDeals] = useState<LandingDeal[]>(() =>
+    withSpread(initialDeals, 6)
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -218,24 +291,12 @@ export function LandingDealsMap({ initialDeals }: { initialDeals: LandingDeal[] 
       .then((data) => {
         if (cancelled || !data) return;
         const items = (data as { items?: LandingDeal[] }).items ?? [];
-        // Keep only items that have both coords *and* a reference price —
-        // missing either = no usable card.
-        const usable = items.filter(
-          (d) => lookupCoords(d.destination) !== null && pricesFor(d) !== null
-        );
-        if (usable.length >= 4) {
-          setDeals(usable.slice(0, 6));
-        } else if (usable.length > 0) {
-          // Augment seeds with extra mapped picks from API, dedup by destination.
-          const existing = new Set(initialDeals.map((d) => d.destination));
-          const augmented = [...initialDeals];
-          for (const d of usable) {
-            if (existing.has(d.destination)) continue;
-            existing.add(d.destination);
-            augmented.push(d);
-          }
-          setDeals(augmented.slice(0, 6));
-        }
+        // Merge: API picks first (live data wins), then seeds fill any
+        // geographic gaps the spread filter leaves open. Because seeds are
+        // appended, we always end up with >=4 well-distributed pins even
+        // when the API returns deals all clustered in one region.
+        const merged = withSpread([...items, ...initialDeals], 6);
+        if (merged.length > 0) setDeals(merged);
       })
       .catch(() => {
         // Stay on seed deals — map is decorative.
@@ -245,20 +306,12 @@ export function LandingDealsMap({ initialDeals }: { initialDeals: LandingDeal[] 
     };
   }, [initialDeals]);
 
-  // Dedup + filter to renderable pins.
-  const seen = new Set<string>();
-  const visiblePins = deals
-    .filter((d) => {
-      if (seen.has(d.destination)) return false;
-      seen.add(d.destination);
-      return lookupCoords(d.destination) !== null && pricesFor(d) !== null;
-    })
-    .slice(0, 6)
-    .map((d) => ({
-      ...d,
-      coords: lookupCoords(d.destination)!,
-      prices: pricesFor(d)!,
-    }));
+  // Final spread pass — guarantees no overlap regardless of upstream state.
+  const visiblePins = withSpread(deals, 6).map((d) => ({
+    ...d,
+    coords: lookupCoords(d.destination)!,
+    prices: pricesFor(d)!,
+  }));
 
   return (
     <div className="absolute inset-0 w-full h-full overflow-hidden">
@@ -299,66 +352,48 @@ export function LandingDealsMap({ initialDeals }: { initialDeals: LandingDeal[] 
             id="land-stipple"
             x="0"
             y="0"
-            width="0.9"
-            height="0.9"
+            width="0.7"
+            height="0.7"
             patternUnits="userSpaceOnUse"
           >
-            <circle cx="0.18" cy="0.18" r="0.16" fill="#7FA8D6" fillOpacity="0.55" />
+            <circle cx="0.14" cy="0.14" r="0.18" fill="#C8DDF5" fillOpacity="0.95" />
           </pattern>
           <pattern
             id="ocean-dust"
             x="0"
             y="0"
-            width="2.4"
-            height="2.4"
+            width="3"
+            height="3"
             patternUnits="userSpaceOnUse"
           >
-            <circle cx="0.2" cy="0.2" r="0.08" fill="#FFFEF9" fillOpacity="0.18" />
+            <circle cx="0.2" cy="0.2" r="0.07" fill="#FFFEF9" fillOpacity="0.12" />
           </pattern>
         </defs>
 
         {/* Faint ocean dust across the whole frame */}
         <rect width="100" height="100" fill="url(#ocean-dust)" />
 
-        {/* Continent silhouettes filled with the stipple pattern.
-            Paths are stylised but recognisable: more vertices than blobs,
-            still abstract. Coordinates roughly match an equirectangular
-            projection on the 0-100 viewBox. */}
-        <g fill="url(#land-stipple)" stroke="#7FA8D6" strokeOpacity="0.18" strokeWidth="0.12">
-          {/* North America */}
-          <path d="M 4 24 L 9 22 L 14 22 L 17 24 L 20 23 L 23 25 L 24 28 L 25 32 L 24 36 L 22 40 L 20 42 L 19 45 L 17 48 L 15 52 L 13 55 L 11 53 L 9 50 L 7 46 L 5 40 L 4 33 Z" />
-          {/* Greenland (small) */}
-          <path d="M 28 18 L 33 17 L 35 21 L 33 24 L 29 23 Z" />
-          {/* Central America */}
-          <path d="M 13 55 L 16 57 L 18 60 L 20 60 L 17 62 L 14 60 L 12 57 Z" />
-          {/* South America */}
-          <path d="M 22 58 L 26 58 L 30 62 L 32 68 L 32 74 L 30 80 L 27 84 L 24 84 L 22 78 L 21 70 L 22 64 Z" />
-          {/* Iberian peninsula + W. Europe lobe */}
-          <path d="M 41 44 L 44 42 L 47 41 L 48 43 L 47 47 L 44 49 L 42 48 Z" />
-          {/* Continental Europe / British Isles cluster */}
-          <path d="M 44 28 L 48 26 L 52 27 L 55 28 L 58 30 L 60 33 L 60 37 L 58 40 L 55 42 L 52 42 L 48 41 L 46 38 L 44 34 Z" />
-          {/* British Isles (separate) */}
-          <path d="M 43 30 L 46 28 L 47 31 L 46 34 L 44 33 Z" />
-          {/* Scandinavia */}
-          <path d="M 53 22 L 57 21 L 60 24 L 60 30 L 57 32 L 54 30 L 53 26 Z" />
-          {/* Eastern Europe / W. Russia */}
-          <path d="M 58 27 L 64 26 L 68 28 L 68 33 L 65 36 L 60 36 L 58 33 Z" />
-          {/* Africa */}
-          <path d="M 46 48 L 50 47 L 54 48 L 58 50 L 61 53 L 63 58 L 64 64 L 62 70 L 59 76 L 55 80 L 52 80 L 49 76 L 46 70 L 44 62 L 44 54 Z" />
-          {/* Arabia / Middle East */}
-          <path d="M 60 46 L 65 46 L 68 48 L 70 52 L 68 55 L 64 55 L 61 53 L 60 50 Z" />
-          {/* Asia (mainland) */}
-          <path d="M 60 27 L 66 25 L 73 25 L 80 26 L 86 28 L 90 32 L 91 38 L 89 42 L 86 44 L 82 45 L 78 44 L 73 42 L 68 40 L 64 38 L 61 35 Z" />
-          {/* India */}
-          <path d="M 70 46 L 74 46 L 76 50 L 75 55 L 72 56 L 70 52 Z" />
-          {/* SE Asia / Indochina */}
-          <path d="M 76 50 L 80 50 L 82 53 L 82 58 L 79 60 L 77 56 Z" />
-          {/* Indonesia (smudge) */}
-          <path d="M 78 62 L 84 62 L 86 64 L 84 66 L 80 66 L 78 64 Z" />
-          {/* Japan */}
-          <path d="M 87 38 L 90 37 L 91 40 L 89 43 L 87 41 Z" />
-          {/* Australia */}
-          <path d="M 84 72 L 90 71 L 95 73 L 96 77 L 94 81 L 89 82 L 85 80 L 83 76 Z" />
+        {/* Continent silhouettes — three stacked passes so the land reads
+            clearly even on dark navy: (1) soft body fill, (2) stipple dots
+            on top for the editorial datavis texture, (3) outline stroke. */}
+        <g>
+          {CONTINENT_PATHS.map((d, i) => (
+            <path key={`fill-${i}`} d={d} fill="#5B7FA8" fillOpacity="0.32" />
+          ))}
+          {CONTINENT_PATHS.map((d, i) => (
+            <path key={`stipple-${i}`} d={d} fill="url(#land-stipple)" />
+          ))}
+          {CONTINENT_PATHS.map((d, i) => (
+            <path
+              key={`stroke-${i}`}
+              d={d}
+              fill="none"
+              stroke="#A8C7E8"
+              strokeOpacity="0.55"
+              strokeWidth="0.22"
+              strokeLinejoin="round"
+            />
+          ))}
         </g>
       </svg>
 
