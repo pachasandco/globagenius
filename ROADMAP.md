@@ -266,6 +266,68 @@ funnel to anyone who signs up.
 
 ---
 
+## 🛠 Runbook / Ops gotchas
+
+Lessons paid for in production. Each item is a procedure to remember,
+not work to schedule. Append when something bites us.
+
+### Telegram webhook URL drifts when Railway changes the public domain
+
+**Symptom:** inline-keyboard buttons (Pause, future buttons) silently do
+nothing. No error in our backend logs because Telegram never reaches us.
+
+**Root cause:** Railway can change a service's `*.up.railway.app` URL
+between deploys (rare but happens, especially after re-creating a
+service). Telegram's `setWebhook` was set once and stays pinned to the
+old URL. Every callback returns 404 on Telegram's side.
+
+**Detection:** run
+```
+curl "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo"
+```
+and check `last_error_date` / `last_error_message`. A persistent 404
+means the URL is stale.
+
+**Fix:** re-register the webhook against the current backend domain:
+```
+curl -X POST "https://api.telegram.org/bot${TOKEN}/setWebhook" \
+  -d "url=https://<current-backend-domain>/api/telegram/webhook" \
+  -d "secret_token=${TELEGRAM_WEBHOOK_SECRET}" \
+  --data-urlencode "allowed_updates=[\"message\",\"callback_query\"]"
+```
+Effect is immediate. No redeploy needed.
+
+**Prevention:** when migrating or recreating a Railway service, run
+`setWebhook` as part of the migration checklist, OR move to a stable
+custom domain (e.g. `api.globegenius.app`) so the webhook URL never
+drifts again. The custom-domain route is the durable fix; the manual
+re-register is the band-aid.
+
+### Frontend NEXT_PUBLIC_API_URL on Railway
+
+**Same drift risk** as the Telegram webhook. The frontend's
+`NEXT_PUBLIC_API_URL` env var on Railway points to the backend's
+`*.up.railway.app` URL. If the backend domain rotates, the frontend
+keeps fetching the old URL and silently fails (`/api/landing/deals`
+returns 404, the map falls back to seeds, etc.).
+
+**Fix:** set `NEXT_PUBLIC_API_URL` to a stable custom domain on the
+backend, OR re-set the variable + rebuild the frontend each time the
+backend domain changes.
+
+### Cache busting after a frontend deploy
+
+Railway's Fastly CDN caches `/` for `s-maxage=31536000` (1 year). When
+you push a fix, the new HTML lives behind a stale CDN entry. Hard
+refresh (Cmd+Shift+R) bypasses it; private browsing too. If a user
+reports "I don't see the new feature" right after a deploy, this is
+the first suspect.
+
+**Diagnostic:** `curl -sI <url>` and look at `x-nextjs-cache: HIT` and
+`age:`. If `age` is high, the CDN is serving stale.
+
+---
+
 ## ❌ Killed / Won't do
 
 ### Stopover (escales longues)
@@ -324,3 +386,8 @@ When a roadmap item changes status (e.g. P2 → P1, or moves to "Done" /
   counts as 1 engagement (simpler signal, captures real interest).
   CTR dashboard frontend deferred — `/api/admin/ctr` curl-only stays
   acceptable until we have real volume to look at.
+- **2026-04-29** — Telegram webhook drift incident: Pause button silently
+  broken for days because the webhook URL pointed to a defunct Railway
+  domain. Fixed by re-running setWebhook (`8c47991`); 'Se désabonner'
+  button removed at the same time (too aggressive for an accidental tap).
+  Logged as a runbook gotcha in the new "Runbook / Ops gotchas" section.
