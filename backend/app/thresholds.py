@@ -22,9 +22,15 @@ Python keeps the code grep-able and stack traces readable.
 # noise floor of the product.
 GLOBAL_MIN_DISCOUNT_PCT = 40
 
-# Free users see deals with discount in [GLOBAL_MIN, FREE_TIER_FULL_MAX]
-# unlocked. Above FREE_TIER_FULL_MAX → masked teaser only.
+# Free users receive UNMASKED alerts only for discounts in
+# [GLOBAL_MIN, FREE_TIER_FULL_MAX). Deals between FREE_TIER_FULL_MAX and
+# FREE_TIER_TEASER_MIN are not communicated at all (silent skip). Deals
+# at or above FREE_TIER_TEASER_MIN trigger a single masked teaser per
+# rolling 7-day window — the "exceptional deal" upsell.
+# (V7 change: previously >50% all sent a teaser, now teaser only kicks in
+# at ≥60% AND at most once per week strict.)
 FREE_TIER_FULL_MAX_DISCOUNT_PCT = 50
+FREE_TIER_TEASER_MIN_DISCOUNT_PCT = 60
 
 
 # ─── Tier quotas ───

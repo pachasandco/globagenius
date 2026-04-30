@@ -566,8 +566,9 @@ async def _dispatch_grouped_flight_alerts(
             # to preserve pre-V5 behaviour for migrated users.
             trip_types_by_user[uid] = set(pref.get("flight_trip_types") or ["round_trip"])
 
-    # Track teasers already sent this run — at most once per user per run
-    teaser_sent_quota: set[str] = set()
+    # V7: track premium teasers sent this run as a fast in-memory dedup
+    # (the persistent dedup uses sent_alerts.alert_type='teaser_premium' with
+    # a 7-day window). The 'limit reached' teaser was removed in V7.
     teaser_sent_premium: set[str] = set()
     # Track best price already dispatched per (user_id, destination, dep_date, ret_date)
     # this run. When a user tracks multiple origins (CDG + ORY + BVA) and the same
@@ -660,11 +661,14 @@ async def _dispatch_grouped_flight_alerts(
 
                 # Build candidate list
                 # Only deals ≥40% pass for everyone.
-                # Free:    40–50% → full info (max 3/week), >50% → masked teaser
-                # Premium: ≥40%  → full info, no limit
+                # Free:    [40, 50)   → full info (max 3/week)
+                #          [50, 60)   → silent skip (no signal at all)
+                #          ≥60        → masked teaser, at most 1/week (strict)
+                # Premium: ≥40        → full info, no limit
                 # Thresholds sourced from app.thresholds (single source of truth).
                 from app.thresholds import (
                     FREE_TIER_FULL_MAX_DISCOUNT_PCT as FREE_TIER_FULL_MAX,
+                    FREE_TIER_TEASER_MIN_DISCOUNT_PCT as FREE_TIER_TEASER_MIN,
                     GLOBAL_MIN_DISCOUNT_PCT as GLOBAL_MIN_DISCOUNT,
                 )
 
@@ -684,6 +688,13 @@ async def _dispatch_grouped_flight_alerts(
                     else:
                         if anomaly.discount_pct < GLOBAL_MIN_DISCOUNT:
                             continue
+                        # V7: free users get full alerts ONLY for discounts
+                        # below FREE_TIER_FULL_MAX (50%). Deals ≥50% are
+                        # routed entirely through the teaser path below
+                        # — never as a full alert. Premium users keep all
+                        # candidates.
+                        if sub_tier == "free" and anomaly.discount_pct >= FREE_TIER_FULL_MAX:
+                            continue
                     key = None
                     if user_id:
                         key = compute_alert_key(
@@ -699,54 +710,86 @@ async def _dispatch_grouped_flight_alerts(
                 if not candidates:
                     continue
 
-                # Free tier: deals >50% → masked teaser (once per run)
-                if sub_tier == "free" and not tier_error and chat_id is not None and user_id not in teaser_sent_premium:
+                # V7: Free tier — deals ≥60% → masked teaser, ≤1/week strict.
+                # Strict 7-day window: we look up sent_alerts for a row of
+                # alert_type='teaser_premium' on this user; if found we skip.
+                # Run-local set is a fast path to avoid re-querying within
+                # the same dispatch pass.
+                if (
+                    sub_tier == "free" and not tier_error and chat_id is not None
+                    and user_id and user_id not in teaser_sent_premium
+                ):
                     masked = [
                         (f, a) for f, a, _ in flight_tuples
-                        if a.discount_pct > FREE_TIER_FULL_MAX
+                        if a.discount_pct >= FREE_TIER_TEASER_MIN
                         and (f.get("trip_type") or "round_trip") in user_allowed_trip_types
                     ]
                     if masked:
-                        teaser_sent_premium.add(user_id)
-                        best_f, best_a = max(masked, key=lambda x: x[1].discount_pct)
+                        # Weekly dedup: did we already send a teaser_premium
+                        # to this user in the last 7 days?
+                        already_teased = False
                         try:
-                            from app.notifications.telegram import _get_bot
-                            bot = _get_bot()
-                            if bot:
-                                await bot.send_message(
-                                    chat_id=chat_id,
-                                    text=(
-                                        f"🔥 Deal exceptionnel détecté\n\n"
-                                        f"🌍 ██████ → ██████\n"
-                                        f"💰 ███€  ·  -{int(best_a.discount_pct)}%\n\n"
-                                        f"Les détails sont réservés aux membres premium.\n"
-                                        f"💎 Débloquer → {settings.FRONTEND_URL}/premium"
-                                    ),
-                                )
-                        except Exception:
-                            pass
+                            week_start_iso = (
+                                datetime.now(timezone.utc) - timedelta(days=7)
+                            ).isoformat()
+                            tz_resp = (
+                                db.table("sent_alerts")
+                                .select("alert_key", count="exact")
+                                .eq("user_id", user_id)
+                                .eq("alert_type", "teaser_premium")
+                                .gte("created_at", week_start_iso)
+                                .execute()
+                            )
+                            already_teased = (tz_resp.count or 0) > 0
+                        except Exception as e:
+                            logger.warning(
+                                f"teaser_premium weekly dedup lookup failed for {user_id}: {e}"
+                            )
 
-                # Free tier: weekly quota gate (max 3 full alerts/week)
+                        if not already_teased:
+                            teaser_sent_premium.add(user_id)
+                            best_f, best_a = max(masked, key=lambda x: x[1].discount_pct)
+                            sent_ok = False
+                            try:
+                                from app.notifications.telegram import _get_bot
+                                bot = _get_bot()
+                                if bot:
+                                    await bot.send_message(
+                                        chat_id=chat_id,
+                                        text=(
+                                            f"🔥 Deal exceptionnel détecté\n\n"
+                                            f"🌍 ██████ → ██████\n"
+                                            f"💰 ███€  ·  -{int(best_a.discount_pct)}%\n\n"
+                                            f"Les détails sont réservés aux membres premium.\n"
+                                            f"💎 Débloquer → {settings.FRONTEND_URL}/premium"
+                                        ),
+                                    )
+                                    sent_ok = True
+                            except Exception as e:
+                                logger.warning(f"teaser_premium send failed for {user_id}: {e}")
+
+                            # Persist a sent_alerts row so the next dispatch
+                            # within 7 days will see already_teased=True.
+                            if sent_ok:
+                                try:
+                                    db.table("sent_alerts").insert({
+                                        "user_id": user_id,
+                                        "chat_id": chat_id,
+                                        "alert_key": f"teaser_premium:{user_id}:{int(datetime.now(timezone.utc).timestamp())}",
+                                        "destination": best_f.get("destination", ""),
+                                        "alert_type": "teaser_premium",
+                                    }).execute()
+                                except Exception as e:
+                                    logger.warning(
+                                        f"teaser_premium persistence failed for {user_id}: {e}"
+                                    )
+
+                # V7: weekly-quota teaser ('limit reached') — REMOVED.
+                # The teaser_premium above already does the upsell signal;
+                # a second 'limit reached' message was redundant.
+                # Free users still get hard-capped at FREE_TIER_WEEKLY_LIMIT
+                # full alerts (the existing free_unlocked counting handles it).
                 if sub_tier == "free" and matching_wl is None and weekly_sent_count >= FREE_TIER_WEEKLY_LIMIT:
-                    if not tier_error and chat_id is not None and user_id not in teaser_sent_quota:
-                        teaser_sent_quota.add(user_id)
-                        try:
-                            from app.notifications.telegram import _get_bot
-                            bot = _get_bot()
-                            if bot:
-                                await bot.send_message(
-                                    chat_id=chat_id,
-                                    text=(
-                                        f"🔒 Limite hebdomadaire atteinte\n\n"
-                                        f"Tu as reçu {FREE_TIER_WEEKLY_LIMIT} alertes cette semaine "
-                                        f"(limite du compte gratuit).\n\n"
-                                        f"💎 Passe en premium pour recevoir toutes les alertes "
-                                        f"en temps réel, sans limite.\n"
-                                        f"👉 {settings.FRONTEND_URL}/premium"
-                                    ),
-                                )
-                        except Exception:
-                            pass
                     continue
 
                 already_keys: set[str] = set()
