@@ -149,14 +149,20 @@ async def send_welcome_email(to_email: str):
 
     try:
         import aiosmtplib
-        await aiosmtplib.send(
-            msg,
+        # Port 587 → STARTTLS (Brevo, Gmail, most providers).
+        # Port 465 → TLS direct (deprecated but some providers still use it).
+        # Pick automatically based on the configured port.
+        send_kwargs = dict(
             hostname=smtp_host,
             port=smtp_port,
             username=smtp_user,
             password=smtp_pass,
-            use_tls=True,
         )
+        if smtp_port == 465:
+            send_kwargs["use_tls"] = True
+        else:
+            send_kwargs["start_tls"] = True
+        await aiosmtplib.send(msg, **send_kwargs)
         logger.info(f"Welcome email sent to {to_email}")
     except Exception as e:
         logger.error(f"Failed to send welcome email to {to_email}: {e}")

@@ -697,6 +697,15 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
 @router.post("/api/auth/login")
 def login(req: LoginRequest, request: Request):
     _check_rate_limit(f"login:{_client_ip(request)}")
@@ -714,6 +723,108 @@ def login(req: LoginRequest, request: Request):
     email = user.data[0]["email"]
     token = _create_jwt(user_id, email)
     return {"user_id": user_id, "email": email, "token": token}
+
+
+# ─── PASSWORD RESET (V7) ───
+#
+# Anti-enumeration: forgot-password ALWAYS returns 200, regardless of
+# whether the email exists. Only the side-effect (DB write + email send)
+# differs. The user-facing message is the same in both cases.
+
+@router.post("/api/auth/forgot-password")
+async def forgot_password(req: ForgotPasswordRequest, request: Request):
+    _check_rate_limit(f"forgot:{_client_ip(request)}")
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    email = (req.email or "").strip().lower()
+    if not email or not EMAIL_REGEX.match(email):
+        # Even on a malformed email, return success — same anti-enumeration
+        # principle. Caller can't tell the difference between bad email,
+        # unknown email, or successful send.
+        return {"ok": True}
+
+    try:
+        user_resp = db.table("users").select("id, email").eq("email", email).execute()
+    except Exception as e:
+        logger.warning(f"forgot-password: user lookup failed: {e}")
+        return {"ok": True}
+
+    user_data = (user_resp.data or [None])[0]
+    if not user_data:
+        # Email not registered — silently succeed.
+        return {"ok": True}
+
+    from app.auth.password_reset import generate_reset_token, PASSWORD_RESET_TTL_HOURS
+    from app.notifications.password_reset_email import send_password_reset_email
+
+    token = generate_reset_token()
+    expires_at = (
+        datetime.now(timezone.utc) + timedelta(hours=PASSWORD_RESET_TTL_HOURS)
+    ).isoformat()
+    try:
+        db.table("password_reset_tokens").insert({
+            "token": token,
+            "user_id": user_data["id"],
+            "expires_at": expires_at,
+        }).execute()
+    except Exception as e:
+        logger.warning(f"forgot-password: token insert failed: {e}")
+        return {"ok": True}
+
+    reset_url = f"{settings.FRONTEND_URL}/reset-password/{token}"
+    try:
+        await send_password_reset_email(user_data["email"], reset_url)
+    except Exception as e:
+        logger.warning(f"forgot-password: email send failed: {e}")
+
+    return {"ok": True}
+
+
+@router.post("/api/auth/reset-password")
+def reset_password(req: ResetPasswordRequest, request: Request):
+    _check_rate_limit(f"reset:{_client_ip(request)}")
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    if not req.token or len(req.new_password) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="Le mot de passe doit contenir au moins 6 caracteres",
+        )
+
+    from app.auth.password_reset import is_token_valid
+
+    try:
+        token_resp = (
+            db.table("password_reset_tokens")
+            .select("token, user_id, expires_at, used_at")
+            .eq("token", req.token)
+            .maybe_single()
+            .execute()
+        )
+        token_row = token_resp.data
+    except Exception as e:
+        logger.warning(f"reset-password: token lookup failed: {e}")
+        raise HTTPException(status_code=400, detail="Lien invalide ou expire")
+
+    if not is_token_valid(token_row):
+        raise HTTPException(status_code=400, detail="Lien invalide ou expire")
+
+    user_id = token_row["user_id"]
+    new_hash = _hash_password(req.new_password)
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    try:
+        db.table("users").update({"password_hash": new_hash}).eq("id", user_id).execute()
+        db.table("password_reset_tokens").update(
+            {"used_at": now_iso}
+        ).eq("token", req.token).execute()
+    except Exception as e:
+        logger.error(f"reset-password: persistence failed: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la reinitialisation")
+
+    return {"ok": True}
 
 
 # ─── PREFERENCES ───

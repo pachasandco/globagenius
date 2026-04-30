@@ -60,6 +60,20 @@ export function changePassword(userId: string, currentPassword: string, newPassw
   });
 }
 
+export function forgotPassword(email: string) {
+  return fetchAPI<{ ok: boolean }>("/api/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function resetPassword(token: string, newPassword: string) {
+  return fetchAPI<{ ok: boolean }>("/api/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ token, new_password: newPassword }),
+  });
+}
+
 // ─── Preferences ───
 
 export type FlightTripType = "round_trip" | "one_way";
