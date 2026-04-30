@@ -15,3 +15,4 @@ CREATE INDEX IF NOT EXISTS idx_redirect_tokens_trip_type
 
 CREATE INDEX IF NOT EXISTS idx_redirect_tokens_qualification_method
   ON alert_redirect_tokens (qualification_method, created_at DESC);
+

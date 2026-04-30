@@ -1,4 +1,6 @@
 .superpowers/
+.agents/
+skills-lock.json
 .env
 .env.local
 __pycache__/
