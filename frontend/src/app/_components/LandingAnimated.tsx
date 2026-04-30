@@ -14,7 +14,7 @@ const PAST_DEALS = [
 
 const STEPS = [
   { num: "1", title: "On surveille tous les vols au départ de la France", desc: "Depuis 9 aéroports français, vers le monde entier. En continu, 24h/24." },
-  { num: "2", title: "L'algorithme détecte l'anomalie de prix", desc: "Dès qu'un tarif chute sous le prix habituel, notre système le signale. Pour Ryanair et Vueling au départ de Paris, la vérification a lieu toutes les 20 minutes." },
+  { num: "2", title: "L'algorithme détecte l'anomalie de prix", desc: "Dès qu'un tarif chute sous le prix habituel, notre système le signale. Sur les routes prioritaires au départ de Paris, la vérification a lieu toutes les 20 minutes ; toutes les 2 heures sur les autres aéroports français." },
   { num: "3", title: "Vous recevez l'alerte sur Telegram", desc: "Prix, dates, lien direct pour réserver. L'alerte arrive dans les minutes qui suivent la détection — pas le lendemain." },
   { num: "4", title: "Vous réservez avant que ça remonte", desc: "Les erreurs de prix disparaissent souvent en quelques heures. L'avance qu'on vous donne, c'est ça qui fait la différence." },
 ];
@@ -24,7 +24,7 @@ const faqs = [
   { q: "Quelle est la différence entre Gratuit et Premium ?", a: "En Gratuit, vous recevez jusqu'à 3 alertes complètes par semaine sur les deals à -40% et plus. En Premium, vous accédez à tous les deals sans limite (jusqu'à -70%+), y compris les erreurs de prix des compagnies, avec prix et liens de réservation débloqués." },
   { q: "Comment fonctionne la garantie 30 jours ?", a: "Si Premium ne vous convient pas, contactez-nous dans les 30 jours suivant votre achat et on vous rembourse intégralement, sans question." },
   { q: "Les prix incluent-ils les bagages ?", a: "Les prix affichés sont ceux des compagnies aériennes. Les bagages en soute sont parfois inclus selon la compagnie et le tarif. On le précise dans chaque alerte quand l'information est disponible." },
-  { q: "Combien de temps entre la publication du prix et votre alerte ?", a: "Pour les vols Ryanair et Vueling au départ de Paris (CDG/ORY), on scrape les prix directement sur les APIs des compagnies toutes les 20 minutes. Dès qu'une anomalie est détectée, l'alerte Telegram part dans la foulée, généralement moins de 5 minutes après l'apparition du deal. Pour les autres aéroports et destinations, on utilise un agrégateur de vols interrogé toutes les 2 heures." },
+  { q: "Combien de temps entre la publication du prix et votre alerte ?", a: "Sur les routes prioritaires au départ de Paris (CDG/ORY), nos sondes vérifient les prix toutes les 20 minutes. Dès qu'une anomalie est détectée, l'alerte Telegram part dans la foulée, généralement moins de 5 minutes après l'apparition du deal. Pour les autres aéroports français et destinations, la vérification a lieu toutes les 2 heures." },
   { q: "Pourquoi certains deals disparaissent avant que j'aie pu réserver ?", a: "Les tarifs érronés (« erreurs de prix ») sont des oublis de configuration des compagnies. Dès qu'elles s'en rendent compte, elles corrigent le tarif — parfois en quelques heures. C'est pourquoi les alertes temps réel sont déterminantes : réserver dans l'heure qui suit l'alerte maximise vos chances d'obtenir le prix affiché. Passez commande rapidement et contactez la compagnie si le tarif change avant l'émission." },
 ];
 
