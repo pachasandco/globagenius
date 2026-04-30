@@ -34,7 +34,7 @@ const NOTIFS: NotifSample[] = [
     destination: "Tokyo",
     headline: "Paris → Tokyo · 480 € A/R",
     body: "Prix habituel ~840 € · -43%",
-    meta: "12 mars – 26 mars · 14 jours",
+    meta: "12 mars – 26 mars · 14 jours · Air France",
   },
   {
     variant: "one_way",
@@ -43,7 +43,7 @@ const NOTIFS: NotifSample[] = [
     destination: "New York",
     headline: "Paris → New York · 220 € aller seul",
     body: "Prix habituel ~520 € · -58%",
-    meta: "Départ 8 avril · ↩ retour estimé ~280 €",
+    meta: "Départ 8 avril · French Bee · ↩ retour estimé ~280 €",
   },
   {
     variant: "split_ticket",
@@ -52,7 +52,7 @@ const NOTIFS: NotifSample[] = [
     destination: "Bangkok",
     headline: "Paris ⇄ Bangkok · 540 € total",
     body: "A/R habituel ~780 € · économie 240 € (-31%)",
-    meta: "Combo 2 billets séparés · 4-22 avril",
+    meta: "2 billets : French Bee + Norse · 4-22 avril",
   },
 ];
 
