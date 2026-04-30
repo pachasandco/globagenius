@@ -1335,6 +1335,64 @@ async def admin_test_welcome_email(req: AdminTestWelcomeEmailRequest, request: R
     }
 
 
+@router.get("/api/admin/email/diagnose")
+async def admin_email_diagnose(request: Request):
+    """Diagnose why Brevo sends fail in prod. Returns:
+    - the outbound IP this container uses (for Brevo IP whitelist),
+    - the HTTP status returned by a probe call to Brevo /v3/account,
+    - whether the welcome template is reachable.
+    """
+    _require_admin(request)
+    import httpx as _httpx
+
+    out_ip: str | None = None
+    out_ip_error: str | None = None
+    try:
+        async with _httpx.AsyncClient(timeout=5.0) as c:
+            r = await c.get("https://api.ipify.org?format=json")
+            r.raise_for_status()
+            out_ip = r.json().get("ip")
+    except Exception as e:
+        out_ip_error = str(e)
+
+    brevo_account_status: int | None = None
+    brevo_account_body: str | None = None
+    if settings.BREVO_API_KEY:
+        try:
+            async with _httpx.AsyncClient(timeout=10.0) as c:
+                r = await c.get(
+                    "https://api.brevo.com/v3/account",
+                    headers={"api-key": settings.BREVO_API_KEY, "accept": "application/json"},
+                )
+                brevo_account_status = r.status_code
+                brevo_account_body = r.text[:200]
+        except Exception as e:
+            brevo_account_body = f"exception: {e}"
+
+    brevo_template_status: int | None = None
+    if settings.BREVO_API_KEY and settings.BREVO_WELCOME_TEMPLATE_ID:
+        try:
+            async with _httpx.AsyncClient(timeout=10.0) as c:
+                r = await c.get(
+                    f"https://api.brevo.com/v3/smtp/templates/{settings.BREVO_WELCOME_TEMPLATE_ID}",
+                    headers={"api-key": settings.BREVO_API_KEY, "accept": "application/json"},
+                )
+                brevo_template_status = r.status_code
+        except Exception:
+            pass
+
+    return {
+        "outbound_ip": out_ip,
+        "outbound_ip_error": out_ip_error,
+        "brevo_api_key_configured": bool(settings.BREVO_API_KEY),
+        "brevo_template_id": settings.BREVO_WELCOME_TEMPLATE_ID,
+        "brevo_account_probe_status": brevo_account_status,
+        "brevo_account_probe_body": brevo_account_body,
+        "brevo_template_probe_status": brevo_template_status,
+        "smtp_host_configured": bool(settings.SMTP_HOST),
+    }
+
+
 @router.get("/api/admin/users")
 def admin_list_users(request: Request, limit: int = 100):
     _require_admin(request)
