@@ -1313,6 +1313,28 @@ class AdminMinDiscountRequest(BaseModel):
         return v
 
 
+class AdminTestWelcomeEmailRequest(BaseModel):
+    email: str
+
+
+@router.post("/api/admin/email/test-welcome")
+async def admin_test_welcome_email(req: AdminTestWelcomeEmailRequest, request: Request):
+    """Re-send the welcome email to an arbitrary address. Useful for verifying
+    the Brevo template configuration after a deploy, or for resending the
+    welcome to early users who got an older version."""
+    _require_admin(request)
+    try:
+        await _send_welcome_email(req.email)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Send failed: {e}")
+    return {
+        "status": "sent",
+        "to": req.email,
+        "transport": "brevo_template" if (settings.BREVO_API_KEY and settings.BREVO_WELCOME_TEMPLATE_ID) else "smtp_fallback",
+        "brevo_template_id": settings.BREVO_WELCOME_TEMPLATE_ID,
+    }
+
+
 @router.get("/api/admin/users")
 def admin_list_users(request: Request, limit: int = 100):
     _require_admin(request)
