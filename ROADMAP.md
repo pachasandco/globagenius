@@ -48,9 +48,18 @@ When an item ships, **move it to "Done"** with the commit SHA. Never delete.
   loop confirms when /start <token> lands on the webhook, no manual
   refresh needed)
 
+### V7 — Simpler free-tier alert policy (April 2026)
+
+- `a9837cb` — Free users: full alerts only in [40%, 50%); deals in
+  [50%, 60%) silently skipped (dead band); deals ≥60% trigger a
+  teaser, max 1 per rolling 7-day window. Removes the noisy
+  'limit reached' teaser. Premium unchanged.
+
 **Migrations to apply on Supabase prod (in order):**
 025_flight_trip_types · 026_oneway_flights · 027_include_split_tickets ·
 028_qualification_method · 029_redirect_tokens_trip_type
+(V7 introduces no new migration — uses existing `sent_alerts` table with a
+new `alert_type='teaser_premium'` value.)
 
 ---
 
@@ -433,3 +442,13 @@ When a roadmap item changes status (e.g. P2 → P1, or moves to "Done" /
   `f8b0b5a` self-service reconnect card on /profile so users can recover
   without us. Email automation deferred (SMTP not configured) — logged
   as P1 'Configure SMTP for transactional outreach'.
+- **2026-04-30** — V6 (Foursquare-augmented planner) explored on a
+  separate branch. Spec + plan + 7 of 11 tasks shipped before the user
+  paused and decided to set the work aside. Branch `v6` kept locally
+  with 9 commits, not pushed to origin. To resume: `git checkout v6`.
+  To discard: `git branch -D v6`.
+- **2026-04-30** — V7 simpler free-tier policy shipped (`a9837cb`).
+  Decisions: dead band [50, 60) is silent; teaser ≥60% strict 1/week;
+  removed 'limit reached' teaser. Reasoning: the 'noisy upsell' loop
+  with several teasers per week was hurting the free-user experience
+  more than driving conversions.
