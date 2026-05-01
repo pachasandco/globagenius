@@ -14,6 +14,7 @@ import jwt
 from app.db import db
 from app.config import settings
 from app.notifications.welcome_email import send_welcome_email as _send_welcome_email
+from app.auth.email_validator import validate_email_address
 
 logger = logging.getLogger(__name__)
 
@@ -657,6 +658,20 @@ async def signup(req: SignupRequest, request: Request):
 
     if len(req.password) < 6:
         raise HTTPException(status_code=400, detail="Le mot de passe doit contenir au moins 6 caracteres")
+
+    email_check = await validate_email_address(req.email)
+    if not email_check.is_valid:
+        if email_check.reason == "typo_tld":
+            raise HTTPException(
+                status_code=400,
+                detail=f"L'extension du domaine '{email_check.domain}' semble incorrecte. Vérifiez l'adresse.",
+            )
+        if email_check.reason == "no_mx":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Le domaine '{email_check.domain}' ne peut pas recevoir d'email. Vérifiez l'adresse.",
+            )
+        raise HTTPException(status_code=400, detail="Adresse email invalide.")
 
     existing = db.table("users").select("id").eq("email", req.email).execute()
     if existing.data:
