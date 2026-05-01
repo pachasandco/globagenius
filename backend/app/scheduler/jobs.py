@@ -1445,6 +1445,14 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
         if qualification is None:
             continue
 
+        # Belt-and-braces 40% gate. qualify_oneway uses
+        # ONEWAY_DISCOUNT_PCT_FLOOR (currently 60), but anchoring the
+        # global product floor here protects users from accidental
+        # threshold drift in the qualifier.
+        from app.thresholds import GLOBAL_MIN_DISCOUNT_PCT as _MIN
+        if qualification.discount_pct < _MIN:
+            continue
+
         # Persist as a qualified_item so the homepage and analytics can see it.
         flight_id = candidate.get("id")
         if not flight_id:
@@ -1641,6 +1649,22 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
             if not combos:
                 continue
             combo = combos[0]
+
+            # Belt-and-braces 40% gate. The matcher already enforces this via
+            # SAVINGS_RATIO_FLOOR=0.40, but anchoring the same threshold here
+            # protects against future regressions in the matcher constants.
+            from app.thresholds import GLOBAL_MIN_DISCOUNT_PCT
+            combo_savings_pct = (
+                (combo.roundtrip_baseline - combo.total)
+                / combo.roundtrip_baseline
+                * 100.0
+            ) if combo.roundtrip_baseline > 0 else 0
+            if combo_savings_pct < GLOBAL_MIN_DISCOUNT_PCT:
+                logger.info(
+                    f"Split-ticket combo skipped (savings {combo_savings_pct:.1f}% "
+                    f"< {GLOBAL_MIN_DISCOUNT_PCT}%): {origin}-{dest}"
+                )
+                continue
 
             from app.notifications.dedup import compute_split_ticket_alert_key
 

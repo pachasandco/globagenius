@@ -9,9 +9,10 @@ from dataclasses import dataclass
 from datetime import datetime
 
 # Combo qualification thresholds — tuned to surface real wins without spam.
-# A 14% saving on an A/R route can be daily noise; 15% with a 100€ floor is
-# the threshold where Telegram alert volume stays sustainable.
-SAVINGS_RATIO_FLOOR = 0.15        # total must be <= baseline * (1 - 0.15)
+# Aligned with the global 40% discount floor that gates round-trip and
+# one-way alerts. Anything weaker is sub-product-promise — a free user
+# expecting "−40% minimum" reading 15% would feel mis-sold.
+SAVINGS_RATIO_FLOOR = 0.40        # total must be <= baseline * (1 - 0.40)
 SAVINGS_EUR_FLOOR = 100.0
 MIN_STAY_DAYS = 4
 MAX_STAY_DAYS = 30
