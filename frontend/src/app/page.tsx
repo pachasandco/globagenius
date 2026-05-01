@@ -12,10 +12,10 @@ export const metadata: Metadata = {
 
 const faqs = [
   { q: "Comment fonctionne Globe Genius ?", a: "On surveille en permanence les prix des vols au départ de 9 aéroports français. Dès qu’on détecte une baisse de prix significative, on vous envoie une alerte sur Telegram avec tous les détails pour réserver." },
-  { q: "Quelle est la différence entre Gratuit et Premium ?", a: "En Gratuit, vous recevez jusqu’à 3 alertes complètes par semaine sur les deals à -40% et plus. En Premium, vous accédez à tous les deals sans limite (jusqu’à -70%+), y compris les erreurs de prix des compagnies, avec prix et liens de réservation débloqués." },
+  { q: "Quelle est la différence entre Gratuit et Premium ?", a: "En Gratuit, vous recevez jusqu'à 3 alertes complètes par semaine sur les deals entre -40% et -50%. Les deals exceptionnels (-60% et plus, les vraies erreurs de prix) ne sont pas notifiés. En Premium, vous recevez tous les deals sans limite, y compris les aller simple et les combos malins (2 billets séparés moins chers qu'un A/R)." },
   { q: "Comment fonctionne la garantie 30 jours ?", a: "Si Premium ne vous convient pas, contactez-nous dans les 30 jours suivant votre achat et on vous rembourse intégralement, sans question." },
   { q: "Les prix incluent-ils les bagages ?", a: "Les prix affichés sont ceux des compagnies aériennes. Les bagages en soute sont parfois inclus selon la compagnie et le tarif. On le précise dans chaque alerte quand l’information est disponible." },
-  { q: "Combien de temps entre la publication du prix et votre alerte ?", a: "Les prix sont mis à jour toutes les 20 minutes sur les routes prioritaires au départ de Paris (CDG/ORY), et toutes les 2 heures sur les autres aéroports français. Dès qu’une anomalie est détectée, l’alerte Telegram part dans la foulée, généralement moins de 5 minutes après l’apparition du deal." },
+  { q: "Combien de temps entre la publication du prix et votre alerte ?", a: "Les prix sont mis à jour toutes les 20 minutes au départ de Paris (Beauvais, CDG et Orly), et toutes les 2 heures sur les autres aéroports français. Dès qu'une bonne affaire est repérée, l'alerte Telegram part dans la foulée, généralement moins de 5 minutes après l'apparition du deal." },
   { q: "Pourquoi certains deals disparaissent avant que j’aie pu réserver ?", a: "Les tarifs érronés (« erreurs de prix ») sont des oublis de configuration des compagnies. Dès qu’elles s’en rendent compte, elles corrigent le tarif — parfois en quelques heures. C’est pourquoi les alertes temps réel sont déterminantes : réserver dans l’heure qui suit l’alerte maximise vos chances d’obtenir le prix affiché. Passez commande rapidement et contactez la compagnie si le tarif change avant l’émission." },
 ];
 
@@ -72,16 +72,58 @@ export default function Landing() {
         {/* ── STATS BAR ── */}
         <section className="flex flex-wrap justify-center gap-8 sm:gap-12 py-6 px-6 bg-white border-t border-[var(--color-sand)]">
           {[
-            { value: "≥50%", label: "réduction minimum" },
-            { value: "-70%", label: "meilleur deal détecté" },
-            { value: "6×/jour", label: "scraping des prix" },
-            { value: "9", label: "aéroports de départ" },
+            { value: "-40%", label: "réduction minimum" },
+            { value: "-70%", label: "meilleur deal repéré" },
+            { value: "24h/24", label: "surveillance des prix" },
+            { value: "9", label: "aéroports français" },
           ].map((s) => (
             <div key={s.label} className="text-center">
               <div className="text-2xl font-extrabold text-[var(--color-ink)]">{s.value}</div>
               <div className="text-xs text-gray-400 mt-1">{s.label}</div>
             </div>
           ))}
+        </section>
+
+        {/* ── 3 TYPES DE DEALS ── */}
+        <section className="py-16 px-6 sm:px-12 bg-white border-t border-[var(--color-sand)]">
+          <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-[var(--color-ink)] text-center mb-2">
+            On cherche partout pour vous
+          </h2>
+          <p className="text-center text-gray-500 text-sm max-w-xl mx-auto mb-10">
+            La plupart des comparateurs ne regardent qu&apos;un seul type de billet&nbsp;: l&apos;aller-retour classique.
+            Nous, on en surveille trois — c&apos;est comme ça qu&apos;on attrape des deals que les autres laissent passer.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-sand)] rounded-2xl p-6">
+              <div className="text-2xl mb-3">✈️</div>
+              <h3 className="font-bold text-[var(--color-ink)] mb-2">Aller-retour classique</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                Le bon plan le plus courant&nbsp;: aller + retour, mêmes dates, prix total imbattable.
+                Surveillé en continu sur les <strong>9 aéroports français</strong>.
+              </p>
+            </div>
+            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-sand)] rounded-2xl p-6">
+              <div className="text-2xl mb-3">🎫</div>
+              <h3 className="font-bold text-[var(--color-ink)] mb-2">Aller simple</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                Tour du monde, expat, séjour long&nbsp;? On guette aussi les promos sur les sens uniques.
+                Personne d&apos;autre ne le fait.
+              </p>
+            </div>
+            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-sand)] rounded-2xl p-6">
+              <div className="text-2xl mb-3">💡</div>
+              <h3 className="font-bold text-[var(--color-ink)] mb-2">
+                Combo malin <span className="text-[var(--color-coral)]">— 2× aller simple</span>
+              </h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                Parfois, deux billets aller simple sur deux compagnies différentes coûtent <strong>moins cher</strong> qu&apos;un A/R.
+                On fait le calcul à votre place — économie typique <strong>-30%</strong>.
+              </p>
+            </div>
+          </div>
+          <p className="text-center text-xs text-gray-400 mt-6 max-w-xl mx-auto">
+            💬 L&apos;aller simple et le combo malin sont à activer dans votre profil.
+          </p>
         </section>
 
         {/* Deals passés, comment ça marche, FAQ */}
@@ -100,12 +142,12 @@ export default function Landing() {
               <div className="font-bold text-[var(--color-ink)] text-sm mb-1">Gratuit</div>
               <div className="text-3xl font-extrabold text-[var(--color-ink)] mb-5">0€</div>
               <div className="text-sm text-gray-500 leading-loose mb-6">
-                ✓ Deals à partir de -40%<br />
+                ✓ Deals entre -40% et -50%<br />
                 ✓ 3 alertes complètes / semaine<br />
                 ✓ 9 aéroports de départ<br />
-                <span className="text-gray-300">✗ Deals au-delà de -50% (masqués)</span><br />
+                <span className="text-gray-300">✗ Deals exceptionnels (-60% et plus)</span><br />
                 <span className="text-gray-300">✗ Alertes illimitées</span><br />
-                <span className="text-gray-300">✗ Erreurs de prix</span>
+                <span className="text-gray-300">✗ Aller simple &amp; combos malins</span>
               </div>
               <Link href="/signup" className="block text-center py-3 rounded-xl font-bold text-sm border-2 border-[var(--color-ink)] text-[var(--color-ink)] hover:bg-[var(--color-ink)] hover:text-white transition-colors">
                 S&apos;inscrire gratuitement
@@ -122,10 +164,10 @@ export default function Landing() {
                 <span className="text-gray-500 text-sm">/an</span>
               </div>
               <div className="text-sm text-gray-400 leading-loose mb-6">
-                ✓ <span className="text-white">Tous les deals, jusqu&apos;à -70%</span><br />
-                ✓ <span className="text-white">Erreurs de prix des compagnies</span><br />
+                ✓ <span className="text-white">Tous les deals, jusqu&apos;à -70%+</span><br />
+                ✓ <span className="text-white">Alertes illimitées</span><br />
+                ✓ <span className="text-white">Aller simple &amp; combos malins</span><br />
                 ✓ <span className="text-white">9 aéroports de départ</span><br />
-                ✓ <span className="text-white">Alertes Telegram prioritaires</span><br />
                 ✓ <span className="text-white">Garantie satisfait 30 jours</span><br />
                 <span className="text-[var(--color-forest)]">= 2,42€/mois</span>
               </div>
