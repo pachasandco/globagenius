@@ -895,3 +895,126 @@ def test_list_packages_premium_includes_30_percent_offer():
     assert response.status_code == 200
     # Premium plan gte(30)
     assert ("discount_pct", 30) in calls["gte"]
+
+
+# ---------- Phase D4 — Admin user deletion ----------
+
+def _admin_delete_setup(monkeypatch, target_email: str):
+    """Common setup for admin DELETE /api/admin/users/{id} tests."""
+    from unittest.mock import MagicMock
+    from app.api import routes
+    monkeypatch.setattr(routes.settings, "ADMIN_API_KEY", "secret-key")
+
+    user_select = MagicMock()
+    user_select.select.return_value.eq.return_value.execute.return_value = MagicMock(
+        data=[{"id": "u1", "email": target_email}] if target_email else []
+    )
+    user_select.delete.return_value.eq.return_value.execute.return_value = MagicMock(data=[{"id": "u1"}])
+
+    tg_subs = MagicMock()
+    tg_subs.update.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+
+    calls = {"deleted": False, "tg_nullified": False}
+    user_select.delete.return_value.eq.return_value.execute.side_effect = (
+        lambda: (calls.update(deleted=True), MagicMock(data=[{"id": "u1"}]))[1]
+    )
+    tg_subs.update.return_value.eq.return_value.execute.side_effect = (
+        lambda: (calls.update(tg_nullified=True), MagicMock(data=[]))[1]
+    )
+
+    db_mock = MagicMock()
+    def table_router(name):
+        if name == "users":
+            return user_select
+        if name == "telegram_subscribers":
+            return tg_subs
+        return MagicMock()
+    db_mock.table.side_effect = table_router
+    return db_mock, calls
+
+
+def test_admin_delete_user_requires_admin_key(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.api import routes
+    monkeypatch.setattr(routes.settings, "ADMIN_API_KEY", "secret-key")
+    client = TestClient(app)
+    r = client.request("DELETE", "/api/admin/users/u1", json={"confirm_email": "anything@example.com"})
+    assert r.status_code == 403
+
+
+def test_admin_delete_user_404_when_unknown(monkeypatch):
+    from unittest.mock import patch
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.api import routes
+    db_mock, _ = _admin_delete_setup(monkeypatch, target_email="")
+    with patch.object(routes, "db", db_mock):
+        client = TestClient(app)
+        r = client.request(
+            "DELETE",
+            "/api/admin/users/u1",
+            headers={"X-Admin-Key": "secret-key"},
+            json={"confirm_email": "ghost@example.com"},
+        )
+    assert r.status_code == 404
+
+
+def test_admin_delete_user_rejects_when_email_mismatch(monkeypatch):
+    from unittest.mock import patch
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.api import routes
+    db_mock, calls = _admin_delete_setup(monkeypatch, target_email="real@example.com")
+    with patch.object(routes, "db", db_mock):
+        client = TestClient(app)
+        r = client.request(
+            "DELETE",
+            "/api/admin/users/u1",
+            headers={"X-Admin-Key": "secret-key"},
+            json={"confirm_email": "wrong@example.com"},
+        )
+    assert r.status_code == 400
+    assert calls["deleted"] is False
+
+
+def test_admin_delete_user_succeeds_with_correct_confirm(monkeypatch):
+    from unittest.mock import patch
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.api import routes
+    db_mock, calls = _admin_delete_setup(monkeypatch, target_email="real@example.com")
+    with patch.object(routes, "db", db_mock):
+        client = TestClient(app)
+        r = client.request(
+            "DELETE",
+            "/api/admin/users/u1",
+            headers={"X-Admin-Key": "secret-key"},
+            json={"confirm_email": "real@example.com"},
+        )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["deleted_email"] == "real@example.com"
+    assert calls["deleted"] is True
+    assert calls["tg_nullified"] is True
+
+
+def test_admin_delete_user_email_match_is_case_insensitive(monkeypatch):
+    """The user's stored email is lowercase; confirm should match if user
+    types it with different casing."""
+    from unittest.mock import patch
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.api import routes
+    db_mock, calls = _admin_delete_setup(monkeypatch, target_email="real@example.com")
+    with patch.object(routes, "db", db_mock):
+        client = TestClient(app)
+        r = client.request(
+            "DELETE",
+            "/api/admin/users/u1",
+            headers={"X-Admin-Key": "secret-key"},
+            json={"confirm_email": "  REAL@Example.COM  "},
+        )
+    assert r.status_code == 200
+    assert calls["deleted"] is True

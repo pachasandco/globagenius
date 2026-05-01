@@ -7,6 +7,7 @@ import {
   revokePremium,
   updateMinDiscount,
   resetPrefs,
+  deleteUser,
   hasAdminKey,
   setAdminKey,
   type AdminUser,
@@ -22,6 +23,10 @@ export default function AdminUsersPage() {
   const [selected, setSelected] = useState<AdminUser | null>(null);
   const [grantExpiresAt, setGrantExpiresAt] = useState("");
   const [grantReason, setGrantReason] = useState("");
+  const [deletingUser, setDeletingUser] = useState<AdminUser | null>(null);
+  const [deleteConfirmEmail, setDeleteConfirmEmail] = useState("");
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (hasAdminKey()) {
@@ -103,6 +108,34 @@ export default function AdminUsersPage() {
       await reload();
     } catch (e) {
       alert(`Failed: ${e instanceof Error ? e.message : "error"}`);
+    }
+  }
+
+  function openDelete(user: AdminUser) {
+    setDeletingUser(user);
+    setDeleteConfirmEmail("");
+    setDeleteError(null);
+  }
+
+  function closeDelete() {
+    setDeletingUser(null);
+    setDeleteConfirmEmail("");
+    setDeleteError(null);
+    setDeleteSubmitting(false);
+  }
+
+  async function handleDelete() {
+    if (!deletingUser) return;
+    setDeleteSubmitting(true);
+    setDeleteError(null);
+    try {
+      await deleteUser(deletingUser.id, deleteConfirmEmail.trim());
+      closeDelete();
+      await reload();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setDeleteSubmitting(false);
     }
   }
 
@@ -261,6 +294,14 @@ export default function AdminUsersPage() {
                     >
                       Reset
                     </button>
+                    <button
+                      onClick={() => openDelete(u)}
+                      disabled={u.is_admin}
+                      title={u.is_admin ? "Cannot delete an admin account" : "Delete user permanently"}
+                      className="text-xs bg-red-50 hover:bg-red-100 text-red-700 px-2 py-1 rounded disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -309,6 +350,61 @@ export default function AdminUsersPage() {
                     setGrantExpiresAt("");
                     setGrantReason("");
                   }}
+                  className="flex-1 border border-gray-200 text-gray-700 py-2 rounded-lg"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {deletingUser && (
+          <div
+            className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50"
+            onClick={closeDelete}
+          >
+            <div
+              className="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="text-lg font-semibold text-red-700 mb-2">
+                Delete account
+              </h2>
+              <p className="text-sm text-gray-600 mb-3">
+                This permanently deletes <strong>{deletingUser.email}</strong> and
+                all related data (preferences, grants, sent alerts, password
+                reset tokens). Telegram subscriber history is kept but unlinked.
+                Stripe customer is not touched.
+              </p>
+              <p className="text-sm text-gray-600 mb-2">
+                Type the email <strong>exactly</strong> to confirm:
+              </p>
+              <input
+                type="text"
+                value={deleteConfirmEmail}
+                onChange={(e) => setDeleteConfirmEmail(e.target.value)}
+                placeholder={deletingUser.email}
+                autoFocus
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 mb-3 mt-1 font-mono text-sm"
+              />
+              {deleteError && (
+                <p className="text-xs text-red-600 mb-3">{deleteError}</p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleDelete}
+                  disabled={
+                    deleteSubmitting ||
+                    deleteConfirmEmail.trim().toLowerCase() !==
+                      deletingUser.email.toLowerCase()
+                  }
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {deleteSubmitting ? "Deleting…" : "Delete permanently"}
+                </button>
+                <button
+                  onClick={closeDelete}
                   className="flex-1 border border-gray-200 text-gray-700 py-2 rounded-lg"
                 >
                   Cancel

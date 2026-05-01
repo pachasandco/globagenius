@@ -1542,6 +1542,45 @@ def admin_reset_prefs(user_id: str, request: Request):
     return {"ok": True, "reset": bool(resp.data)}
 
 
+class AdminDeleteUserRequest(BaseModel):
+    confirm_email: str  # client must retype the user's email exactly
+
+
+@router.delete("/api/admin/users/{user_id}")
+def admin_delete_user(user_id: str, req: AdminDeleteUserRequest, request: Request):
+    """Hard-delete a user. Most child tables CASCADE on users(id), but
+    telegram_subscribers.user_id has no ON DELETE — we null it out so the
+    Telegram bot subscriber row stays intact (chat/username history preserved)
+    but is no longer linked to the deleted account.
+
+    Stripe customer rows are NOT touched here — they live in Stripe and
+    can be archived from the Stripe dashboard if desired.
+
+    Body must include confirm_email matching the user's actual email,
+    to prevent fat-finger deletes from the admin UI.
+    """
+    _require_admin(request)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    user_resp = db.table("users").select("id,email").eq("id", user_id).execute()
+    if not user_resp.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    user = user_resp.data[0]
+
+    if (req.confirm_email or "").strip().lower() != user["email"].lower():
+        raise HTTPException(
+            status_code=400,
+            detail="confirm_email does not match the user's actual email",
+        )
+
+    db.table("telegram_subscribers").update({"user_id": None}).eq("user_id", user_id).execute()
+    db.table("users").delete().eq("id", user_id).execute()
+
+    logger.info(f"[admin] Deleted user {user_id} ({user['email']})")
+    return {"ok": True, "deleted_id": user_id, "deleted_email": user["email"]}
+
+
 @router.post("/api/admin/users/{user_id}/telegram/generate-link")
 def admin_generate_telegram_link(user_id: str, request: Request):
     """Generate a Telegram connection link on behalf of a user.
