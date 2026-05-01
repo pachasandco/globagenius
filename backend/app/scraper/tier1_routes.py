@@ -1,91 +1,78 @@
-"""Tier 1 route definitions — hot routes polled every 15-30 min via direct LCC endpoints.
+"""Tier 1 route definitions — hot routes polled every 20 min via direct
+LCC endpoints.
 
 Criteria for Tier 1:
-- High search volume from CDG/ORY
-- Served by Ryanair, Transavia, or Vueling (direct endpoint available)
-- Historical mistake fare activity (CDG→NYC, CDG→BKK excluded: not LCC)
+- High search volume from BVA / CDG / ORY
+- Served by Ryanair (BVA hub) or Vueling (CDG/ORY)
+- Mistake fares historically appear here, and the 2h Travelpayouts
+  cycle is too slow to catch them
 
 Tier 1 uses direct airline endpoints for near-real-time prices.
-Tier 2 (all other routes) uses Travelpayouts cache.
+Tier 2 (all other routes) uses Travelpayouts every 2h.
 
 Each entry: (origin, destination, airlines)
-  airlines: list of scrapers to use — "ryanair", "transavia", "vueling"
+  airlines: list of scrapers to use, in priority order.
+  Currently active scrapers: "ryanair", "vueling".
+  "transavia" is globally disabled (API v1 dead) and excluded here.
+
+Audit 2026-05-01:
+- Ryanair scraper expects an airport that Ryanair actually serves.
+  Their main French hub is BVA (Beauvais). Most CDG/ORY entries
+  previously listed here returned HTTP 400 because Ryanair does not
+  fly the route from CDG/ORY. Routes are now keyed to the airport
+  that actually has Ryanair service.
+- Vueling now reaches apiwww.vueling.com (the old booking.vueling.com
+  domain went dead). It serves a wide network from CDG/ORY/BCN.
 """
 
 TIER1_ROUTES: list[tuple[str, str, list[str]]] = [
-    # Maroc
-    ("CDG", "RAK", ["ryanair", "transavia"]),  # Marrakech
-    ("CDG", "CMN", ["ryanair", "transavia"]),  # Casablanca
-    ("CDG", "AGA", ["ryanair", "transavia"]),  # Agadir
-    ("CDG", "FEZ", ["ryanair"]),               # Fès
-    ("CDG", "TNG", ["ryanair"]),               # Tanger
-    ("ORY", "RAK", ["transavia"]),
-    ("ORY", "CMN", ["transavia"]),
-    ("ORY", "AGA", ["transavia"]),
+    # ── Ryanair from BVA (Paris-Beauvais — Ryanair's Paris hub) ──
+    ("BVA", "BCN", ["ryanair"]),  # Barcelone
+    ("BVA", "MAD", ["ryanair"]),  # Madrid
+    ("BVA", "AGP", ["ryanair"]),  # Malaga
+    ("BVA", "VLC", ["ryanair"]),  # Valence
+    ("BVA", "SVQ", ["ryanair"]),  # Séville
+    ("BVA", "ALC", ["ryanair"]),  # Alicante
+    ("BVA", "OPO", ["ryanair"]),  # Porto
+    ("BVA", "LIS", ["ryanair"]),  # Lisbonne
+    ("BVA", "FAO", ["ryanair"]),  # Faro
+    ("BVA", "RAK", ["ryanair"]),  # Marrakech
+    ("BVA", "FEZ", ["ryanair"]),  # Fès
+    ("BVA", "TNG", ["ryanair"]),  # Tanger
+    ("BVA", "DUB", ["ryanair"]),  # Dublin
+    ("BVA", "STN", ["ryanair"]),  # Londres Stansted
+    ("BVA", "KRK", ["ryanair"]),  # Cracovie
+    ("BVA", "BUD", ["ryanair"]),  # Budapest
+    ("BVA", "WAW", ["ryanair"]),  # Varsovie
+    ("BVA", "FCO", ["ryanair"]),  # Rome
+    ("BVA", "BGY", ["ryanair"]),  # Milan Bergame
+    ("BVA", "NAP", ["ryanair"]),  # Naples
+    ("BVA", "ATH", ["ryanair"]),  # Athènes
+    ("BVA", "TFS", ["ryanair"]),  # Ténérife
+    ("BVA", "LPA", ["ryanair"]),  # Gran Canaria
+    ("BVA", "ACE", ["ryanair"]),  # Lanzarote
+    ("BVA", "FUE", ["ryanair"]),  # Fuerteventura
 
-    # Portugal
-    ("CDG", "LIS", ["ryanair", "transavia"]),  # Lisbonne
-    ("CDG", "OPO", ["ryanair"]),               # Porto
-    ("CDG", "FAO", ["ryanair"]),               # Faro
-    ("ORY", "LIS", ["transavia"]),
-    ("ORY", "OPO", ["transavia"]),
+    # ── Vueling from CDG ──
+    ("CDG", "BCN", ["vueling"]),
+    ("CDG", "MAD", ["vueling"]),
+    ("CDG", "SVQ", ["vueling"]),
+    ("CDG", "VLC", ["vueling"]),
+    ("CDG", "AGP", ["vueling"]),
+    ("CDG", "IBZ", ["vueling"]),
+    ("CDG", "PMI", ["vueling"]),
+    ("CDG", "ALC", ["vueling"]),
+    ("CDG", "BIO", ["vueling"]),  # Bilbao
 
-    # Espagne (Ryanair + Transavia + Vueling)
-    ("CDG", "BCN", ["ryanair", "transavia", "vueling"]),  # Barcelone
-    ("CDG", "MAD", ["ryanair", "vueling"]),               # Madrid
-    ("CDG", "SVQ", ["ryanair", "vueling"]),               # Séville
-    ("CDG", "VLC", ["ryanair", "vueling"]),               # Valence
-    ("CDG", "AGP", ["ryanair", "vueling"]),               # Malaga
-    ("CDG", "IBZ", ["vueling"]),                          # Ibiza
-    ("CDG", "PMI", ["vueling"]),                          # Palma de Majorque
-    ("CDG", "ALC", ["vueling"]),                          # Alicante
-    ("ORY", "BCN", ["transavia", "vueling"]),             # Barcelone
-    ("ORY", "MAD", ["vueling"]),                          # Madrid
-    ("ORY", "AGP", ["transavia", "vueling"]),             # Malaga
-    ("ORY", "PMI", ["vueling"]),                          # Palma de Majorque
-    ("ORY", "IBZ", ["vueling"]),                          # Ibiza
-    ("ORY", "ALC", ["vueling"]),                          # Alicante
-
-    # Italie
-    ("CDG", "FCO", ["ryanair"]),               # Rome
-    ("CDG", "CIA", ["ryanair"]),               # Rome Ciampino
-    ("CDG", "BGY", ["ryanair"]),               # Milan Bergame
-    ("CDG", "NAP", ["ryanair"]),               # Naples
-    ("CDG", "BRI", ["ryanair"]),               # Bari
-    ("CDG", "PMO", ["ryanair"]),               # Palerme
-    ("ORY", "FCO", ["transavia"]),
-    ("ORY", "NAP", ["transavia"]),
-
-    # Grèce
-    ("CDG", "ATH", ["ryanair", "transavia"]),  # Athènes
-    ("CDG", "HER", ["ryanair", "transavia"]),  # Héraklion (Crète)
-    ("CDG", "RHO", ["ryanair"]),               # Rhodes
-    ("CDG", "SKG", ["ryanair"]),               # Thessalonique
-    ("ORY", "ATH", ["transavia"]),
-    ("ORY", "HER", ["transavia"]),
-
-    # Canaries
-    ("CDG", "TFS", ["ryanair", "transavia"]),  # Ténérife Sud
-    ("CDG", "LPA", ["ryanair", "transavia"]),  # Gran Canaria
-    ("CDG", "ACE", ["ryanair"]),               # Lanzarote
-    ("CDG", "FUE", ["ryanair"]),               # Fuerteventura
-    ("ORY", "TFS", ["transavia"]),
-    ("ORY", "LPA", ["transavia"]),
-
-    # Tunisie / Algérie
-    ("CDG", "TUN", ["transavia"]),             # Tunis
-    ("CDG", "MIR", ["transavia"]),             # Monastir
-    ("ORY", "TUN", ["transavia"]),
-    ("ORY", "ALG", ["transavia"]),             # Alger
-
-    # Irlande / UK
-    ("CDG", "DUB", ["ryanair"]),               # Dublin
-    ("CDG", "STN", ["ryanair"]),               # Londres Stansted
-
-    # Europe centrale / Balkans
-    ("CDG", "KRK", ["ryanair"]),               # Cracovie
-    ("CDG", "WRO", ["ryanair"]),               # Wrocław
-    ("CDG", "BUD", ["ryanair"]),               # Budapest
+    # ── Vueling from ORY ──
+    ("ORY", "BCN", ["vueling"]),
+    ("ORY", "MAD", ["vueling"]),
+    ("ORY", "AGP", ["vueling"]),
+    ("ORY", "PMI", ["vueling"]),
+    ("ORY", "IBZ", ["vueling"]),
+    ("ORY", "ALC", ["vueling"]),
+    ("ORY", "VLC", ["vueling"]),
+    ("ORY", "SVQ", ["vueling"]),
 ]
 
 

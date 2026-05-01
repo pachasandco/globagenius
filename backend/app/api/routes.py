@@ -1350,6 +1350,122 @@ async def admin_test_welcome_email(req: AdminTestWelcomeEmailRequest, request: R
     }
 
 
+@router.get("/api/admin/scrapers/health")
+def admin_scrapers_health(request: Request):
+    """Per-scraper health snapshot for the last 24h and 7d.
+
+    Reads from scrape_logs (last run, success/fail count) and from
+    raw_flights (actual rows landed per source). Useful to spot dead
+    scrapers — a scraper can log success while persisting zero rows."""
+    _require_admin(request)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    since_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    since_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+
+    actors: dict[str, dict] = {}
+
+    # scrape_logs aggregation
+    try:
+        logs = (
+            db.table("scrape_logs")
+            .select("actor_id,status,items_count,errors_count,started_at")
+            .gte("started_at", since_7d)
+            .order("started_at", desc=True)
+            .range(0, 9999)
+            .execute()
+            .data
+            or []
+        )
+    except Exception as e:
+        logs = []
+        logger.warning(f"scrape_logs read failed: {e}")
+
+    for row in logs:
+        actor = row.get("actor_id") or "?"
+        a = actors.setdefault(actor, {
+            "actor_id": actor,
+            "runs_7d": 0, "runs_24h": 0,
+            "successes_7d": 0, "failures_7d": 0, "partial_7d": 0,
+            "items_logged_7d": 0, "errors_7d": 0,
+            "last_run_at": None,
+        })
+        a["runs_7d"] += 1
+        if (row.get("started_at") or "") >= since_24h:
+            a["runs_24h"] += 1
+        s = row.get("status")
+        if s == "success":
+            a["successes_7d"] += 1
+        elif s == "failed":
+            a["failures_7d"] += 1
+        elif s == "partial":
+            a["partial_7d"] += 1
+        a["items_logged_7d"] += (row.get("items_count") or 0)
+        a["errors_7d"] += (row.get("errors_count") or 0)
+        if not a["last_run_at"] or (row.get("started_at") or "") > a["last_run_at"]:
+            a["last_run_at"] = row.get("started_at")
+
+    # Cross-check against raw_flights for the actual rows landed by source
+    sources_to_check = ["ryanair_direct", "vueling_direct", "travelpayouts"]
+    raw_24h: dict[str, int] = {}
+    raw_7d: dict[str, int] = {}
+    for src in sources_to_check:
+        try:
+            r24 = db.table("raw_flights").select("id", count="exact", head=True).eq("source", src).gte("scraped_at", since_24h).execute()
+            r7 = db.table("raw_flights").select("id", count="exact", head=True).eq("source", src).gte("scraped_at", since_7d).execute()
+            raw_24h[src] = r24.count or 0
+            raw_7d[src] = r7.count or 0
+        except Exception:
+            raw_24h[src] = -1
+            raw_7d[src] = -1
+
+    # Build a clean per-scraper view that combines both signals
+    health = []
+    for src in sources_to_check:
+        # Match scrape_logs actor_id to source. tier1 actor_id covers
+        # ryanair+vueling combined; we still expose raw counts per source.
+        log_actor = "tier1" if src in ("ryanair_direct", "vueling_direct") else "flights"
+        log_data = actors.get(log_actor, {})
+        health.append({
+            "source": src,
+            "log_actor": log_actor,
+            "rows_in_db_24h": raw_24h.get(src, 0),
+            "rows_in_db_7d": raw_7d.get(src, 0),
+            "log_runs_24h": log_data.get("runs_24h", 0),
+            "log_runs_7d": log_data.get("runs_7d", 0),
+            "log_successes_7d": log_data.get("successes_7d", 0),
+            "log_failures_7d": log_data.get("failures_7d", 0),
+            "last_run_at": log_data.get("last_run_at"),
+            # Red flag if a scraper is "running" but landing nothing.
+            "alert": (raw_24h.get(src, 0) == 0 and log_data.get("runs_24h", 0) > 2),
+        })
+
+    # One-way check (separate actor)
+    oneway_log = actors.get("flights_oneway", {})
+    try:
+        ow_24 = db.table("raw_flights").select("id", count="exact", head=True).eq("trip_type", "one_way").gte("scraped_at", since_24h).execute().count or 0
+        ow_7 = db.table("raw_flights").select("id", count="exact", head=True).eq("trip_type", "one_way").gte("scraped_at", since_7d).execute().count or 0
+    except Exception:
+        ow_24 = ow_7 = -1
+    oneway = {
+        "trip_type": "one_way",
+        "rows_in_db_24h": ow_24,
+        "rows_in_db_7d": ow_7,
+        "log_runs_24h": oneway_log.get("runs_24h", 0),
+        "log_runs_7d": oneway_log.get("runs_7d", 0),
+        "last_run_at": oneway_log.get("last_run_at"),
+        "alert": (ow_24 == 0 and oneway_log.get("runs_24h", 0) > 0),
+    }
+
+    return {
+        "snapshot_at": datetime.now(timezone.utc).isoformat(),
+        "scrapers": health,
+        "oneway": oneway,
+        "actors_raw": list(actors.values()),
+    }
+
+
 @router.get("/api/admin/email/diagnose")
 async def admin_email_diagnose(request: Request):
     """Diagnose why Brevo sends fail in prod. Returns:

@@ -191,41 +191,53 @@ def get_prices_for_dates(
     return result
 
 
-def get_oneway_calendar(origin: str, destination: str, depart_month: str = "") -> list[dict]:
-    """Cheapest one-way prices for a route via /v1/prices/cheap.
+def get_oneway_calendar(
+    origin: str,
+    destination: str,
+    depart_month: str = "",
+    limit: int = 100,
+) -> list[dict]:
+    """Cheapest one-way prices for a route via /v2/prices/latest.
 
-    The endpoint may return both one-way and round-trip rows (return_at present).
-    We keep only entries where return_at is empty (true one-way).
-    `depart_month` format: YYYY-MM (optional)."""
+    Why /v2/prices/latest and not /v1/prices/cheap:
+    /v1/prices/cheap returns the cheapest *round-trip* on a route even
+    when called without `return_at`, so 100% of its rows have return_at
+    set and would be filtered out. /v2/prices/latest with one_way=true
+    returns true one-way fares (return_date is null in the response).
+
+    `depart_month` is ignored for this endpoint (kept for back-compat).
+    `limit` caps the number of fares returned (Travelpayouts max ~1000)."""
     params = {
         "origin": origin,
         "destination": destination,
         "currency": "eur",
+        "one_way": "true",
+        "limit": str(limit),
     }
-    if depart_month:
-        params["depart_date"] = depart_month
-    data = _get(f"{REST_URL}/v1/prices/cheap", params)
+    data = _get(f"{REST_URL}/v2/prices/latest", params)
     if not data or not data.get("success"):
         return []
 
+    items = data.get("data") or []
+    if not isinstance(items, list):
+        return []
+
     result = []
-    for _dest_code, flights in (data.get("data") or {}).items():
-        if not isinstance(flights, dict):
+    for item in items:
+        if not isinstance(item, dict):
             continue
-        for _key, flight in flights.items():
-            if not isinstance(flight, dict):
-                continue
-            if flight.get("return_at"):
-                # Skip round-trip rows; we only want one-way here.
-                continue
-            result.append({
-                "departure_at": flight.get("departure_at", ""),
-                "expires_at": flight.get("expires_at", ""),
-                "price": flight.get("price", 0),
-                "airline": flight.get("airline", ""),
-                "flight_number": flight.get("flight_number", 0),
-                "transfers": flight.get("transfers", 0),
-            })
+        # Defensive: drop anything that has a return_date set (shouldn't
+        # happen with one_way=true but guard anyway).
+        if item.get("return_date"):
+            continue
+        result.append({
+            "departure_at": item.get("depart_date", ""),
+            "expires_at": item.get("found_at", ""),
+            "price": item.get("value", 0),
+            "airline": item.get("gate", ""),
+            "flight_number": item.get("flight_number", 0),
+            "transfers": item.get("number_of_changes", 0),
+        })
     return result
 
 
