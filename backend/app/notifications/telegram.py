@@ -182,6 +182,24 @@ def _fmt_date_fr(date_str: str) -> str:
         return date_str
 
 
+def _city_for_iata(iata: str) -> str:
+    """City-only label, no airport-specifier and no IATA code.
+
+    Used by V8.2 multi-origin alerts where we want a single 'Paris' header
+    even when the underlying offers come from CDG / ORY / BVA. Strips the
+    second word from IATA_TO_CITY entries like 'Paris CDG' / 'Paris Orly'.
+    Fallbacks: if the IATA isn't known, returns the code unchanged.
+    """
+    from app.config import IATA_TO_CITY
+    label = IATA_TO_CITY.get(iata)
+    if not label:
+        return iata
+    # 'Paris CDG' → 'Paris'; 'Bordeaux' → 'Bordeaux'; 'Bâle-Mulhouse' → 'Bâle-Mulhouse'.
+    # We split on space only, so multi-word city names with hyphens stay intact.
+    head = label.split(" ")[0]
+    return head
+
+
 def format_flight_deal_alert(flight: dict, discount_pct: float, baseline_price: float) -> str:
     """Format an alert message for a flight-only deal (no hotel package)."""
     origin = flight["origin"]
@@ -481,8 +499,17 @@ def format_grouped_flight_alerts(
     badge = _deal_badge(max_discount)
 
     from app.config import iata_label
+
+    # V8.2: detect multi-origin alerts (e.g. user tracks CDG + ORY + BVA
+    # and the same destination has deals from several Paris airports).
+    # When that happens, the header drops the IATA-specific label and
+    # uses a city-level one ("Paris" instead of "Paris CDG"), and each
+    # offer line gets its own origin-IATA tag.
+    origin_iatas_in_offers = {o.get("origin") for o in offers if o.get("origin")}
+    multi_origin = len(origin_iatas_in_offers) > 1
+
     origin_display = origin_iata or (offers[0].get("origin") if offers else "")
-    origin_label = iata_label(origin_display)
+    origin_label = iata_label(origin_display) if not multi_origin else _city_for_iata(origin_display)
     dest_label = iata_label(destination_iata)
     noun = "offre disponible" if total == 1 else "offres disponibles"
 
@@ -494,6 +521,8 @@ def format_grouped_flight_alerts(
         f"\n"
         f"🗓 {total} {noun}"
     )
+    if multi_origin:
+        header += f"  · *{len(origin_iatas_in_offers)} aéroports*"
 
     # Group by (year, month) chronologically
     by_month: dict[tuple[int, int], list[dict]] = {}
@@ -521,8 +550,15 @@ def format_grouped_flight_alerts(
             baseline = o.get("baseline_price")
             baseline_str = f"\n   Prix habituel : ~{int(round(baseline))} €~" if baseline and baseline > price else ""
 
+            # V8.2: when the alert mixes several origin airports, tag the
+            # specific origin on each offer line so the user knows which
+            # airport this particular fare flies from.
+            origin_tag = ""
+            if multi_origin and o.get("origin"):
+                origin_tag = f"  ·  via {o['origin']}"
+
             lines.append(
-                f"\n💰 *{price} € A/R · -{disc} %*\n"
+                f"\n💰 *{price} € A/R · -{disc} %*{origin_tag}\n"
                 f"   {dep_str} – {ret_str} · {duration} jours"
                 f"{baseline_str}\n"
                 f"   ✅ Vol vérifié"

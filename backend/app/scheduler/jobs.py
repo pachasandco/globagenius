@@ -576,6 +576,19 @@ async def _dispatch_grouped_flight_alerts(
     # Key: (user_id, dest, dep_date, ret_date) → best price sent
     dispatched_this_run: dict[tuple, float] = {}
 
+    # V8.2: accumulate offers per (user, destination) BEFORE sending so a
+    # user who tracks several origins (CDG + ORY + BVA) gets ONE Telegram
+    # message with all matching dates from all of their airports, instead
+    # of one message per origin. The send happens after the subs loop.
+    # Schema:
+    #   pending[(user_id, destination)] = {
+    #     "chat_id": str, "tier": str, "user_id": str,
+    #     "offers": [offer dicts ...],
+    #     "keys_to_store": [alert_keys ...],
+    #     "best_origin": str,  # the origin of the cheapest offer (header reference)
+    #   }
+    pending_by_user_dest: dict[tuple[str, str], dict] = {}
+
     for sub in subs:
         if not isinstance(sub, dict):
             continue
@@ -869,55 +882,103 @@ async def _dispatch_grouped_flight_alerts(
                 if not offers:
                     continue
 
-                # Within a single run, if we already dispatched this destination
-                # at the same or cheaper price (from another origin), skip.
-                best_offer_price = min((o["price"] for o in offers), default=0)
-                run_key = (user_id or "", grp_dest)
-                prev_best = dispatched_this_run.get(run_key)
-                if prev_best is not None and best_offer_price >= prev_best:
-                    continue
-
-                origin_city = iata_label(grp_origin)
-                dest_city = iata_label(grp_dest)
-                try:
-                    success = await send_grouped_flight_alerts(
-                        chat_id=chat_id,
-                        origin_city=origin_city,
-                        dest_city=dest_city,
-                        destination_iata=grp_dest,
-                        offers=offers,
-                        tier=sub_tier,
-                        user_id=user_id,
-                        alert_key=keys_to_store[0] if keys_to_store else None,
-                        origin_iata=grp_origin,
-                    )
-                    if success:
-                        logger.info(f"✅ Sent {len(offers)} flight alerts to {origin_city}→{dest_city} for user {user_id}")
-                        dispatched_this_run[(user_id or "", grp_dest)] = best_offer_price
-                        if sub_tier == "free":
-                            weekly_sent_count += 1
-                except Exception as e:
-                    logger.warning(f"Failed to send grouped flight alert: {e}")
-                    success = False
-
-                if success and user_id and keys_to_store:
-                    rows = [{
-                        "user_id": user_id,
+                # V8.2: accumulate this (user, dest) bucket. We send AFTER
+                # the subs loop so a user with multiple origins gets one
+                # merged Telegram alert covering all their airports.
+                bucket_key = (user_id or "", grp_dest)
+                bucket = pending_by_user_dest.get(bucket_key)
+                if bucket is None:
+                    bucket = pending_by_user_dest[bucket_key] = {
                         "chat_id": chat_id,
-                        "alert_key": k,
-                        "destination": grp_dest,
-                        "alert_type": "flight",
-                    } for k in keys_to_store]
-                    try:
-                        db.table("sent_alerts").upsert(
-                            rows, on_conflict="user_id,alert_key"
-                        ).execute()
-                    except Exception as e:
-                        logger.warning(f"Failed to upsert sent_alerts: {e}")
+                        "tier": sub_tier,
+                        "user_id": user_id,
+                        "offers": [],
+                        "keys_to_store": [],
+                        "best_origin": grp_origin,
+                        "best_price": float("inf"),
+                    }
+                bucket["offers"].extend(offers)
+                bucket["keys_to_store"].extend(keys_to_store)
+                cheapest = min(o["price"] for o in offers)
+                if cheapest < bucket["best_price"]:
+                    bucket["best_price"] = cheapest
+                    bucket["best_origin"] = grp_origin
+                # Always upgrade tier to premium if any sub for this user
+                # is premium (rare but possible mid-tier transition).
+                if sub_tier == "premium":
+                    bucket["tier"] = "premium"
         except Exception as e:
             logger.warning(f"Grouped dispatch error for subscriber: {e}")
 
         await asyncio.sleep(0)
+
+    # V8.2: flush accumulated alerts. ONE message per (user, destination).
+    for (uid, grp_dest), bucket in pending_by_user_dest.items():
+        offers = bucket["offers"]
+        if not offers:
+            continue
+        # Dedup offers by (origin, departure_date, return_date, price_bucket)
+        # — when overlapping subs produced the same flight twice.
+        seen_offer_keys: set[tuple] = set()
+        unique_offers: list[dict] = []
+        for o in offers:
+            k = (o.get("origin"), o.get("departure_date"), o.get("return_date"), int(o.get("price", 0)) // 50)
+            if k in seen_offer_keys:
+                continue
+            seen_offer_keys.add(k)
+            unique_offers.append(o)
+        offers = unique_offers
+        if not offers:
+            continue
+
+        # Sort by discount descending so the most attractive deal lands first.
+        offers.sort(key=lambda o: -(o.get("discount_pct") or 0))
+
+        chat_id = bucket["chat_id"]
+        sub_tier = bucket["tier"]
+        keys_to_store = list(set(bucket["keys_to_store"]))
+        best_origin = bucket["best_origin"]
+        origin_city = iata_label(best_origin)
+        dest_city = iata_label(grp_dest)
+
+        success = False
+        try:
+            success = await send_grouped_flight_alerts(
+                chat_id=chat_id,
+                origin_city=origin_city,
+                dest_city=dest_city,
+                destination_iata=grp_dest,
+                offers=offers,
+                tier=sub_tier,
+                user_id=uid or None,
+                alert_key=keys_to_store[0] if keys_to_store else None,
+                origin_iata=best_origin,
+            )
+            if success:
+                logger.info(
+                    f"✅ V8.2 sent merged alert: {len(offers)} offers, "
+                    f"{len({o.get('origin') for o in offers})} origins → {grp_dest} "
+                    f"for user {uid}"
+                )
+                dispatched_this_run[(uid or "", grp_dest)] = bucket["best_price"]
+        except Exception as e:
+            logger.warning(f"V8.2 merged dispatch failed for {uid}/{grp_dest}: {e}")
+            success = False
+
+        if success and uid and keys_to_store:
+            rows = [{
+                "user_id": uid,
+                "chat_id": chat_id,
+                "alert_key": k,
+                "destination": grp_dest,
+                "alert_type": "flight",
+            } for k in keys_to_store]
+            try:
+                db.table("sent_alerts").upsert(
+                    rows, on_conflict="user_id,alert_key"
+                ).execute()
+            except Exception as e:
+                logger.warning(f"Failed to upsert sent_alerts: {e}")
 
 
 async def job_recalculate_baselines():
