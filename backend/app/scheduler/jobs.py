@@ -133,6 +133,16 @@ def get_scheduler_jobs() -> list[dict]:
             "trigger": "cron",
             "hour": 7,
         },
+        # ── SCRAPER WATCHDOG : toutes les 2h, alerte admin Telegram ──
+        # V8.3 : si un scraper tourne mais ne persiste aucune ligne sur 24h,
+        # envoie une alerte au TELEGRAM_ADMIN_CHAT_ID. Cooldown 6h/source.
+        *[{
+            "id": f"scraper_watchdog_{h:02d}",
+            "func": job_scraper_watchdog,
+            "trigger": "cron",
+            "hour": h,
+            "minute": 15,  # offset des autres jobs
+        } for h in [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23]],
     ]
 
 
@@ -1851,6 +1861,121 @@ async def job_check_scraper_health():
         await run_scraper_health_check()
     except Exception as e:
         logger.error(f"Scraper health check failed: {e}")
+
+
+# ─── V8.3 — scraper watchdog ────────────────────────────────────────────
+# Anti-spam state: last admin-alert timestamp per scraper source. We keep
+# this in-process — the watchdog runs from a single APScheduler so we
+# don't need cross-process coordination.
+_watchdog_last_alert: dict[str, datetime] = {}
+_WATCHDOG_COOLDOWN_HOURS = 6
+
+
+async def job_scraper_watchdog():
+    """V8.3: ping the admin Telegram chat when a scraper logs runs but
+    persists zero rows for 24h — a clear sign that the scraper is broken
+    silently. Cooldown of 6h per source so we don't flood the admin
+    channel during a long outage.
+    """
+    if not db:
+        return
+    if not settings.TELEGRAM_ADMIN_CHAT_ID:
+        # No admin chat configured — nothing to do.
+        return
+
+    from app.notifications.telegram import send_admin_alert
+
+    since_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+
+    # Per-source check: rows in DB vs runs logged.
+    sources = {
+        "ryanair_direct": "tier1",
+        "vueling_direct": "tier1",
+        "travelpayouts": "flights",
+    }
+    issues: list[str] = []
+    for source, log_actor in sources.items():
+        try:
+            rows = (
+                db.table("raw_flights")
+                .select("id", count="exact", head=True)
+                .eq("source", source)
+                .gte("scraped_at", since_24h)
+                .execute()
+                .count
+                or 0
+            )
+            runs = (
+                db.table("scrape_logs")
+                .select("id", count="exact", head=True)
+                .eq("actor_id", log_actor)
+                .gte("started_at", since_24h)
+                .execute()
+                .count
+                or 0
+            )
+        except Exception as e:
+            logger.warning(f"watchdog: query failed for {source}: {e}")
+            continue
+
+        # Flag the scraper if it ran more than twice in the last 24h but
+        # hasn't landed a single row. Travelpayouts only runs ~12x/day,
+        # the LCC scrapers run ~72x/day — pick a low common bar.
+        if rows == 0 and runs >= 3:
+            issues.append(f"{source}: {runs} runs / 0 rows (24h)")
+
+    # One-way: separate trip_type filter
+    try:
+        ow_rows = (
+            db.table("raw_flights")
+            .select("id", count="exact", head=True)
+            .eq("trip_type", "one_way")
+            .gte("scraped_at", since_24h)
+            .execute()
+            .count
+            or 0
+        )
+        ow_runs = (
+            db.table("scrape_logs")
+            .select("id", count="exact", head=True)
+            .eq("actor_id", "flights_oneway")
+            .gte("started_at", since_24h)
+            .execute()
+            .count
+            or 0
+        )
+        if ow_rows == 0 and ow_runs >= 3:
+            issues.append(f"one_way: {ow_runs} runs / 0 rows (24h)")
+    except Exception as e:
+        logger.warning(f"watchdog: oneway query failed: {e}")
+
+    if not issues:
+        return
+
+    # Cooldown check per-source so we don't spam admin during a long outage.
+    now = datetime.now(timezone.utc)
+    fresh: list[str] = []
+    for issue in issues:
+        source = issue.split(":", 1)[0]
+        last = _watchdog_last_alert.get(source)
+        if last and (now - last) < timedelta(hours=_WATCHDOG_COOLDOWN_HOURS):
+            continue
+        _watchdog_last_alert[source] = now
+        fresh.append(issue)
+
+    if not fresh:
+        return
+
+    msg = (
+        "Scraper watchdog detected silent failures:\n\n"
+        + "\n".join(f"• {x}" for x in fresh)
+        + "\n\nCheck /api/admin/scrapers/health for details."
+    )
+    try:
+        await send_admin_alert(msg)
+        logger.warning(f"watchdog admin alert sent: {len(fresh)} issue(s)")
+    except Exception as e:
+        logger.error(f"watchdog: admin alert send failed: {e}")
 
 
 async def job_reverify_active_deals():
