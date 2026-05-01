@@ -28,6 +28,14 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Telegram bot token configured ✓")
 
+    # APScheduler defaults misfire_grace_time to 1 second, which means a
+    # cron job whose firing instant is missed by even a brief Railway
+    # restart is silently skipped. We saw this on update_destinations:
+    # the priority_destinations table hadn't been refreshed for 9 days
+    # because the Monday 03:00 firing was always missed during deploys.
+    # 1h is plenty of slack for any of our cron jobs to recover.
+    DEFAULT_MISFIRE_GRACE_SECONDS = 3600
+
     for job_def in get_scheduler_jobs():
         job_id = job_def["id"]
         func = job_def["func"]
@@ -39,7 +47,11 @@ async def lifespan(app: FastAPI):
                 kwargs["hours"] = job_def["hours"]
             if "minutes" in job_def:
                 kwargs["minutes"] = job_def["minutes"]
-            scheduler.add_job(func, "interval", id=job_id, **kwargs)
+            scheduler.add_job(
+                func, "interval", id=job_id,
+                misfire_grace_time=DEFAULT_MISFIRE_GRACE_SECONDS,
+                **kwargs,
+            )
         elif trigger == "cron":
             cron_kwargs = {}
             if "hour" in job_def:
@@ -48,7 +60,11 @@ async def lifespan(app: FastAPI):
                 cron_kwargs["minute"] = job_def["minute"]
             if "day_of_week" in job_def:
                 cron_kwargs["day_of_week"] = job_def["day_of_week"]
-            scheduler.add_job(func, "cron", id=job_id, **cron_kwargs)
+            scheduler.add_job(
+                func, "cron", id=job_id,
+                misfire_grace_time=DEFAULT_MISFIRE_GRACE_SECONDS,
+                **cron_kwargs,
+            )
 
     scheduler.start()
     logger.info(f"Scheduler started with {len(scheduler.get_jobs())} jobs")

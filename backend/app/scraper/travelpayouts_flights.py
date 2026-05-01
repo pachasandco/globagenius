@@ -125,7 +125,7 @@ def scrape_flights_for_airport(origin: str) -> list[dict]:
 
     Long-haul destinations are only scraped from CDG — the only French hub
     with direct transatlantic/long-haul service."""
-    destinations = get_priority_destinations(max_count=40)
+    destinations = get_priority_destinations(max_count=80)
     all_flights = []
     for dest in destinations:
         if dest == origin:

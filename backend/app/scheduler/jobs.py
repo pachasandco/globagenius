@@ -1250,7 +1250,7 @@ async def job_scrape_oneway_flights():
         logger.warning("DB or Travelpayouts token not configured — skipping one-way scrape")
         return
 
-    destinations = get_priority_destinations(max_count=40, db=db)
+    destinations = get_priority_destinations(max_count=80, db=db)
     inserted = 0
     errors = 0
 
@@ -1258,8 +1258,10 @@ async def job_scrape_oneway_flights():
         for dest in destinations:
             if dest == origin:
                 continue
-            if is_long_haul(dest) and origin != "CDG":
-                continue
+            # No long-haul=CDG-only gate here. One-way is precisely where
+            # quirky routings (e.g. MRS→BOM via AUH on Etihad) can beat the
+            # direct CDG fare — exactly what split-ticket combos surface.
+            # Travelpayouts already returns non-direct multi-leg fares.
 
             for direction in ("outbound", "inbound"):
                 api_origin = origin if direction == "outbound" else dest
@@ -1559,7 +1561,7 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
     from app.notifications.telegram import send_split_ticket_alert
 
     fresh_cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-    destinations = get_priority_destinations(max_count=40, db=db)
+    destinations = get_priority_destinations(max_count=80, db=db)
     combos_dispatched = 0
 
     # Pre-fetch users who opted in to split-ticket combos.
@@ -1595,8 +1597,10 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
         for dest in destinations:
             if dest == origin:
                 continue
-            if is_long_haul(dest) and origin != "CDG":
-                continue
+            # No long-haul=CDG-only gate. The whole point of split-ticket
+            # combos is to find quirky multi-airport routings — including
+            # cases where an MRS→BOM combo via two different inbound/outbound
+            # carriers beats the direct CDG round-trip.
 
             # Pull recent one-way rows for both directions in two queries
             try:
@@ -1738,7 +1742,7 @@ async def job_travelpayouts_enrichment():
     if not db or not settings.TRAVELPAYOUTS_TOKEN:
         return
 
-    destinations = get_priority_destinations(max_count=40, db=db)
+    destinations = get_priority_destinations(max_count=80, db=db)
     total_published = 0
 
     for origin in settings.MVP_AIRPORTS:
@@ -1797,11 +1801,31 @@ async def job_update_destinations():
     if not db:
         logger.warning("No DB connection — skipping destination update")
         return
+    started_at = datetime.now(timezone.utc)
+    count = 0
+    status = "failed"
     try:
         count = update_priority_destinations_in_db(db, max_count=40)
+        status = "success" if count > 0 else "partial"
         logger.info(f"Destination update complete: {count} destinations upserted")
     except Exception as e:
         logger.error(f"Destination update failed: {e}")
+
+    completed_at = datetime.now(timezone.utc)
+    try:
+        db.table("scrape_logs").insert({
+            "actor_id": "update_destinations",
+            "source": "destination_updater",
+            "type": "destinations",
+            "items_count": count,
+            "errors_count": 0 if status != "failed" else 1,
+            "duration_ms": int((completed_at - started_at).total_seconds() * 1000),
+            "status": status,
+            "started_at": started_at.isoformat(),
+            "completed_at": completed_at.isoformat(),
+        }).execute()
+    except Exception as e:
+        logger.warning(f"Failed to write update_destinations scrape_log: {e}")
 
 
 async def job_sync_stripe_subscriptions():
