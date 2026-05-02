@@ -1712,11 +1712,25 @@ def admin_delete_user(user_id: str, req: AdminDeleteUserRequest, request: Reques
             detail="confirm_email does not match the user's actual email",
         )
 
+    # V9: cancel any active Stripe subscription before nuking the row
+    # so the customer doesn't keep being billed for a deleted account.
+    # Best-effort — a Stripe outage doesn't block the admin delete.
+    cancel_result = _cancel_stripe_subscription_for_user(user_id)
+    if cancel_result["had_subscription"]:
+        logger.info(
+            f"[admin_delete] user={user_id} stripe={cancel_result}"
+        )
+
     db.table("telegram_subscribers").update({"user_id": None}).eq("user_id", user_id).execute()
     db.table("users").delete().eq("id", user_id).execute()
 
     logger.info(f"[admin] Deleted user {user_id} ({user['email']})")
-    return {"ok": True, "deleted_id": user_id, "deleted_email": user["email"]}
+    return {
+        "ok": True,
+        "deleted_id": user_id,
+        "deleted_email": user["email"],
+        "stripe_cancelled": cancel_result["cancelled"],
+    }
 
 
 @router.post("/api/admin/users/{user_id}/telegram/generate-link")
@@ -1936,6 +1950,63 @@ def create_wishlist(
     return {"wishlist": resp.data[0] if resp.data else row}
 
 
+def _cancel_stripe_subscription_for_user(user_id: str) -> dict:
+    """Best-effort cancellation of the user's active Stripe subscription
+    before we delete the user from DB.
+
+    Returns a small dict describing what happened so callers can log it.
+    Never raises: cancellation failure must not block account deletion.
+
+    V9: account deletion used to nuke the user row without touching
+    Stripe → the subscription kept renewing and billing the user with
+    no service. RGPD-non-compliant and a guaranteed dispute.
+    """
+    result: dict = {
+        "had_subscription": False,
+        "cancelled": False,
+        "subscription_id": None,
+        "error": None,
+    }
+    if not db:
+        result["error"] = "no_db"
+        return result
+    try:
+        prefs = (
+            db.table("user_preferences")
+            .select("stripe_subscription_id,stripe_customer_id")
+            .eq("user_id", user_id)
+            .execute()
+        )
+    except Exception as e:
+        result["error"] = f"prefs_read_failed: {e}"
+        return result
+    if not prefs.data:
+        return result
+    sub_id = prefs.data[0].get("stripe_subscription_id")
+    if not sub_id:
+        return result
+    result["had_subscription"] = True
+    result["subscription_id"] = sub_id
+    if not settings.STRIPE_SECRET_KEY:
+        result["error"] = "no_stripe_key"
+        return result
+    try:
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        # Cancel immediately rather than at period end — the user
+        # asked for account deletion, they want a clean break.
+        # Stripe will fire customer.subscription.deleted to our
+        # webhook, but since the DB row is about to disappear, the
+        # webhook update is a no-op (which is fine).
+        stripe.Subscription.cancel(sub_id)
+        result["cancelled"] = True
+    except stripe.error.InvalidRequestError as e:
+        # Already cancelled, doesn't exist, etc. — log but don't block.
+        result["error"] = f"stripe_invalid: {e}"
+    except Exception as e:
+        result["error"] = f"stripe_unknown: {e}"
+    return result
+
+
 @router.delete("/api/users/{user_id}/account", status_code=200)
 def delete_account(
     user_id: str,
@@ -1945,6 +2016,15 @@ def delete_account(
         raise HTTPException(status_code=403, detail="Accès refusé")
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
+    # V9: cancel Stripe subscription FIRST. If the DB delete races ahead,
+    # we'd lose the stripe_subscription_id and the customer would keep
+    # being billed. Best-effort: a Stripe outage shouldn't block the
+    # user from deleting their account.
+    cancel_result = _cancel_stripe_subscription_for_user(user_id)
+    if cancel_result["had_subscription"]:
+        logger.info(
+            f"[delete_account] user={user_id} stripe={cancel_result}"
+        )
     # Disconnect Telegram before deleting so the bot can't send stale alerts
     try:
         db.table("user_preferences").update({
@@ -1955,7 +2035,7 @@ def delete_account(
         pass
     # Delete user row — cascades wipe preferences, wishlists, sent_alerts, etc.
     db.table("users").delete().eq("id", user_id).execute()
-    return {"ok": True}
+    return {"ok": True, "stripe_cancelled": cancel_result["cancelled"]}
 
 
 @router.delete("/api/users/{user_id}/wishlists/{wishlist_id}", status_code=200)
