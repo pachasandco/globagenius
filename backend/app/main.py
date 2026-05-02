@@ -15,6 +15,35 @@ logger = logging.getLogger(__name__)
 
 import os
 
+# ── Sentry init ──
+# Initialised before anything else so any boot-time exception (DB
+# connection, Stripe key validation, Telegram token check) gets reported.
+# DSN is read from SENTRY_DSN env var; if absent, sentry-sdk is a no-op
+# so dev / CI runs stay quiet.
+_SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.logging import LoggingIntegration
+
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            environment=os.getenv("APP_ENV", "production"),
+            release=os.getenv("RAILWAY_GIT_COMMIT_SHA", "dev"),
+            traces_sample_rate=0.05,  # 5% of requests get a trace
+            profiles_sample_rate=0.0,  # profiling off, costs extra
+            integrations=[
+                FastApiIntegration(transaction_style="endpoint"),
+                LoggingIntegration(level=None, event_level=40),  # WARNING+
+            ],
+            send_default_pii=False,  # never send Authorization headers / cookies
+        )
+        logger.info("Sentry initialised — environment=%s", os.getenv("APP_ENV", "production"))
+    except Exception as e:
+        # Never block startup on a Sentry import / init issue.
+        logger.error("Sentry init failed (continuing without it): %s", e)
+
 logger.info(f"Starting Globe Genius Pipeline — ENV={os.getenv('APP_ENV', 'unknown')} PORT={os.getenv('PORT', 'not set')}")
 
 scheduler = AsyncIOScheduler()
