@@ -2081,6 +2081,42 @@ def _cancel_stripe_subscription_for_user(user_id: str) -> dict:
     return result
 
 
+@router.post("/api/users/me/cancel-subscription", status_code=200)
+def cancel_subscription_self(current_user: dict = Depends(get_current_user)):
+    """User-initiated subscription cancellation.
+
+    Reuses _cancel_stripe_subscription_for_user(). The user's account
+    stays intact; only the Stripe subscription is cancelled. Stripe
+    fires customer.subscription.deleted shortly after, which the
+    webhook turns into is_premium=False — so the user keeps premium
+    until the end of their paid period (Stripe behaviour) but no new
+    invoice is generated.
+
+    Idempotent: calling it on a free user returns 200 with
+    had_subscription=False. A Stripe error returns 502 so the frontend
+    can prompt a retry.
+    """
+    user_id = current_user.get("user_id") or current_user.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="auth missing")
+
+    result = _cancel_stripe_subscription_for_user(user_id)
+
+    if result["had_subscription"] and not result["cancelled"]:
+        # Stripe is supposed to have cancelled the sub but didn't.
+        # 502 because the Stripe upstream is the failing dependency.
+        raise HTTPException(
+            status_code=502,
+            detail=f"stripe cancellation failed: {result.get('error') or 'unknown'}"
+        )
+
+    return {
+        "ok": True,
+        "had_subscription": result["had_subscription"],
+        "cancelled": result["cancelled"],
+    }
+
+
 @router.delete("/api/users/{user_id}/account", status_code=200)
 def delete_account(
     user_id: str,
