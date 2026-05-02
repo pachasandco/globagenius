@@ -987,6 +987,16 @@ async def _dispatch_grouped_flight_alerts(
         origin_city = iata_label(best_origin)
         dest_city = iata_label(grp_dest)
 
+        # V9 destination pages: lazily generate the destination guide before
+        # the very first alert to this dest. Synchronous (~30-60s on cold
+        # path). Subsequent alerts to the same dest = no-op. If generation
+        # fails, the alert still goes out without the "📖 Le guide" link.
+        try:
+            from app.notifications.destination_articles import ensure_article_for_destination
+            has_guide = ensure_article_for_destination(grp_dest)
+        except Exception as e:
+            logger.warning(f"ensure_article_for_destination crashed for {grp_dest}: {e}")
+            has_guide = False
         success = False
         try:
             success = await send_grouped_flight_alerts(
@@ -999,6 +1009,7 @@ async def _dispatch_grouped_flight_alerts(
                 user_id=uid or None,
                 alert_key=keys_to_store[0] if keys_to_store else None,
                 origin_iata=best_origin,
+                has_guide=has_guide,
             )
             if success:
                 logger.info(
@@ -1598,6 +1609,17 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                 except Exception as e:
                     logger.warning(f"One-way dedup check failed: {e}")
 
+            # V9 destination pages: same lazy generation hook. The article
+            # is keyed by the actual travel destination (= `destination`
+            # for outbound, `origin` for inbound) — the airport the user
+            # is actually visiting, not their home airport.
+            article_dest = destination if direction == "outbound" else origin
+            try:
+                from app.notifications.destination_articles import ensure_article_for_destination
+                has_guide = ensure_article_for_destination(article_dest)
+            except Exception as e:
+                logger.warning(f"ensure_article_for_destination crashed for {article_dest}: {e}")
+                has_guide = False
             sent_ok = False
             try:
                 sent_ok = await send_oneway_deal_alert(
@@ -1615,6 +1637,7 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                     baseline_price=qualification.median,
                     user_id=sub_user_id,
                     alert_key=alert_key,
+                    has_guide=has_guide,
                 )
                 if sent_ok:
                     dispatched += 1
@@ -1817,6 +1840,15 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                     except Exception as e:
                         logger.warning(f"Combo dedup check failed: {e}")
 
+                # V9 destination pages: lazy generation for the combo's
+                # outbound destination (the city the user travels to).
+                combo_dest = combo.outbound.get("destination")
+                try:
+                    from app.notifications.destination_articles import ensure_article_for_destination
+                    has_guide = ensure_article_for_destination(combo_dest) if combo_dest else False
+                except Exception as e:
+                    logger.warning(f"ensure_article_for_destination crashed for combo dest {combo_dest}: {e}")
+                    has_guide = False
                 sent_ok = False
                 try:
                     sent_ok = await send_split_ticket_alert(
@@ -1826,6 +1858,7 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                         roundtrip_baseline=combo.roundtrip_baseline,
                         user_id=sub_user_id,
                         alert_key=alert_key,
+                        has_guide=has_guide,
                     )
                     if sent_ok:
                         combos_dispatched += 1

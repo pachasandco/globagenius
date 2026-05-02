@@ -249,6 +249,7 @@ def format_oneway_deal_alert(
     return_estimate: float | None = None,
     user_id: str | None = None,
     alert_key: str | None = None,
+    has_guide: bool = False,
 ) -> str:
     """V5: format an alert for a one-way flight deal (no return leg).
 
@@ -321,6 +322,11 @@ def format_oneway_deal_alert(
             tracked_url = _add_utms(url, origin, dest)
         lines += ["", f"👉 [Voir le deal]({tracked_url})"]
 
+    if has_guide:
+        article_iata = dest if direction == "outbound" else origin
+        article_label = iata_label(article_iata)
+        lines += ["", f"📖 [Le guide complet de {article_label}]({settings.FRONTEND_URL}/destination/{article_iata.lower()})"]
+
     return "\n".join(lines)
 
 
@@ -330,6 +336,7 @@ def format_split_ticket_alert(
     roundtrip_baseline: float,
     user_id: str | None = None,
     alert_key: str | None = None,
+    has_guide: bool = False,
 ) -> str:
     """V5: format a 'combo malin' 2x one-way alert when buying two separate
     one-way tickets is cheaper than the round-trip baseline on the same route.
@@ -431,6 +438,8 @@ def format_split_ticket_alert(
         "",
         "⚠️ Bagages et annulation gérés séparément pour chaque billet.",
     ]
+    if has_guide:
+        lines += ["", f"📖 [Le guide complet de {dest_label}]({settings.FRONTEND_URL}/destination/{dest.lower()})"]
     return "\n".join(lines)
 
 
@@ -442,6 +451,7 @@ async def send_oneway_deal_alert(
     return_estimate: float | None = None,
     user_id: str | None = None,
     alert_key: str | None = None,
+    has_guide: bool = False,
 ) -> bool:
     """V5: send a Telegram alert for a one-way flight deal.
 
@@ -454,7 +464,7 @@ async def send_oneway_deal_alert(
         return False
     msg = format_oneway_deal_alert(
         flight, discount_pct, baseline_price, return_estimate,
-        user_id=user_id, alert_key=alert_key,
+        user_id=user_id, alert_key=alert_key, has_guide=has_guide,
     )
     try:
         await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
@@ -471,6 +481,7 @@ async def send_split_ticket_alert(
     roundtrip_baseline: float,
     user_id: str | None = None,
     alert_key: str | None = None,
+    has_guide: bool = False,
 ) -> bool:
     """V5: send a Telegram alert for a 2x one-way (split-ticket) combo.
 
@@ -483,7 +494,7 @@ async def send_split_ticket_alert(
         return False
     msg = format_split_ticket_alert(
         outbound, inbound, roundtrip_baseline,
-        user_id=user_id, alert_key=alert_key,
+        user_id=user_id, alert_key=alert_key, has_guide=has_guide,
     )
     try:
         await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
@@ -528,6 +539,7 @@ def format_grouped_flight_alerts(
     user_id: str | None = None,
     alert_key: str | None = None,
     origin_iata: str | None = None,
+    has_guide: bool = False,
 ) -> str:
     """Format a grouped Telegram alert for multiple flight offers to one destination.
 
@@ -654,6 +666,12 @@ def format_grouped_flight_alerts(
     if remaining > 0:
         msg_parts.append(f"_+ {remaining} autres dates disponibles_")
 
+    if has_guide:
+        msg_parts.append("")
+        msg_parts.append(
+            f"📖 [Le guide complet de {dest_label}]({settings.FRONTEND_URL}/destination/{destination_iata.lower()})"
+        )
+
     msg_parts.append("")
     msg_parts.append(f"👉 [Toutes les offres {destination_iata}]({settings.FRONTEND_URL}/home?dest={destination_iata})")
 
@@ -677,6 +695,7 @@ async def send_grouped_flight_alerts(
     user_id: str | None = None,
     alert_key: str | None = None,
     origin_iata: str | None = None,
+    has_guide: bool = False,
 ) -> bool:
     """Send a grouped Telegram alert containing multiple flight offers for one destination."""
     bot = _get_bot()
@@ -686,6 +705,7 @@ async def send_grouped_flight_alerts(
     msg = format_grouped_flight_alerts(
         origin_city, dest_city, destination_iata, offers, tier,
         user_id=user_id, alert_key=alert_key, origin_iata=origin_iata,
+        has_guide=has_guide,
     )
 
     # Inline keyboard — quick action without leaving Telegram.
