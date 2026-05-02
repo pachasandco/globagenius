@@ -30,6 +30,7 @@ class Settings:
     SMTP_USER: str = os.getenv("SMTP_USER", "")
     SMTP_PASS: str = os.getenv("SMTP_PASS", "")
     BREVO_API_KEY: str = os.getenv("BREVO_API_KEY", "")
+    UNSPLASH_ACCESS_KEY: str = os.getenv("UNSPLASH_ACCESS_KEY", "")
     BREVO_WELCOME_TEMPLATE_ID: int = int(os.getenv("BREVO_WELCOME_TEMPLATE_ID", "0") or 0)
     BREVO_SENDER_EMAIL: str = os.getenv("BREVO_SENDER_EMAIL", "contact@globegenius.app")
     BREVO_SENDER_NAME: str = os.getenv("BREVO_SENDER_NAME", "Globe Genius")
