@@ -258,6 +258,49 @@ def health():
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
+@router.get("/health/deep")
+def health_deep():
+    """Deep healthcheck: ping DB + verify external service config.
+
+    Used by uptime monitors and load balancers that need to know
+    whether the instance is degraded (running but unable to do its
+    job) versus simply alive.
+    Returns HTTP 200 when every component is "ok", 503 otherwise.
+    """
+    components: dict[str, str] = {}
+
+    # 1. DB ping — a 'select 1' equivalent via supabase-py
+    try:
+        if db is None:
+            components["db"] = "missing"
+        else:
+            db.table("users").select("id").limit(1).execute()
+            components["db"] = "ok"
+    except Exception as e:
+        components["db"] = "error"
+        logger.warning(f"/health/deep: DB ping failed: {e}")
+
+    # 2. Stripe — we don't make a network call (would slow each check),
+    # we just confirm the secret key is configured.
+    components["stripe"] = "ok" if settings.STRIPE_SECRET_KEY else "missing"
+
+    # 3. Telegram bot token presence
+    components["telegram"] = "ok" if settings.TELEGRAM_BOT_TOKEN else "missing"
+
+    # 4. Brevo API key presence
+    components["brevo"] = "ok" if settings.BREVO_API_KEY else "missing"
+
+    overall_ok = all(v == "ok" for v in components.values())
+    payload = {
+        "status": "ok" if overall_ok else "degraded",
+        "components": components,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if overall_ok:
+        return payload
+    raise HTTPException(status_code=503, detail=payload)
+
+
 @router.get("/api/status")
 def status():
     if not db:
