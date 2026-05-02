@@ -563,6 +563,7 @@ async def _dispatch_grouped_flight_alerts(
     deal_tier_by_user: dict[str, str] = {}
     blocked_by_user: dict[str, set] = {}
     trip_types_by_user: dict[str, set[str]] = {}
+    min_discount_by_user: dict[str, int] = {}
     for pref in all_prefs:
         if isinstance(pref, dict) and pref.get("user_id"):
             uid = pref["user_id"]
@@ -575,6 +576,11 @@ async def _dispatch_grouped_flight_alerts(
             # V5: flight trip type filter — default to round-trip only
             # to preserve pre-V5 behaviour for migrated users.
             trip_types_by_user[uid] = set(pref.get("flight_trip_types") or ["round_trip"])
+            # V9: premium-only discount floor preference. Free users
+            # ignore this (they have a fixed band policy instead).
+            md = pref.get("min_discount")
+            if isinstance(md, (int, float)):
+                min_discount_by_user[uid] = int(md)
 
     # V7: track premium teasers sent this run as a fast in-memory dedup
     # (the persistent dedup uses sent_alerts.alert_type='teaser_premium' with
@@ -598,6 +604,14 @@ async def _dispatch_grouped_flight_alerts(
     #     "best_origin": str,  # the origin of the cheapest offer (header reference)
     #   }
     pending_by_user_dest: dict[tuple[str, str], dict] = {}
+
+    # V9 in-memory free-lane counters: (user_id) -> {"daily": int, "weekly": int}
+    # Initialised from DB at sub-time, decremented as we accept candidates so
+    # the cap holds across multiple subs (origins) for the same user in one
+    # dispatch pass. Without this, a user tracking 3 origins could receive
+    # 3 daily-band alerts in one run.
+    free_lane_room: dict[str, dict[str, int]] = {}
+    free_lane_by_key: dict[str, str] = {}
 
     for sub in subs:
         if not isinstance(sub, dict):
@@ -628,22 +642,60 @@ async def _dispatch_grouped_flight_alerts(
             if not sub_origin or chat_id is None:
                 continue
 
-            # Free tier weekly quota — sourced from app.thresholds
-            from app.thresholds import FREE_TIER_WEEKLY_LIMIT
-            weekly_sent_count = 0
+            # V9 Free tier policy — strict band-based daily + weekly caps.
+            # We need TWO separate counters for free users:
+            #   - daily_band_sent: full alerts in [20%, 40%) over last 24h
+            #   - weekly_big_sent: full alerts in [40%, ∞) over last 7d
+            # No teaser path, no FREE_TIER_WEEKLY_LIMIT (3) anymore.
+            from app.thresholds import (
+                FREE_TIER_DAILY_BAND_MIN_PCT,
+                FREE_TIER_DAILY_BAND_MAX_PCT,
+                FREE_TIER_WEEKLY_BIG_MIN_PCT,
+                FREE_TIER_DAILY_LIMIT,
+                FREE_TIER_WEEKLY_BIG_LIMIT,
+            )
+            free_daily_band_sent = 0
+            free_weekly_big_sent = 0
             if sub_tier == "free" and user_id:
-                week_start = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-                try:
-                    wk_resp = (
-                        db.table("sent_alerts")
-                        .select("alert_key", count="exact")
-                        .eq("user_id", user_id)
-                        .gte("created_at", week_start)
-                        .execute()
-                    )
-                    weekly_sent_count = wk_resp.count or 0
-                except Exception as e:
-                    logger.warning(f"Failed to count weekly alerts for {user_id}: {e}")
+                # First sub for this user → fetch counts from DB. Subsequent
+                # subs use the in-memory copy mutated as alerts are queued.
+                if user_id not in free_lane_room:
+                    day_start = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+                    week_start = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+                    daily_seen = 0
+                    weekly_seen = 0
+                    try:
+                        # Both counts use sent_alerts.alert_type='flight'.
+                        # We tag the row's lane with alert_key prefix:
+                        #   'fday:' for daily-band alerts
+                        #   'fwk:'  for weekly-big alerts
+                        # so we can distinguish them cheaply.
+                        day_resp = (
+                            db.table("sent_alerts")
+                            .select("alert_key", count="exact")
+                            .eq("user_id", user_id)
+                            .like("alert_key", "fday:%")
+                            .gte("created_at", day_start)
+                            .execute()
+                        )
+                        daily_seen = day_resp.count or 0
+                        wk_resp = (
+                            db.table("sent_alerts")
+                            .select("alert_key", count="exact")
+                            .eq("user_id", user_id)
+                            .like("alert_key", "fwk:%")
+                            .gte("created_at", week_start)
+                            .execute()
+                        )
+                        weekly_seen = wk_resp.count or 0
+                    except Exception as e:
+                        logger.warning(f"V9 free tier counts failed for {user_id}: {e}")
+                    free_lane_room[user_id] = {
+                        "daily": max(0, FREE_TIER_DAILY_LIMIT - daily_seen),
+                        "weekly": max(0, FREE_TIER_WEEKLY_BIG_LIMIT - weekly_seen),
+                    }
+                free_daily_band_sent = FREE_TIER_DAILY_LIMIT - free_lane_room[user_id]["daily"]
+                free_weekly_big_sent = FREE_TIER_WEEKLY_BIG_LIMIT - free_lane_room[user_id]["weekly"]
 
             for (grp_origin, grp_dest), flight_tuples in groups.items():
                 if grp_origin != sub_origin:
@@ -682,22 +734,35 @@ async def _dispatch_grouped_flight_alerts(
                         matching_wl = wl
                         break
 
-                # Build candidate list
-                # Only deals ≥40% pass for everyone.
-                # Free:    [40, 50)   → full info (max 3/week)
-                #          [50, 60)   → silent skip (no signal at all)
-                #          ≥60        → masked teaser, at most 1/week (strict)
-                # Premium: ≥40        → full info, no limit
-                # Thresholds sourced from app.thresholds (single source of truth).
+                # V9 — different policies for free and premium.
+                # Free  : round-trip only, two lanes:
+                #         - "daily band"    [20%, 40%)  → 1 / 24h
+                #         - "weekly big"    >= 40%       → 1 / 7d
+                # Premium: round-trip + opt-in oneway/combo, single floor
+                #         picked by the user (40 / 50 / 60), no quota.
+                # Wishlist match overrides everything: price-target only.
                 from app.thresholds import (
-                    FREE_TIER_FULL_MAX_DISCOUNT_PCT as FREE_TIER_FULL_MAX,
-                    FREE_TIER_TEASER_MIN_DISCOUNT_PCT as FREE_TIER_TEASER_MIN,
                     GLOBAL_MIN_DISCOUNT_PCT as GLOBAL_MIN_DISCOUNT,
+                    PREMIUM_DEFAULT_MIN_DISCOUNT,
+                    PREMIUM_MIN_DISCOUNT_CHOICES,
                 )
 
                 # V5: per-user trip-type filter. Default to round-trip-only
                 # so existing users keep their current Telegram experience.
                 user_allowed_trip_types = trip_types_by_user.get(user_id or "", {"round_trip"})
+
+                # V9: free users only ever receive round-trip alerts —
+                # one-way and combos are premium-only regardless of opt-in.
+                if sub_tier == "free":
+                    user_allowed_trip_types = {"round_trip"}
+
+                # V9: premium discount floor. Reads user_preferences.min_discount
+                # but clamps to {40, 50, 60}. Anything outside falls back to default.
+                premium_floor = PREMIUM_DEFAULT_MIN_DISCOUNT
+                if sub_tier == "premium" and user_id:
+                    raw = min_discount_by_user.get(user_id)
+                    if raw in PREMIUM_MIN_DISCOUNT_CHOICES:
+                        premium_floor = raw
 
                 candidates: list[tuple[str | None, dict, object, str]] = []
                 for flight, anomaly, tier in flight_tuples:
@@ -709,15 +774,21 @@ async def _dispatch_grouped_flight_alerts(
                         if max_price is not None and flight.get("price", 9999) > max_price:
                             continue
                     else:
-                        if anomaly.discount_pct < GLOBAL_MIN_DISCOUNT:
-                            continue
-                        # V7: free users get full alerts ONLY for discounts
-                        # below FREE_TIER_FULL_MAX (50%). Deals ≥50% are
-                        # routed entirely through the teaser path below
-                        # — never as a full alert. Premium users keep all
-                        # candidates.
-                        if sub_tier == "free" and anomaly.discount_pct >= FREE_TIER_FULL_MAX:
-                            continue
+                        # V9 — branch on tier for the discount gate.
+                        disc = anomaly.discount_pct
+                        if sub_tier == "premium":
+                            if disc < premium_floor:
+                                continue
+                        else:
+                            # Free: anything in [20, ∞) is potentially relevant —
+                            # the lane (daily band vs weekly big) is decided
+                            # at dispatch time after we know which lanes still
+                            # have capacity for this user this run.
+                            from app.thresholds import (
+                                FREE_TIER_DAILY_BAND_MIN_PCT as _FREE_DAY_MIN,
+                            )
+                            if disc < _FREE_DAY_MIN:
+                                continue
                     key = None
                     if user_id:
                         key = compute_alert_key(
@@ -733,87 +804,52 @@ async def _dispatch_grouped_flight_alerts(
                 if not candidates:
                     continue
 
-                # V7: Free tier — deals ≥60% → masked teaser, ≤1/week strict.
-                # Strict 7-day window: we look up sent_alerts for a row of
-                # alert_type='teaser_premium' on this user; if found we skip.
-                # Run-local set is a fast path to avoid re-querying within
-                # the same dispatch pass.
-                if (
-                    sub_tier == "free" and not tier_error and chat_id is not None
-                    and user_id and user_id not in teaser_sent_premium
-                ):
-                    masked = [
-                        (f, a) for f, a, _ in flight_tuples
-                        if a.discount_pct >= FREE_TIER_TEASER_MIN
-                        and (f.get("trip_type") or "round_trip") in user_allowed_trip_types
-                    ]
-                    if masked:
-                        # Weekly dedup: did we already send a teaser_premium
-                        # to this user in the last 7 days?
-                        already_teased = False
-                        try:
-                            week_start_iso = (
-                                datetime.now(timezone.utc) - timedelta(days=7)
-                            ).isoformat()
-                            tz_resp = (
-                                db.table("sent_alerts")
-                                .select("alert_key", count="exact")
-                                .eq("user_id", user_id)
-                                .eq("alert_type", "teaser_premium")
-                                .gte("created_at", week_start_iso)
-                                .execute()
-                            )
-                            already_teased = (tz_resp.count or 0) > 0
-                        except Exception as e:
-                            logger.warning(
-                                f"teaser_premium weekly dedup lookup failed for {user_id}: {e}"
-                            )
-
-                        if not already_teased:
-                            teaser_sent_premium.add(user_id)
-                            best_f, best_a = max(masked, key=lambda x: x[1].discount_pct)
-                            sent_ok = False
-                            try:
-                                from app.notifications.telegram import _get_bot
-                                bot = _get_bot()
-                                if bot:
-                                    await bot.send_message(
-                                        chat_id=chat_id,
-                                        text=(
-                                            f"🔥 Deal exceptionnel détecté\n\n"
-                                            f"🌍 ██████ → ██████\n"
-                                            f"💰 ███€  ·  -{int(best_a.discount_pct)}%\n\n"
-                                            f"Les détails sont réservés aux membres premium.\n"
-                                            f"💎 Débloquer → {settings.FRONTEND_URL}/premium"
-                                        ),
-                                    )
-                                    sent_ok = True
-                            except Exception as e:
-                                logger.warning(f"teaser_premium send failed for {user_id}: {e}")
-
-                            # Persist a sent_alerts row so the next dispatch
-                            # within 7 days will see already_teased=True.
-                            if sent_ok:
-                                try:
-                                    db.table("sent_alerts").insert({
-                                        "user_id": user_id,
-                                        "chat_id": chat_id,
-                                        "alert_key": f"teaser_premium:{user_id}:{int(datetime.now(timezone.utc).timestamp())}",
-                                        "destination": best_f.get("destination", ""),
-                                        "alert_type": "teaser_premium",
-                                    }).execute()
-                                except Exception as e:
-                                    logger.warning(
-                                        f"teaser_premium persistence failed for {user_id}: {e}"
-                                    )
-
-                # V7: weekly-quota teaser ('limit reached') — REMOVED.
-                # The teaser_premium above already does the upsell signal;
-                # a second 'limit reached' message was redundant.
-                # Free users still get hard-capped at FREE_TIER_WEEKLY_LIMIT
-                # full alerts (the existing free_unlocked counting handles it).
-                if sub_tier == "free" and matching_wl is None and weekly_sent_count >= FREE_TIER_WEEKLY_LIMIT:
-                    continue
+                # V9: classify each candidate into a free-tier lane.
+                # daily_band  = [20, 40)  → 1 / 24h
+                # weekly_big  = >= 40     → 1 / 7d
+                # Premium ignores lanes; everything passes the floor gate.
+                if sub_tier == "free":
+                    room = free_lane_room.get(user_id, {"daily": 0, "weekly": 0}) if user_id else {"daily": 0, "weekly": 0}
+                    if room["daily"] <= 0 and room["weekly"] <= 0:
+                        continue
+                    weekly_pool = []
+                    daily_pool = []
+                    for cand in candidates:
+                        disc = cand[2].discount_pct
+                        if disc >= FREE_TIER_WEEKLY_BIG_MIN_PCT:
+                            if room["weekly"] > 0:
+                                weekly_pool.append(cand)
+                        elif (
+                            FREE_TIER_DAILY_BAND_MIN_PCT <= disc
+                            < FREE_TIER_DAILY_BAND_MAX_PCT
+                        ):
+                            if room["daily"] > 0:
+                                daily_pool.append(cand)
+                    chosen_lane = None
+                    chosen_cand = None
+                    # Weekly_big takes priority when both lanes have capacity:
+                    # the user gets the rare "wow" deal first.
+                    if weekly_pool:
+                        chosen_cand = max(weekly_pool, key=lambda c: c[2].discount_pct)
+                        chosen_lane = "fwk"
+                    elif daily_pool:
+                        chosen_cand = max(daily_pool, key=lambda c: c[2].discount_pct)
+                        chosen_lane = "fday"
+                    if not chosen_cand:
+                        continue
+                    # Decrement the in-memory counter so the next sub for this
+                    # user (if any) sees one less slot in this lane.
+                    if user_id:
+                        if chosen_lane == "fwk":
+                            free_lane_room[user_id]["weekly"] -= 1
+                        else:
+                            free_lane_room[user_id]["daily"] -= 1
+                    candidates = [chosen_cand]
+                    # Tag the alert_key with the lane prefix so the next run
+                    # can count it. Stored in free_lane_by_key keyed by the
+                    # original alert_key (we look it up at persistence time).
+                    if chosen_cand[0]:
+                        free_lane_by_key[chosen_cand[0]] = chosen_lane
 
                 already_keys: set[str] = set()
                 if user_id:
@@ -976,13 +1012,20 @@ async def _dispatch_grouped_flight_alerts(
             success = False
 
         if success and uid and keys_to_store:
-            rows = [{
-                "user_id": uid,
-                "chat_id": chat_id,
-                "alert_key": k,
-                "destination": grp_dest,
-                "alert_type": "flight",
-            } for k in keys_to_store]
+            # V9: tag the alert_key with the free-tier lane prefix when
+            # applicable so the next run's count queries can find it.
+            # Premium rows keep the bare hash key.
+            rows = []
+            for k in keys_to_store:
+                lane = free_lane_by_key.get(k)
+                stored_key = f"{lane}:{k}" if lane else k
+                rows.append({
+                    "user_id": uid,
+                    "chat_id": chat_id,
+                    "alert_key": stored_key,
+                    "destination": grp_dest,
+                    "alert_type": "flight",
+                })
             try:
                 db.table("sent_alerts").upsert(
                     rows, on_conflict="user_id,alert_key"

@@ -17,28 +17,41 @@ Python keeps the code grep-able and stack traces readable.
 
 # ─── Discount qualification ───
 
-# Below this discount, no flight deal becomes a Telegram alert,
-# regardless of z-score, score, or user tier. Anchors the global
-# noise floor of the product.
+# Anchors the global noise floor for *premium* alerts. Anything below
+# this is never an alert for a premium user, regardless of which
+# min_discount they picked in their profile.
+# (V9: free users now have their own narrower band — see below — so
+# this constant only governs the premium pipeline.)
 GLOBAL_MIN_DISCOUNT_PCT = 40
 
-# Free users receive UNMASKED alerts only for discounts in
-# [GLOBAL_MIN, FREE_TIER_FULL_MAX). Deals between FREE_TIER_FULL_MAX and
-# FREE_TIER_TEASER_MIN are not communicated at all (silent skip). Deals
-# at or above FREE_TIER_TEASER_MIN trigger a single masked teaser per
-# rolling 7-day window — the "exceptional deal" upsell.
-# (V7 change: previously >50% all sent a teaser, now teaser only kicks in
-# at ≥60% AND at most once per week strict.)
-FREE_TIER_FULL_MAX_DISCOUNT_PCT = 50
-FREE_TIER_TEASER_MIN_DISCOUNT_PCT = 60
+# ─── V9 Free tier policy ───
+#
+# Free users always get one A/R per day in the [20%, 40%) band — the
+# product's "regular value" proof. They additionally get one A/R at
+# >=40% per week — the "wow" proof.
+# No one-way, no split-ticket combos, no teasers, no quota beyond these.
+FREE_TIER_DAILY_BAND_MIN_PCT = 20      # inclusive
+FREE_TIER_DAILY_BAND_MAX_PCT = 40      # exclusive
+FREE_TIER_WEEKLY_BIG_MIN_PCT = 40      # inclusive — the "≥40% once a week" lane
 
+# Daily and weekly caps for the free tier. Strict — we never exceed.
+FREE_TIER_DAILY_LIMIT = 1              # one regular deal per UTC day
+FREE_TIER_WEEKLY_BIG_LIMIT = 1         # one big deal per rolling 7d
 
-# ─── Tier quotas ───
+# How many deals a free user may unlock (full price + booking link) on the
+# homepage per rolling 7d. Independent from the Telegram cadence so the
+# homepage doesn't have to wait for a Telegram alert to surface a deal.
+# Kept at the legacy value (3) — generous enough to give the user a feel
+# for the product without giving away the whole catalogue.
+FREE_TIER_HOMEPAGE_UNLOCK_LIMIT = 3
 
-# Maximum number of full-info Telegram alerts a free user can receive
-# in a rolling 7-day window. Beyond that, they get a "limit reached"
-# teaser once per week.
-FREE_TIER_WEEKLY_LIMIT = 3
+# ─── V9 Premium discount filter ───
+#
+# Premium users pick their own discount floor in profile. Stored in
+# user_preferences.min_discount; only these three values are valid.
+# Default for new premium signups is the lowest (40%).
+PREMIUM_MIN_DISCOUNT_CHOICES = (40, 50, 60)
+PREMIUM_DEFAULT_MIN_DISCOUNT = 40
 
 
 # ─── Baseline robustness ───
@@ -67,7 +80,8 @@ ALERT_PRICE_BUCKET_EUR = 50
 # A 2x one-way combo is only qualified if both:
 #   - total ≤ roundtrip_baseline * (1 - SPLIT_SAVINGS_RATIO_FLOOR)
 #   - savings ≥ SPLIT_SAVINGS_EUR_FLOOR
-SPLIT_SAVINGS_RATIO_FLOOR = 0.15
+# Aligned with the global 40% promise — anything weaker is sub-product.
+SPLIT_SAVINGS_RATIO_FLOOR = 0.40
 SPLIT_SAVINGS_EUR_FLOOR = 100.0
 
 # Stay length window — combos shorter than 4 days or longer than 30

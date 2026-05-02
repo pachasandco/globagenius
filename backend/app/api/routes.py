@@ -209,6 +209,10 @@ class PreferencesRequest(BaseModel):
     blocked_destinations: list[str] = []
     flight_trip_types: list[str] = ["round_trip"]
     include_split_tickets: bool = False
+    # V9: premium-only discount floor preference. Validated to a small set
+    # so we never store odd values (e.g. 35) that the dispatch logic doesn't
+    # support. Free users may keep any historical value — it has no effect.
+    min_discount: int | None = None
 
     @field_validator("deal_tier")
     @classmethod
@@ -216,6 +220,18 @@ class PreferencesRequest(BaseModel):
         allowed = {"regular", "exceptional"}
         if v not in allowed:
             raise ValueError(f"deal_tier must be one of {sorted(allowed)}")
+        return v
+
+    @field_validator("min_discount")
+    @classmethod
+    def validate_min_discount(cls, v: int | None) -> int | None:
+        if v is None:
+            return None
+        from app.thresholds import PREMIUM_MIN_DISCOUNT_CHOICES
+        if v not in PREMIUM_MIN_DISCOUNT_CHOICES:
+            raise ValueError(
+                f"min_discount must be one of {PREMIUM_MIN_DISCOUNT_CHOICES}"
+            )
         return v
 
     @field_validator("flight_trip_types")
@@ -365,7 +381,7 @@ def debug_data(request: Request):
 
 from app.thresholds import (
     GLOBAL_MIN_DISCOUNT_PCT as GLOBAL_MIN_DISCOUNT,
-    FREE_TIER_WEEKLY_LIMIT,
+    FREE_TIER_HOMEPAGE_UNLOCK_LIMIT,
 )
 
 
@@ -574,9 +590,10 @@ def list_packages(
         if is_premium:
             unlocked = True
         elif user_id:
-            # Free user: allow up to FREE_TIER_WEEKLY_LIMIT unlocked deals
-            # across both Telegram and the homepage this week.
-            remaining = FREE_TIER_WEEKLY_LIMIT - free_weekly_used - free_unlocked_this_request
+            # Free user: allow up to FREE_TIER_HOMEPAGE_UNLOCK_LIMIT
+            # unlocked deals (full price + link) on the homepage per
+            # rolling 7d. Independent of the Telegram lane logic.
+            remaining = FREE_TIER_HOMEPAGE_UNLOCK_LIMIT - free_weekly_used - free_unlocked_this_request
             if remaining > 0:
                 unlocked = True
                 free_unlocked_this_request += 1
@@ -891,6 +908,11 @@ def update_preferences(user_id: str, req: PreferencesRequest, user: dict = Depen
         "include_split_tickets": req.include_split_tickets,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+    # V9: only persist min_discount when premium AND a value is supplied.
+    # Free users have no min_discount filter (the V9 free policy is fixed),
+    # so writing one would be a UI lie ("set the floor!" but it's ignored).
+    if req.min_discount is not None and tier == "premium":
+        update_data["min_discount"] = req.min_discount
 
     resp = db.table("user_preferences").update(update_data).eq("user_id", user_id).execute()
     if not resp.data:

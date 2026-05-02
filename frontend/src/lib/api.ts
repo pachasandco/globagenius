@@ -108,6 +108,9 @@ export function updatePreferences(userId: string, prefs: {
   blocked_destinations?: string[];
   flight_trip_types?: FlightTripType[];
   include_split_tickets?: boolean;
+  // V9: premium-only discount floor (40/50/60). Null or omitted = no
+  // change. Free users always pass null — the field has no effect for them.
+  min_discount?: number | null;
 }) {
   return fetchAPI<UserPreferences>(`/api/users/${userId}/preferences`, {
     method: "PUT",

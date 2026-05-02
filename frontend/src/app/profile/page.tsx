@@ -159,6 +159,10 @@ export default function ProfilePage() {
   const [flightTripTypes, setFlightTripTypes] = useState<FlightTripType[]>(["round_trip"]);
   const [includeSplitTickets, setIncludeSplitTickets] = useState<boolean>(false);
   const [dealTier, setDealTier] = useState<string>("regular");
+  // V9: premium-only discount floor. 40 = "voir tous les bons plans",
+  // 50 = "seulement les très bonnes affaires", 60 = "uniquement les
+  // perles rares". Free users have a fixed policy and never see this UI.
+  const [minDiscount, setMinDiscount] = useState<40 | 50 | 60>(40);
   const [blockedDestinations, setBlockedDestinations] = useState<string[]>([]);
   const [destSearch, setDestSearch] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -225,6 +229,14 @@ export default function ProfilePage() {
         }
         if (typeof prefs.include_split_tickets === "boolean") {
           setIncludeSplitTickets(prefs.include_split_tickets);
+        }
+        // V9: load min_discount with strict whitelist. Anything outside
+        // {40, 50, 60} (e.g. legacy 20/30 from V7) is coerced to 40 so the
+        // UI doesn't show an undefined state.
+        if (prefs.min_discount === 50 || prefs.min_discount === 60) {
+          setMinDiscount(prefs.min_discount);
+        } else {
+          setMinDiscount(40);
         }
       })
       .catch(() => {
@@ -321,6 +333,10 @@ export default function ProfilePage() {
         flight_trip_types: flightTripTypes.length > 0 ? flightTripTypes : ["round_trip"],
         // Combos require A/R tracking — silently disable if user dropped round_trip.
         include_split_tickets: includeSplitTickets && flightTripTypes.includes("round_trip"),
+        // V9: only premium users get the min_discount filter. Sending
+        // null for free users keeps the backend from quietly persisting
+        // a value that has no effect.
+        min_discount: isPremium ? minDiscount : null,
       });
       setSuccess("Préférences mises à jour avec succès !");
       setTimeout(() => setSuccess(""), 3000);
@@ -768,6 +784,51 @@ export default function ProfilePage() {
             Au moins un type doit rester sélectionné.
           </p>
         </div>
+
+        {/* ── V9 Niveau de promo (Premium only) ── */}
+        {isPremium && (
+          <div className="mb-12">
+            <h2 className="text-xl font-semibold mb-1">Niveau de promo</h2>
+            <p className="text-gray-400 text-sm mb-6">
+              À partir de quel niveau de réduction souhaitez-vous être alerté&nbsp;? Plus vous montez, moins vous recevez d&apos;alertes — mais celles que vous recevez sont exceptionnelles.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {[
+                { value: 40 as const, label: "À partir de -40%", desc: "Tous les bons plans détectés (cadence normale).", icon: "📊" },
+                { value: 50 as const, label: "À partir de -50%", desc: "Seulement les très bonnes affaires.", icon: "🔥" },
+                { value: 60 as const, label: "À partir de -60%", desc: "Uniquement les perles rares (erreurs de prix).", icon: "💎" },
+              ].map((opt) => {
+                const selected = minDiscount === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setMinDiscount(opt.value)}
+                    className="text-left p-4 rounded-xl border-2 transition-all relative"
+                    style={{
+                      borderColor: selected ? "#06b6d4" : "#e5e7eb",
+                      background: selected ? "#ecfeff" : "white",
+                    }}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span>{opt.icon}</span>
+                      <span className="font-semibold text-sm">{opt.label}</span>
+                    </div>
+                    <div className="text-xs text-gray-500">{opt.desc}</div>
+                    {selected && (
+                      <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-cyan-500 flex items-center justify-center">
+                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* ── Destinations masquées ── */}
         <div className="mb-12">
