@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { FlightDeal } from "@/lib/api";
 
 export function FlightDealCard({ deal }: { deal: FlightDeal }) {
@@ -92,6 +93,17 @@ export function FlightDealCard({ deal }: { deal: FlightDeal }) {
           Voir l&apos;offre →
         </a>
       ) : null}
+
+      {deal.destination && (
+        <Link
+          href={`/destination/${deal.destination.toLowerCase()}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block mt-2 text-center text-xs text-[#0A1F3D]/60 hover:text-[#FF6B47] underline"
+        >
+          📖 Lire le guide de cette destination
+        </Link>
+      )}
     </div>
   );
 }
