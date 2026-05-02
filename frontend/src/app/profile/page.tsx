@@ -968,6 +968,24 @@ export default function ProfilePage() {
             </div>
           )}
 
+          {isPremium ? (
+            // Premium users: nudge them to cancel their subscription first
+            // so they can keep using the app until end-of-period before
+            // deleting. The delete button itself stays available below as
+            // a safety net (it also cancels Stripe), but the friendlier
+            // path is "annule l'abonnement" → wait → delete when free.
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-sm text-amber-900">
+              <strong>Pour supprimer votre compte&nbsp;:</strong> annulez d'abord votre abonnement
+              ci-dessus. Vous gardez l'accès Premium jusqu'à la fin de la période payée, puis vous
+              passerez en gratuit et pourrez supprimer votre compte.
+              <br />
+              <span className="text-xs text-amber-700 mt-1 block">
+                Si vous supprimez votre compte maintenant, l'abonnement Stripe sera également annulé
+                automatiquement (pas de remboursement — pour un remboursement, contactez-nous par email).
+              </span>
+            </div>
+          ) : null}
+
           {!showDeleteConfirm ? (
             <button
               onClick={() => setShowDeleteConfirm(true)}
@@ -979,6 +997,11 @@ export default function ProfilePage() {
             <div className="bg-red-50 border border-red-200 rounded-xl p-5 space-y-4">
               <p className="text-sm text-red-700 font-medium">
                 Êtes-vous sûr ? Cette action supprimera définitivement votre compte, vos préférences et vos alertes.
+                {isPremium && (
+                  <span className="block mt-2 text-red-800 font-semibold">
+                    ⚠️ Votre abonnement Stripe sera également annulé. Aucun remboursement automatique.
+                  </span>
+                )}
               </p>
               <div className="flex gap-3">
                 <button
