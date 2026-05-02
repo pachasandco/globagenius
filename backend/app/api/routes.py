@@ -1123,23 +1123,35 @@ def get_article(slug: str):
 
 
 @router.get("/api/destinations")
-def list_destinations(limit: int = 6):
+def list_destinations(limit: int = 6, random: bool = False):
     """Public list of destinations with an article. Used by the landing
-    page (most recent guides) and the sitemap.
+    page and the home page. `random=true` returns a randomized subset
+    (used on the landing for fresh discovery).
     """
     if not db:
         return {"items": []}
     try:
         bounded = max(1, min(limit, 50))
+        # When random, pull a wider pool and shuffle in Python.
+        pool_size = 50 if random else bounded
         r = (
             db.table("articles")
             .select("iata,destination,title,cover_photo,generated_at")
             .not_.is_("iata", "null")
             .order("generated_at", desc=True)
-            .limit(bounded)
+            .limit(pool_size)
             .execute()
         )
-        return {"items": r.data or []}
+        items = r.data or []
+        if random and len(items) > bounded:
+            import secrets
+            indices = list(range(len(items)))
+            picked: list[int] = []
+            for _ in range(bounded):
+                idx = secrets.randbelow(len(indices))
+                picked.append(indices.pop(idx))
+            items = [items[i] for i in picked]
+        return {"items": items[:bounded]}
     except Exception as e:
         logger.warning(f"List destinations failed: {e}")
         return {"items": []}
