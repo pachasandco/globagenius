@@ -1122,6 +1122,29 @@ def get_article(slug: str):
     return resp.data[0]
 
 
+@router.get("/api/destinations")
+def list_destinations(limit: int = 6):
+    """Public list of destinations with an article. Used by the landing
+    page (most recent guides) and the sitemap.
+    """
+    if not db:
+        return {"items": []}
+    try:
+        bounded = max(1, min(limit, 50))
+        r = (
+            db.table("articles")
+            .select("iata,destination,title,cover_photo,generated_at")
+            .not_.is_("iata", "null")
+            .order("generated_at", desc=True)
+            .limit(bounded)
+            .execute()
+        )
+        return {"items": r.data or []}
+    except Exception as e:
+        logger.warning(f"List destinations failed: {e}")
+        return {"items": []}
+
+
 @router.get("/api/destinations/{iata}")
 def get_destination(iata: str):
     """Public endpoint backing the /destination/[iata] page.
