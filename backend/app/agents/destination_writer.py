@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-4-6"
 FALLBACK_MODEL = "claude-haiku-4-5"
-MAX_TOKENS = 8000  # large enough for a 2000-word guide structured as JSON
+MAX_TOKENS = 16000  # 2000-3000 words of JSON-wrapped guide; 8k truncated ~half the runs
 
 SYSTEM_PROMPT = """Tu es un journaliste voyage français professionnel. Style: Le Monde Voyage, Géo, National Geographic Traveler. Tu écris pour Globe Genius (alertes vols pas chers depuis la France) un GUIDE DESTINATION de 2000 mots minimum.
 
