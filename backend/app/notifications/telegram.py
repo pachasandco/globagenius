@@ -265,7 +265,21 @@ def format_oneway_deal_alert(
     disc = int(round(discount_pct))
     baseline = int(round(baseline_price))
     badge = _deal_badge(discount_pct)
-    url = flight.get("source_url", "")
+    # V9: defensive fallback — historic one-way rows in DB had source_url
+    # null because the scraper didn't build it. Without a source_url the
+    # alert ended at "✅ Vol vérifié" with no booking link, leaving the
+    # user with no way to act on the deal. Build the Aviasales one-way
+    # deep link on the fly when missing so every alert has a link.
+    url = flight.get("source_url") or ""
+    if not url or url == "N/A":
+        try:
+            from app.notifications.aviasales import build_aviasales_oneway_url
+            url = build_aviasales_oneway_url(
+                origin, dest, flight.get("departure_date", ""),
+                marker=settings.TRAVELPAYOUTS_MARKER or None,
+            )
+        except Exception:
+            url = ""
 
     from app.config import iata_label
     origin_label = iata_label(origin)
@@ -355,8 +369,30 @@ def format_split_ticket_alert(
     # so visual hierarchy is consistent across alert types.
     badge = _deal_badge(saving_pct)
 
-    out_url = outbound.get("source_url", "")
-    in_url = inbound.get("source_url", "")
+    # V9: same defensive fallback as the one-way alert. A leg with a null
+    # source_url falls back to a freshly built Aviasales one-way deep link
+    # so the user always lands on a bookable page for each leg.
+    from app.notifications.aviasales import build_aviasales_oneway_url
+    out_url = outbound.get("source_url") or ""
+    if not out_url or out_url == "N/A":
+        try:
+            out_url = build_aviasales_oneway_url(
+                outbound["origin"], outbound["destination"],
+                outbound.get("departure_date", ""),
+                marker=settings.TRAVELPAYOUTS_MARKER or None,
+            )
+        except Exception:
+            out_url = ""
+    in_url = inbound.get("source_url") or ""
+    if not in_url or in_url == "N/A":
+        try:
+            in_url = build_aviasales_oneway_url(
+                inbound["origin"], inbound["destination"],
+                inbound.get("departure_date", ""),
+                marker=settings.TRAVELPAYOUTS_MARKER or None,
+            )
+        except Exception:
+            in_url = ""
 
     def _wrap(url: str) -> str:
         # Both legs share the same alert_key — a click on either counts

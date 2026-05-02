@@ -1324,6 +1324,17 @@ async def job_scrape_oneway_flights():
                     if not departure_at:
                         continue
                     try:
+                        # V9: build a one-way Aviasales deep link upfront so
+                        # raw_flights.source_url is populated. Without this
+                        # the V5 one-way alert footer rendered without a
+                        # "Voir le deal" line — the alert was dead-ended.
+                        from app.notifications.aviasales import build_aviasales_oneway_url
+                        ow_url = build_aviasales_oneway_url(
+                            api_origin,
+                            api_destination,
+                            departure_at[:10],
+                            marker=settings.TRAVELPAYOUTS_MARKER or None,
+                        )
                         flight = normalize_flight(
                             {
                                 "origin": api_origin,
@@ -1336,6 +1347,7 @@ async def job_scrape_oneway_flights():
                                 "stops": entry.get("transfers", 0),
                                 "tripType": "one_way",
                                 "direction": direction,
+                                "url": ow_url,
                             },
                             source="travelpayouts",
                         )
