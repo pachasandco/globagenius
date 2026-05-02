@@ -214,3 +214,69 @@ export function getFlightDeals(
 export function getPipelineStatus() {
   return fetchAPI<PipelineStatus>("/api/status");
 }
+
+// ─── Destination guides ───
+
+export interface DestinationGuide {
+  article: {
+    id: string;
+    iata: string;
+    destination: string;
+    slug: string;
+    title: string;
+    h1: string;
+    meta_description: string;
+    lead: string;
+    nut_graf: string;
+    top_picks: Array<{
+      name: string;
+      angle: string;
+      description: string;
+      practical: string;
+    }>;
+    itinerary: Array<{
+      day: number;
+      title: string;
+      morning: string;
+      lunch: string;
+      afternoon: string;
+      evening: string;
+      lodging: string;
+      rain_plan: string;
+      budget_option: string;
+      premium_option: string;
+    }>;
+    infos_pratiques: Record<string, string>;
+    faq: Array<{ q: string; a: string }>;
+    sources: string[];
+    tags: string[];
+    word_count: number;
+    generated_at: string;
+  };
+  photo: {
+    url: string;
+    photographer_name: string;
+    photographer_url: string;
+  };
+  deals: Array<{
+    origin: string;
+    destination: string;
+    departure_date: string;
+    return_date: string | null;
+    price: number;
+    baseline_price: number;
+    discount_pct: number;
+    airline: string | null;
+    source_url: string | null;
+    trip_type: string;
+  }>;
+}
+
+export async function getDestinationGuide(iata: string): Promise<DestinationGuide | null> {
+  const res = await fetch(`${API_URL}/api/destinations/${iata.toUpperCase()}`, {
+    cache: "no-store",
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
