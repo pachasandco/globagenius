@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getPreferences, updatePreferences, changePassword, clearSessionCookie, getTelegramStatus, generateTelegramLink, type FlightTripType } from "@/lib/api";
+import { getPreferences, updatePreferences, changePassword, clearSessionCookie, getTelegramStatus, generateTelegramLink, cancelSubscription, type FlightTripType } from "@/lib/api";
 
 const AIRPORTS = [
   { code: "CDG", label: "Paris Charles de Gaulle" },
@@ -181,6 +181,8 @@ export default function ProfilePage() {
   const [success, setSuccess] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [cancellingSubscription, setCancellingSubscription] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   // Telegram connection state. null = not yet known (avoids flashing the
   // 'connect Telegram' card to users who are actually connected).
   const [telegramConnected, setTelegramConnected] = useState<boolean | null>(null);
@@ -344,6 +346,25 @@ export default function ProfilePage() {
       setError("Erreur lors de la sauvegarde des préférences");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleCancelSubscription() {
+    setCancellingSubscription(true);
+    setError("");
+    try {
+      const r = await cancelSubscription();
+      if (r.had_subscription) {
+        setSuccess("Abonnement annulé. Vous gardez Premium jusqu'à la fin de la période en cours.");
+      } else {
+        setSuccess("Aucun abonnement actif à annuler.");
+      }
+      setCancelConfirmOpen(false);
+      setTimeout(() => setSuccess(""), 6000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur d'annulation");
+    } finally {
+      setCancellingSubscription(false);
     }
   }
 
@@ -909,6 +930,43 @@ export default function ProfilePage() {
           <p className="text-gray-400 text-sm mb-4">
             La suppression de votre compte est irréversible. Toutes vos données seront effacées.
           </p>
+
+          {isPremium && (
+            <div className="mb-8 p-4 border border-[var(--color-sand)] rounded-xl bg-white">
+              <h3 className="font-semibold text-[var(--color-ink)] mb-1">Abonnement Premium</h3>
+              <p className="text-sm text-gray-500 mb-3">
+                Vous pouvez annuler à tout moment. Vous gardez l&apos;accès Premium jusqu&apos;à la fin de la
+                période payée. Aucun nouveau prélèvement.
+              </p>
+              {!cancelConfirmOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setCancelConfirmOpen(true)}
+                  className="text-sm text-[var(--color-coral)] hover:underline"
+                >
+                  Annuler mon abonnement
+                </button>
+              ) : (
+                <div className="flex gap-2 items-center">
+                  <button
+                    type="button"
+                    onClick={handleCancelSubscription}
+                    disabled={cancellingSubscription}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold"
+                  >
+                    {cancellingSubscription ? "Annulation…" : "Confirmer l'annulation"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCancelConfirmOpen(false)}
+                    className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700"
+                  >
+                    Garder l&apos;abonnement
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {!showDeleteConfirm ? (
             <button

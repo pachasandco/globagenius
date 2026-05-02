@@ -118,6 +118,26 @@ export function updatePreferences(userId: string, prefs: {
   });
 }
 
+export async function cancelSubscription(): Promise<{
+  ok: boolean;
+  had_subscription: boolean;
+  cancelled: boolean;
+}> {
+  const token = typeof window !== "undefined" ? localStorage.getItem("gg_token") : "";
+  const res = await fetch(`${API_URL}/api/users/me/cancel-subscription`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { detail?: string }).detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 // ─── Telegram ───
 
 export function generateTelegramLink(userId: string) {
