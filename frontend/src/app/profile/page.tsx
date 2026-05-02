@@ -474,9 +474,14 @@ export default function ProfilePage() {
           <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-xl leading-none">
             Globe<span className="text-[#FF6B47]">Genius</span>
           </Link>
-          <Link href="/home" className="text-gray-400 text-sm hover:text-gray-600">
-            Accueil
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link href="/home" className="text-gray-400 text-sm hover:text-gray-600">
+              Accueil
+            </Link>
+            <Link href="/planificateur" className="text-gray-400 text-sm hover:text-gray-600">
+              Planificateur
+            </Link>
+          </div>
         </div>
       </div>
 

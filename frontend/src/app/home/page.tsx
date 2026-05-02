@@ -29,6 +29,7 @@ export default function HomePage() {
   const [isPremium, setIsPremium] = useState<boolean | null>(null);
   const [showAllDeals, setShowAllDeals] = useState(false);
   const [destFilter, setDestFilter] = useState<string>("all");
+  const [discoveryGuides, setDiscoveryGuides] = useState<Array<{ iata: string; destination: string; title: string; cover_photo: string }>>([]);
   const [flightTripTypes, setFlightTripTypes] = useState<FlightTripType[]>(["round_trip"]);
   const [onewayBannerDismissed, setOnewayBannerDismissed] = useState(true);
   const router = useRouter();
@@ -77,6 +78,13 @@ export default function HomePage() {
         const res = await fetch(`${API_URL}/api/articles`);
         const data = await res.json();
         setArticles(data.articles || []);
+      } catch { /* ignore */ }
+
+      // Load destination guides for the "Découvrir vos futures destinations" collapsible
+      try {
+        const res = await fetch(`${API_URL}/api/destinations?limit=50`);
+        const data = await res.json();
+        setDiscoveryGuides(data.items || []);
       } catch { /* ignore */ }
 
       setLoading(false);
@@ -157,6 +165,9 @@ export default function HomePage() {
           </Link>
           <div className="flex items-center gap-2 md:gap-3">
             <span className="text-sm text-gray-400 hidden md:block">{isPremium === true ? "🌟 Premium" : isPremium === false ? "Free" : ""}</span>
+            <Link href="/planificateur" className="text-sm text-gray-400 hover:text-gray-900 transition-colors">
+              Planificateur
+            </Link>
             <Link href="/profile" className="text-sm text-gray-400 hover:text-gray-900 transition-colors">
               Profil
             </Link>
@@ -346,6 +357,35 @@ export default function HomePage() {
             )}
           </>)}
         </div>
+
+        {/* Découvrir vos futures destinations — collapsible */}
+        {discoveryGuides.length > 0 && (
+          <details className="mb-8 bg-white border border-gray-100 rounded-2xl">
+            <summary className="cursor-pointer px-5 py-4 font-semibold text-[#0A1F3D] flex items-center justify-between">
+              <span>🌍 Découvrir vos futures destinations</span>
+              <span className="text-sm text-gray-400 font-normal">{discoveryGuides.length} destinations</span>
+            </summary>
+            <div className="px-5 pb-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {discoveryGuides.map((g) => (
+                <Link key={g.iata} href={`/destination/${g.iata.toLowerCase()}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="group block overflow-hidden rounded-xl border border-gray-100 hover:border-[#FF6B47] transition-colors">
+                  {g.cover_photo && (
+                    <div className="relative aspect-video overflow-hidden">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={g.cover_photo} alt={g.destination}
+                           className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform" />
+                    </div>
+                  )}
+                  <div className="p-3">
+                    <div className="text-xs text-gray-400">{g.destination}</div>
+                    <div className="font-semibold text-sm text-[#0A1F3D] line-clamp-2">{g.title}</div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </details>
+        )}
 
 
         {/* CTA: Planificateur (full page lives at /planificateur). Visible to
