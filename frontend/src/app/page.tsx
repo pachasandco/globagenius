@@ -10,10 +10,15 @@ export const metadata: Metadata = {
   },
 };
 
+/**
+ * Fetches destination guides for the landing "Nos guides destination" section.
+ * Now returns 3 random guides per visit (no caching) instead of the 6 most recent
+ * — keeps the section fresh for repeat visitors.
+ */
 async function fetchRecentDestinationGuides(): Promise<Array<{ iata: string; destination: string; cover_photo: string; title: string }>> {
   try {
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    const res = await fetch(`${API_URL}/api/destinations?limit=6`, { next: { revalidate: 600 } });
+    const res = await fetch(`${API_URL}/api/destinations?random=true&limit=3`, { cache: "no-store" });
     if (!res.ok) return [];
     const data = await res.json();
     return data.items ?? [];
