@@ -10,6 +10,18 @@ export const metadata: Metadata = {
   },
 };
 
+async function fetchRecentDestinationGuides(): Promise<Array<{ iata: string; destination: string; cover_photo: string; title: string }>> {
+  try {
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const res = await fetch(`${API_URL}/api/destinations?limit=6`, { next: { revalidate: 600 } });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.items ?? [];
+  } catch {
+    return [];
+  }
+}
+
 const faqs = [
   { q: "Comment fonctionne Globe Genius ?", a: "On surveille en permanence les prix des vols au départ de 9 aéroports français. Dès qu’on détecte une baisse de prix significative, on vous envoie une alerte sur Telegram avec tous les détails pour réserver." },
   { q: "Quelle est la différence entre Gratuit et Premium ?", a: "En Gratuit, vous recevez 1 deal aller-retour entre -20% et -40% chaque jour, plus 1 grosse promo (≥-40%) une fois par semaine. En Premium, vous choisissez votre seuil (-40, -50 ou -60%), vous recevez les alertes sans limite, et vous accédez en plus aux aller simple et aux combos malins (2 billets séparés moins chers qu'un A/R)." },
@@ -29,7 +41,8 @@ const faqSchema = {
   })),
 };
 
-export default function Landing() {
+export default async function Landing() {
+  const recentGuides = await fetchRecentDestinationGuides();
   return (
     <div className="min-h-screen bg-[var(--color-cream)]">
       <RedirectIfLoggedIn />
@@ -83,6 +96,37 @@ export default function Landing() {
             </div>
           ))}
         </section>
+
+        {recentGuides.length > 0 && (
+          <section className="py-16 px-6 sm:px-12 bg-white border-t border-[var(--color-sand)]">
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-[var(--color-ink)] text-center mb-2">
+              Nos guides destination
+            </h2>
+            <p className="text-center text-gray-500 text-sm mb-10">
+              Des guides écrits pour préparer chaque destination, mis à jour à chaque nouveau deal détecté.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
+              {recentGuides.map((g) => (
+                <Link key={g.iata} href={`/destination/${g.iata.toLowerCase()}`}
+                      className="group block overflow-hidden rounded-2xl border border-[var(--color-sand)] bg-white hover:border-[var(--color-coral)] transition-colors">
+                  {g.cover_photo && (
+                    <div className="relative aspect-video overflow-hidden">
+                      {/* Using <img> here intentionally — <Image> with `fill` requires extra layout setup
+                          and these cards are below the fold. */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={g.cover_photo} alt={g.destination}
+                           className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform" />
+                    </div>
+                  )}
+                  <div className="p-4">
+                    <div className="text-xs text-gray-400">{g.destination}</div>
+                    <div className="font-bold text-[var(--color-ink)]">{g.title}</div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* ── 3 TYPES DE DEALS ── */}
         <section className="py-16 px-6 sm:px-12 bg-white border-t border-[var(--color-sand)]">
