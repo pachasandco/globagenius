@@ -1387,19 +1387,20 @@ async def job_scrape_oneway_flights():
     )
 
     # V5+ P1: detect standalone one-way deals (option C — pre-baseline,
-    # discount vs 30-day median).
-    if inserted > 0:
-        try:
-            await _detect_and_dispatch_oneway_alerts()
-        except Exception as e:
-            logger.warning(f"One-way detection failed: {e}")
+    # discount vs 30-day median). Always run, even when inserted == 0:
+    # the upserts may be no-ops because the hash already existed, but
+    # the median/qualifier may still surface a standing deal we hadn't
+    # alerted yet. Skipping when inserted == 0 was leaving qualified
+    # one-way items un-dispatched (V9 audit: 17 qualified, 0 sent).
+    try:
+        await _detect_and_dispatch_oneway_alerts()
+    except Exception as e:
+        logger.warning(f"One-way detection failed: {e}")
 
-    # V5+: scan freshly-scraped one-way data for split-ticket combos
-    if inserted > 0:
-        try:
-            await _detect_and_dispatch_split_ticket_combos()
-        except Exception as e:
-            logger.warning(f"Split-ticket detection failed: {e}")
+    try:
+        await _detect_and_dispatch_split_ticket_combos()
+    except Exception as e:
+        logger.warning(f"Split-ticket detection failed: {e}")
 
 
 async def _detect_and_dispatch_oneway_alerts() -> None:
@@ -1573,8 +1574,33 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                 if sub_user_id
                 else None
             )
+            # V9: skip if we've already alerted this user on the same
+            # bucket within the inhibit window. Without this, every
+            # 4h scrape pass re-alerts the same one-way deal until
+            # the price moves out of the 50€ bucket.
+            if sub_user_id and alert_key:
+                try:
+                    from app.thresholds import ALERT_INHIBIT_HOURS
+                    inhibit_since = (
+                        datetime.now(timezone.utc) - timedelta(hours=ALERT_INHIBIT_HOURS)
+                    ).isoformat()
+                    dup = (
+                        db.table("sent_alerts")
+                        .select("id")
+                        .eq("user_id", sub_user_id)
+                        .eq("alert_key", alert_key)
+                        .gte("created_at", inhibit_since)
+                        .limit(1)
+                        .execute()
+                    )
+                    if dup.data:
+                        continue
+                except Exception as e:
+                    logger.warning(f"One-way dedup check failed: {e}")
+
+            sent_ok = False
             try:
-                await send_oneway_deal_alert(
+                sent_ok = await send_oneway_deal_alert(
                     chat_id=chat_id,
                     flight={
                         "origin": origin,
@@ -1590,11 +1616,33 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                     user_id=sub_user_id,
                     alert_key=alert_key,
                 )
-                dispatched += 1
+                if sent_ok:
+                    dispatched += 1
             except Exception as e:
                 logger.warning(
                     f"One-way alert send failed user={sub_user_id}: {e}"
                 )
+
+            # V9: persist a sent_alerts row when the Telegram send went
+            # through. Without this, the next 4h pass would alert the
+            # exact same deal again, AND the audit can't tell whether
+            # the dispatcher even ran.
+            if sent_ok and sub_user_id and alert_key:
+                try:
+                    db.table("sent_alerts").upsert(
+                        {
+                            "user_id": sub_user_id,
+                            "chat_id": chat_id,
+                            "alert_key": alert_key,
+                            "destination": destination,
+                            "alert_type": "one_way",
+                        },
+                        on_conflict="user_id,alert_key",
+                    ).execute()
+                except Exception as e:
+                    logger.warning(
+                        f"One-way sent_alerts upsert failed user={sub_user_id}: {e}"
+                    )
 
         await asyncio.sleep(0)
 
@@ -1747,8 +1795,31 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                     if sub_user_id
                     else None
                 )
+                # V9: dedup against sent_alerts inhibit window. Without
+                # this the same combo would re-fire every scrape pass.
+                if sub_user_id and alert_key:
+                    try:
+                        from app.thresholds import ALERT_INHIBIT_HOURS
+                        inhibit_since = (
+                            datetime.now(timezone.utc) - timedelta(hours=ALERT_INHIBIT_HOURS)
+                        ).isoformat()
+                        dup = (
+                            db.table("sent_alerts")
+                            .select("id")
+                            .eq("user_id", sub_user_id)
+                            .eq("alert_key", alert_key)
+                            .gte("created_at", inhibit_since)
+                            .limit(1)
+                            .execute()
+                        )
+                        if dup.data:
+                            continue
+                    except Exception as e:
+                        logger.warning(f"Combo dedup check failed: {e}")
+
+                sent_ok = False
                 try:
-                    await send_split_ticket_alert(
+                    sent_ok = await send_split_ticket_alert(
                         chat_id=chat_id,
                         outbound=combo.outbound,
                         inbound=combo.inbound,
@@ -1756,11 +1827,30 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                         user_id=sub_user_id,
                         alert_key=alert_key,
                     )
-                    combos_dispatched += 1
+                    if sent_ok:
+                        combos_dispatched += 1
                 except Exception as e:
                     logger.warning(
                         f"Split-ticket alert failed user={sub_user_id}: {e}"
                     )
+
+                # V9: persist sent_alerts row to power dedup + audit.
+                if sent_ok and sub_user_id and alert_key:
+                    try:
+                        db.table("sent_alerts").upsert(
+                            {
+                                "user_id": sub_user_id,
+                                "chat_id": chat_id,
+                                "alert_key": alert_key,
+                                "destination": dest,
+                                "alert_type": "split_ticket",
+                            },
+                            on_conflict="user_id,alert_key",
+                        ).execute()
+                    except Exception as e:
+                        logger.warning(
+                            f"Combo sent_alerts upsert failed user={sub_user_id}: {e}"
+                        )
 
             await asyncio.sleep(0)
 
