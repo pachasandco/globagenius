@@ -1292,6 +1292,37 @@ async def stripe_webhook(request: Request):
             }).eq("stripe_customer_id", customer_id).execute()
             logger.info(f"Premium deactivated for customer {customer_id}")
 
+    elif event_type == "charge.refunded":
+        # V9: a refunded charge (full or partial) revokes premium access
+        # immediately. Without this, a user requesting their 30-day
+        # money-back guarantee keeps the service until the next nightly
+        # sync — bad UX and potentially fraud-enabling.
+        # Stripe sends both the refunded charge object AND the invoice
+        # later, but the charge event is the fastest signal.
+        customer_id = data.get("customer")
+        if db and customer_id:
+            from datetime import datetime, timezone
+            db.table("user_preferences").update({
+                "is_premium": False,
+                "premium_expires_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("stripe_customer_id", customer_id).execute()
+            logger.info(f"Premium revoked (refund) for customer {customer_id}")
+
+    elif event_type == "invoice.payment_failed":
+        # V9: a failed renewal payment (expired card, insufficient funds)
+        # must downgrade the user immediately, not wait for Stripe's
+        # internal dunning to mark the sub as past_due → cancelled (which
+        # can take days). Without this, the user keeps premium access for
+        # free during the dunning grace period.
+        customer_id = data.get("customer")
+        if db and customer_id:
+            from datetime import datetime, timezone
+            db.table("user_preferences").update({
+                "is_premium": False,
+                "premium_expires_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("stripe_customer_id", customer_id).execute()
+            logger.info(f"Premium revoked (payment_failed) for customer {customer_id}")
+
     return {"ok": True}
 
 
