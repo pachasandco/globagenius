@@ -14,14 +14,35 @@ async function fetchArticleSlugs(): Promise<string[]> {
   }
 }
 
+async function fetchDestinationIatas(): Promise<string[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/destinations`, { next: { revalidate: 3600 } });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.items || []).map((d: { iata: string }) => d.iata);
+  } catch {
+    return [];
+  }
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const slugs = await fetchArticleSlugs();
+  const [slugs, iatas] = await Promise.all([
+    fetchArticleSlugs(),
+    fetchDestinationIatas(),
+  ]);
 
   const articleUrls: MetadataRoute.Sitemap = slugs.map((slug) => ({
     url: `${BASE}/articles/${slug}`,
     lastModified: new Date(),
     priority: 0.8,
     changeFrequency: "monthly",
+  }));
+
+  const destinationUrls: MetadataRoute.Sitemap = iatas.map((iata) => ({
+    url: `${BASE}/destination/${iata.toLowerCase()}`,
+    lastModified: new Date(),
+    priority: 0.7,
+    changeFrequency: "weekly",
   }));
 
   return [
@@ -32,6 +53,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "daily",
     },
     ...articleUrls,
+    ...destinationUrls,
     {
       url: `${BASE}/conditions`,
       lastModified: new Date(),
