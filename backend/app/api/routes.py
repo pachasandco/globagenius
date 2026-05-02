@@ -1122,6 +1122,88 @@ def get_article(slug: str):
     return resp.data[0]
 
 
+@router.get("/api/destinations/{iata}")
+def get_destination(iata: str):
+    """Public endpoint backing the /destination/[iata] page.
+
+    Returns the article + cover photo + up to 5 active deals towards
+    this destination. 404 if no article generated yet.
+    """
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    iata_upper = (iata or "").upper().strip()
+    if not iata_upper or len(iata_upper) > 4:
+        raise HTTPException(status_code=400, detail="Invalid IATA code")
+
+    art_resp = (
+        db.table("articles")
+        .select("*")
+        .eq("iata", iata_upper)
+        .limit(1)
+        .execute()
+    )
+    if not art_resp.data:
+        raise HTTPException(status_code=404, detail="No guide for this destination yet")
+    article = art_resp.data[0]
+
+    photo = {
+        "url": article.get("cover_photo", ""),
+        "photographer_name": article.get("photographer_name", ""),
+        "photographer_url": article.get("photographer_url", ""),
+    }
+
+    # Active deals towards this destination, freshest first.
+    # We use raw_flights linked from qualified_items so we have the
+    # origin / dates / source_url to propose.
+    deals: list[dict] = []
+    try:
+        # Step 1: get freshest qualified_items for this dest
+        qi_resp = (
+            db.table("qualified_items")
+            .select("item_id,discount_pct,price,baseline_price,trip_type")
+            .eq("status", "active")
+            .eq("type", "flight")
+            .gte("discount_pct", 30)
+            .order("discount_pct", desc=True)
+            .limit(20)
+            .execute()
+        )
+        qi_rows = qi_resp.data or []
+        if qi_rows:
+            item_ids = [q["item_id"] for q in qi_rows if q.get("item_id")]
+            rf_resp = (
+                db.table("raw_flights")
+                .select("id,origin,destination,departure_date,return_date,airline,source_url,trip_type")
+                .in_("id", item_ids[:50])
+                .eq("destination", iata_upper)
+                .execute()
+            )
+            rf_by_id = {r["id"]: r for r in (rf_resp.data or [])}
+            for q in qi_rows:
+                rf = rf_by_id.get(q.get("item_id"))
+                if not rf:
+                    continue
+                deals.append({
+                    "origin": rf.get("origin"),
+                    "destination": rf.get("destination"),
+                    "departure_date": rf.get("departure_date"),
+                    "return_date": rf.get("return_date"),
+                    "price": q.get("price"),
+                    "baseline_price": q.get("baseline_price"),
+                    "discount_pct": q.get("discount_pct"),
+                    "airline": rf.get("airline"),
+                    "source_url": rf.get("source_url"),
+                    "trip_type": rf.get("trip_type"),
+                })
+                if len(deals) >= 5:
+                    break
+    except Exception as e:
+        logger.warning(f"Deal lookup for destination {iata_upper} failed: {e}")
+
+    return {"article": article, "photo": photo, "deals": deals}
+
+
 @router.post("/api/articles/generate")
 async def generate_article_endpoint(destination: str, country: str, request: Request):
     _require_admin(request)
