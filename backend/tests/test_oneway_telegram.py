@@ -106,3 +106,80 @@ def test_format_split_ticket_handles_missing_airline_gracefully():
     msg = format_split_ticket_alert(outbound, inbound, roundtrip_baseline=780.0)
     assert "—" in msg                       # placeholder dash
     assert "540" in msg
+
+
+# ─── V9 redesign + carrier normalisation ───
+
+def test_format_split_ticket_normalises_cyrillic_carrier_names():
+    """A combo coming back from Travelpayouts with the agency name in
+    Cyrillic ('Авиасейлс') must be rendered as 'Aviasales' in the user-
+    facing message."""
+    outbound = {
+        "origin": "CDG", "destination": "BKK",
+        "departure_date": "2026-09-01", "price": 220.0,
+        "airline": "Авиасейлс",
+        "source_url": "https://example.com/out",
+    }
+    inbound = {
+        "origin": "BKK", "destination": "CDG",
+        "departure_date": "2026-09-15", "price": 230.0,
+        "airline": "Купибилет",
+        "source_url": "https://example.com/in",
+    }
+    msg = format_split_ticket_alert(outbound, inbound, roundtrip_baseline=850.0)
+    assert "Aviasales" in msg
+    assert "Kupibilet" in msg
+    assert "Авиасейлс" not in msg  # never expose the cyrillic original
+    assert "Купибилет" not in msg
+
+
+def test_format_split_ticket_resolves_iata_codes_to_brand_names():
+    """A 2-letter IATA code (FR, AF) coming through `airline` must be
+    rendered as the readable brand name in the alert."""
+    outbound = {
+        "origin": "BVA", "destination": "BCN",
+        "departure_date": "2026-09-01", "price": 35.0,
+        "airline": "FR",  # Ryanair IATA
+        "source_url": "https://example.com/out",
+    }
+    inbound = {
+        "origin": "BCN", "destination": "BVA",
+        "departure_date": "2026-09-08", "price": 28.0,
+        "airline": "VY",  # Vueling IATA
+        "source_url": "https://example.com/in",
+    }
+    msg = format_split_ticket_alert(outbound, inbound, roundtrip_baseline=130.0)
+    assert "Ryanair" in msg
+    assert "Vueling" in msg
+
+
+def test_format_split_ticket_uses_grouped_alert_visual_style():
+    """V9 redesign: combo alert must reuse the same skeleton as the
+    grouped flight alert so the user sees a single coherent product.
+    Asserts the few visual anchors:
+      - top badge line (🔴 / 🟠 / 🟡)
+      - 🛫/🛬 header lines
+      - prix barré (~XXX €~) for the baseline
+      - per-leg "Voir le deal" link prefix instead of bare 'Réserver'
+    """
+    outbound = {
+        "origin": "CDG", "destination": "BKK",
+        "departure_date": "2026-09-01", "price": 220.0,
+        "airline": "AF", "source_url": "https://aller.example/x",
+    }
+    inbound = {
+        "origin": "BKK", "destination": "CDG",
+        "departure_date": "2026-09-15", "price": 230.0,
+        "airline": "TG", "source_url": "https://retour.example/x",
+    }
+    msg = format_split_ticket_alert(outbound, inbound, roundtrip_baseline=850.0)
+    # Badge present at the top
+    assert any(badge in msg.split("\n")[0] for badge in ("🔴", "🟠", "🟡"))
+    # Grouped-style 🛫/🛬 header
+    assert "🛫" in msg
+    assert "🛬" in msg
+    # Strikethrough baseline
+    assert "~850 €~" in msg
+    # Per-leg link styled like the grouped formatter
+    assert "Voir le deal aller" in msg
+    assert "Voir le deal retour" in msg

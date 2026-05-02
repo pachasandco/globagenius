@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 const faqs = [
   { q: "Comment fonctionne Globe Genius ?", a: "On surveille en permanence les prix des vols au départ de 9 aéroports français. Dès qu’on détecte une baisse de prix significative, on vous envoie une alerte sur Telegram avec tous les détails pour réserver." },
-  { q: "Quelle est la différence entre Gratuit et Premium ?", a: "En Gratuit, vous recevez jusqu'à 3 alertes complètes par semaine sur les deals entre -40% et -50%. Les deals exceptionnels (-60% et plus, les vraies erreurs de prix) ne sont pas notifiés. En Premium, vous recevez tous les deals sans limite, y compris les aller simple et les combos malins (2 billets séparés moins chers qu'un A/R)." },
+  { q: "Quelle est la différence entre Gratuit et Premium ?", a: "En Gratuit, vous recevez 1 deal aller-retour entre -20% et -40% chaque jour, plus 1 grosse promo (≥-40%) une fois par semaine. En Premium, vous choisissez votre seuil (-40, -50 ou -60%), vous recevez les alertes sans limite, et vous accédez en plus aux aller simple et aux combos malins (2 billets séparés moins chers qu'un A/R)." },
   { q: "Comment fonctionne la garantie 30 jours ?", a: "Si Premium ne vous convient pas, contactez-nous dans les 30 jours suivant votre achat et on vous rembourse intégralement, sans question." },
   { q: "Les prix incluent-ils les bagages ?", a: "Les prix affichés sont ceux des compagnies aériennes. Les bagages en soute sont parfois inclus selon la compagnie et le tarif. On le précise dans chaque alerte quand l’information est disponible." },
   { q: "Combien de temps entre la publication du prix et votre alerte ?", a: "Les prix sont mis à jour toutes les 20 minutes au départ de Paris (Beauvais, CDG et Orly), et toutes les 2 heures sur les autres aéroports français. Dès qu'une bonne affaire est repérée, l'alerte Telegram part dans la foulée, généralement moins de 5 minutes après l'apparition du deal." },
@@ -72,7 +72,7 @@ export default function Landing() {
         {/* ── STATS BAR ── */}
         <section className="flex flex-wrap justify-center gap-8 sm:gap-12 py-6 px-6 bg-white border-t border-[var(--color-sand)]">
           {[
-            { value: "-40%", label: "réduction minimum" },
+            { value: "-20%", label: "alerte chaque jour (gratuit)" },
             { value: "-70%", label: "meilleur deal repéré" },
             { value: "24h/24", label: "surveillance des prix" },
             { value: "9", label: "aéroports français" },
@@ -122,7 +122,7 @@ export default function Landing() {
             </div>
           </div>
           <p className="text-center text-xs text-gray-400 mt-6 max-w-xl mx-auto">
-            💬 L&apos;aller simple et le combo malin sont à activer dans votre profil.
+            💬 L&apos;aller simple et le combo malin sont réservés aux abonnés Premium et s&apos;activent dans votre profil.
           </p>
         </section>
 
@@ -142,10 +142,10 @@ export default function Landing() {
               <div className="font-bold text-[var(--color-ink)] text-sm mb-1">Gratuit</div>
               <div className="text-3xl font-extrabold text-[var(--color-ink)] mb-5">0€</div>
               <div className="text-sm text-gray-500 leading-loose mb-6">
-                ✓ Deals entre -40% et -50%<br />
-                ✓ 3 alertes complètes / semaine<br />
-                ✓ 9 aéroports de départ<br />
-                <span className="text-gray-300">✗ Deals exceptionnels (-60% et plus)</span><br />
+                ✓ <span className="text-[var(--color-ink)] font-medium">1 deal -20% à -40%</span> par jour<br />
+                ✓ <span className="text-[var(--color-ink)] font-medium">1 grosse promo ≥-40%</span> par semaine<br />
+                ✓ Aller-retour, 9 aéroports de départ<br />
+                <span className="text-gray-300">✗ Choisir le seuil de promo</span><br />
                 <span className="text-gray-300">✗ Alertes illimitées</span><br />
                 <span className="text-gray-300">✗ Aller simple &amp; combos malins</span>
               </div>
@@ -164,8 +164,9 @@ export default function Landing() {
                 <span className="text-gray-500 text-sm">/an</span>
               </div>
               <div className="text-sm text-gray-400 leading-loose mb-6">
-                ✓ <span className="text-white">Tous les deals, jusqu&apos;à -70%+</span><br />
-                ✓ <span className="text-white">Alertes illimitées</span><br />
+                ✓ <span className="text-white">Tous les deals jusqu&apos;à -70%+</span><br />
+                ✓ <span className="text-white">Filtre personnalisé : -40, -50 ou -60%</span><br />
+                ✓ <span className="text-white">Alertes illimitées, sans quota</span><br />
                 ✓ <span className="text-white">Aller simple &amp; combos malins</span><br />
                 ✓ <span className="text-white">9 aéroports de départ</span><br />
                 ✓ <span className="text-white">Garantie satisfait 30 jours</span><br />

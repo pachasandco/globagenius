@@ -320,9 +320,19 @@ def format_split_ticket_alert(
     """V5: format a 'combo malin' 2x one-way alert when buying two separate
     one-way tickets is cheaper than the round-trip baseline on the same route.
 
-    Both `outbound` and `inbound` must include origin, destination, departure_date,
-    price, source_url, airline."""
+    V9 redesign: aligned visually with format_grouped_flight_alerts so a
+    user reading their feed doesn't see "two different products". Same
+    badge, same header, same ~price~ strike-through baseline, same ✅
+    Vol vérifié footer line, same per-leg "Voir le deal" link styling.
+    Carrier names are normalised via normalize_airline_name() so we
+    never expose Cyrillic agency strings in the user-facing message.
+
+    Both `outbound` and `inbound` must include origin, destination,
+    departure_date, price, source_url, airline.
+    """
     from app.config import iata_label
+    from app.notifications.airlines import normalize_airline_name
+
     origin = outbound["origin"]
     dest = outbound["destination"]
     origin_label = iata_label(origin)
@@ -336,22 +346,15 @@ def format_split_ticket_alert(
     out_dep = _fmt_date_fr(outbound["departure_date"])
     in_dep = _fmt_date_fr(inbound["departure_date"])
 
-    lines = [
-        "*💡 Combo malin · 2 billets séparés*",
-        "",
-        f"🛫 *{origin_label} → {dest_label}*",
-        f"🛬 *{dest_label} → {origin_label}*",
-        "",
-        f"💰 *{total} € total · économie {savings} € (-{saving_pct} %)*",
-        f"Prix habituel A/R : ~{rt_baseline} €~",
-        "",
-        f"↳ Aller : {outbound.get('airline') or '—'} · "
-        f"{int(round(outbound['price']))} € · {out_dep}",
-        f"↳ Retour : {inbound.get('airline') or '—'} · "
-        f"{int(round(inbound['price']))} € · {in_dep}",
-        "",
-        "⚠️ Bagages et annulation gérés séparément",
-    ]
+    out_carrier = normalize_airline_name(outbound.get("airline")) or "—"
+    in_carrier = normalize_airline_name(inbound.get("airline")) or "—"
+    out_price = int(round(outbound["price"]))
+    in_price = int(round(inbound["price"]))
+
+    # Reuse the same badge ladder as the round-trip grouped formatter
+    # so visual hierarchy is consistent across alert types.
+    badge = _deal_badge(saving_pct)
+
     out_url = outbound.get("source_url", "")
     in_url = inbound.get("source_url", "")
 
@@ -366,11 +369,32 @@ def format_split_ticket_alert(
             )
         return _add_utms(url, origin, dest)
 
+    lines = [
+        f"*{badge} · 💡 Combo malin*",
+        "",
+        f"🛫 *{origin_label} → {dest_label}*",
+        f"🛬 *{dest_label} → {origin_label}*",
+        "",
+        f"💰 *{total} € total · -{saving_pct} %*",
+        f"   Prix habituel A/R : ~{rt_baseline} €~",
+        f"   Économie : {savings} €",
+        "   ✅ 2 billets vérifiés",
+        "",
+        # Outbound leg
+        f"✈️ *Aller* — {out_carrier} · {out_price} € · {out_dep}",
+    ]
     if out_url and out_url != "N/A":
-        lines.append(f"👉 Aller : [Réserver]({_wrap(out_url)})")
+        lines.append(f"   👉 [Voir le deal aller]({_wrap(out_url)})")
+    lines.append("")
+    # Inbound leg
+    lines.append(f"✈️ *Retour* — {in_carrier} · {in_price} € · {in_dep}")
     if in_url and in_url != "N/A":
-        lines.append(f"👉 Retour : [Réserver]({_wrap(in_url)})")
+        lines.append(f"   👉 [Voir le deal retour]({_wrap(in_url)})")
 
+    lines += [
+        "",
+        "⚠️ Bagages et annulation gérés séparément pour chaque billet.",
+    ]
     return "\n".join(lines)
 
 
