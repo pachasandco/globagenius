@@ -14,7 +14,7 @@ export default function Confidentialite() {
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
         <div className="max-w-4xl mx-auto px-4 md:px-5 h-[64px] flex items-center">
           <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-[19px] leading-none">
-            Globe<span className="text-[#FF6B47]">Genius</span>
+            <span className="text-[#1E90FF]">Globe</span><span className="text-[#FF6B47]">Genius</span>
           </Link>
         </div>
       </nav>

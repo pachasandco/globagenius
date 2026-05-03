@@ -121,7 +121,7 @@ export default function OnboardingPage() {
       <div className="w-full max-w-lg">
         {/* Logo */}
         <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-xl leading-none block text-center mb-8">
-          Globe<span className="text-[#FF6B47]">Genius</span>
+          <span className="text-[#1E90FF]">Globe</span><span className="text-[#FF6B47]">Genius</span>
         </Link>
 
         {/* Progress — 3 steps: airports / alerts / telegram */}

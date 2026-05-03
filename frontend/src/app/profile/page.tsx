@@ -472,7 +472,7 @@ export default function ProfilePage() {
       <div className="bg-white border-b">
         <div className="max-w-2xl mx-auto px-4 md:px-5 py-4 flex items-center justify-between">
           <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-xl leading-none">
-            Globe<span className="text-[#FF6B47]">Genius</span>
+            <span className="text-[#1E90FF]">Globe</span><span className="text-[#FF6B47]">Genius</span>
           </Link>
           <div className="flex items-center gap-3">
             <Link href="/home" className="text-gray-400 text-sm hover:text-gray-600">

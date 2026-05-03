@@ -161,7 +161,7 @@ export default function HomePage() {
       <nav className="sticky top-0 z-50 bg-white border-b border-gray-100">
         <div className="max-w-6xl mx-auto px-4 md:px-5 h-[64px] flex items-center justify-between">
           <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-[19px] leading-none">
-            Globe<span className="text-[#FF6B47]">Genius</span>
+            <span className="text-[#1E90FF]">Globe</span><span className="text-[#FF6B47]">Genius</span>
           </Link>
           <div className="flex items-center gap-2 md:gap-3">
             <span className="text-sm text-gray-400 hidden md:block">{isPremium === true ? "🌟 Premium" : isPremium === false ? "Free" : ""}</span>

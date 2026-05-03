@@ -47,7 +47,7 @@ export default function SignupPage() {
     <div className="min-h-screen bg-[#FFF8F0] flex items-start sm:items-center justify-center px-4 md:px-5 py-8 sm:py-0">
       <div className="w-full max-w-sm">
         <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-xl leading-none block text-center mb-10">
-          Globe<span className="text-[#FF6B47]">Genius</span>
+          <span className="text-[#1E90FF]">Globe</span><span className="text-[#FF6B47]">Genius</span>
         </Link>
 
         <h1 className="font-[family-name:var(--font-dm-serif)] text-2xl text-center mb-2">

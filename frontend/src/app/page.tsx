@@ -58,7 +58,7 @@ export default async function Landing() {
       {/* ── NAVBAR ── */}
       <nav aria-label="Navigation principale" className="sticky top-0 z-50 flex items-center justify-between px-6 sm:px-12 py-4 bg-[var(--color-cream)]/95 backdrop-blur-sm border-b border-[var(--color-sand)]">
         <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-lg leading-none">
-          Globe<span className="text-[var(--color-coral)]">Genius</span>
+          <span className="text-[var(--color-globe-blue)]">Globe</span><span className="text-[var(--color-coral)]">Genius</span>
         </Link>
         <div className="flex items-center gap-6 text-sm">
           <a href="#comment-ca-marche" className="hidden sm:inline text-[var(--color-ink)] hover:text-[var(--color-coral)] transition-colors">Comment ça marche</a>

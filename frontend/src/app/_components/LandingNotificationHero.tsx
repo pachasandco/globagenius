@@ -133,7 +133,7 @@ function NotificationCard({ notif }: { notif: NotifSample }) {
                 ✈
               </div>
               <span className="text-[12px] font-semibold text-[#0A1F3D] tracking-tight">
-                Globe<span className="text-[#FF6B47]">Genius</span>
+                <span className="text-[#1E90FF]">Globe</span><span className="text-[#FF6B47]">Genius</span>
               </span>
               <NotifLiveDot />
             </div>
