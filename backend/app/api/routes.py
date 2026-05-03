@@ -1576,18 +1576,6 @@ async def admin_test_welcome_email(req: AdminTestWelcomeEmailRequest, request: R
     }
 
 
-@router.get("/api/admin/sentry-test")
-def admin_sentry_test(request: Request):
-    """One-shot endpoint to confirm the Sentry instrumentation chain is wired
-    correctly end-to-end. Triggers a deliberate ZeroDivisionError that should
-    appear in Sentry within ~30s as an issue tagged release=<railway commit>.
-
-    Safe to keep around: protected by X-Admin-Key, never called accidentally.
-    """
-    _require_admin(request)
-    1 / 0  # noqa: B018 — intentional
-
-
 @router.get("/api/admin/scrapers/health")
 def admin_scrapers_health(request: Request):
     """Per-scraper health snapshot for the last 24h and 7d.
