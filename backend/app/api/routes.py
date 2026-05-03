@@ -5,7 +5,7 @@ import secrets
 import logging
 import stripe
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, HTTPException, Request, Depends, BackgroundTasks
 from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, field_validator
@@ -710,8 +710,17 @@ async def trigger_job(job_name: str, request: Request):
 
 # ─── AUTH ───
 
+async def _send_welcome_email_safe(email: str) -> None:
+    """Background-task wrapper that swallows errors so a failed email
+    never surfaces to the user (signup already returned 200)."""
+    try:
+        await _send_welcome_email(email)
+    except Exception as e:
+        logger.warning(f"Failed to send welcome email to {email}: {e}")
+
+
 @router.post("/api/auth/signup")
-async def signup(req: SignupRequest, request: Request):
+async def signup(req: SignupRequest, request: Request, bg_tasks: BackgroundTasks):
     _check_rate_limit(f"signup:{_client_ip(request)}")
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
@@ -733,30 +742,41 @@ async def signup(req: SignupRequest, request: Request):
             )
         raise HTTPException(status_code=400, detail="Adresse email invalide.")
 
-    existing = db.table("users").select("id").eq("email", req.email).execute()
+    loop = asyncio.get_running_loop()
+
+    existing = await loop.run_in_executor(
+        None,
+        lambda: db.table("users").select("id").eq("email", req.email).execute(),
+    )
     if existing.data:
         raise HTTPException(status_code=409, detail="Cet email est deja utilise")
 
-    user = db.table("users").insert({
-        "email": req.email,
-        "password_hash": _hash_password(req.password),
-    }).execute()
+    password_hash = await loop.run_in_executor(None, _hash_password, req.password)
+
+    user = await loop.run_in_executor(
+        None,
+        lambda: db.table("users").insert({
+            "email": req.email,
+            "password_hash": password_hash,
+        }).execute(),
+    )
     if not user.data:
         raise HTTPException(status_code=500, detail="Erreur lors de la creation du compte")
 
     user_id = user.data[0]["id"]
 
-    db.table("user_preferences").insert({
-        "user_id": user_id,
-        "airport_codes": ["CDG"],
-        "offer_types": ["package", "flight", "accommodation"],
-    }).execute()
+    await loop.run_in_executor(
+        None,
+        lambda: db.table("user_preferences").insert({
+            "user_id": user_id,
+            "airport_codes": ["CDG"],
+            "offer_types": ["package", "flight", "accommodation"],
+        }).execute(),
+    )
 
-    # Send welcome email (fire and forget)
-    try:
-        await _send_welcome_email(req.email)
-    except Exception as e:
-        logger.warning(f"Failed to send welcome email: {e}")
+    # Send welcome email out-of-band so the user gets their token immediately
+    # instead of waiting on the Brevo HTTP call (up to 10s).
+    bg_tasks.add_task(_send_welcome_email_safe, req.email)
 
     token = _create_jwt(user_id, req.email)
     return {"user_id": user_id, "email": req.email, "token": token}
@@ -782,16 +802,29 @@ class ResetPasswordRequest(BaseModel):
 
 
 @router.post("/api/auth/login")
-def login(req: LoginRequest, request: Request):
+async def login(req: LoginRequest, request: Request):
     _check_rate_limit(f"login:{_client_ip(request)}")
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
-    user = db.table("users").select("*").eq("email", req.email.lower().strip()).execute()
+    loop = asyncio.get_running_loop()
+    email_norm = req.email.lower().strip()
+
+    # Supabase SDK is sync — run it off the event loop so other requests
+    # are not blocked while we wait on the DB roundtrip.
+    user = await loop.run_in_executor(
+        None,
+        lambda: db.table("users").select("*").eq("email", email_norm).execute(),
+    )
     if not user.data:
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
 
-    if not _verify_password(req.password, user.data[0]["password_hash"]):
+    # bcrypt.checkpw is CPU-bound (~100ms at default cost). Off-loading
+    # it keeps the worker's event loop free.
+    is_valid = await loop.run_in_executor(
+        None, _verify_password, req.password, user.data[0]["password_hash"]
+    )
+    if not is_valid:
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
 
     user_id = user.data[0]["id"]

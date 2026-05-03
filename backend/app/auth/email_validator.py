@@ -15,12 +15,20 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from dataclasses import dataclass
 
 import dns.exception
 import dns.resolver
 
 logger = logging.getLogger(__name__)
+
+# Cache MX lookups so repeat signups for the same domain (gmail.com,
+# outlook.com…) don't pay the DNS roundtrip every time.
+# Maps domain -> (resolves: bool | None, expires_at: epoch_seconds).
+_DNS_CACHE: dict[str, tuple[bool | None, float]] = {}
+_DNS_CACHE_TTL_SECONDS = 3600  # 1 hour
+_DNS_CACHE_MAX_SIZE = 1024
 
 
 # RFC-ish email regex. Not perfect (RFC 5322 is a mess) but rejects the
@@ -76,23 +84,46 @@ def _dns_resolve_sync(domain: str, timeout: float) -> bool:
         return False
 
 
-async def _dns_resolve(domain: str, timeout: float = 3.0) -> bool | None:
+async def _dns_resolve(domain: str, timeout: float = 1.0) -> bool | None:
     """Async wrapper around the blocking DNS lookup.
 
     Returns True/False if we got a definitive answer, None if DNS failed
     transiently — caller treats None as 'accept, do not block signup'.
+
+    Results are cached for _DNS_CACHE_TTL_SECONDS so repeat signups for
+    common domains skip the network entirely.
     """
+    now = time.monotonic()
+
+    cached = _DNS_CACHE.get(domain)
+    if cached is not None:
+        result, expires_at = cached
+        if expires_at > now:
+            return result
+        # Expired — fall through and refresh.
+
     loop = asyncio.get_running_loop()
     try:
-        return await loop.run_in_executor(
+        result = await loop.run_in_executor(
             None, _dns_resolve_sync, domain, timeout
         )
     except (dns.exception.Timeout, dns.resolver.NoNameservers, dns.resolver.LifetimeTimeout):
         logger.warning(f"DNS check timed out for {domain}, accepting by default")
-        return None
+        result = None
     except Exception as e:
         logger.warning(f"DNS check failed for {domain} ({e}), accepting by default")
-        return None
+        result = None
+
+    # Don't cache transient failures — we want to retry next time.
+    if result is not None:
+        if len(_DNS_CACHE) >= _DNS_CACHE_MAX_SIZE:
+            # Cheap eviction: drop the oldest entry by expiry. O(n) but
+            # n is small (<= 1024) and this only runs when the cache is full.
+            oldest = min(_DNS_CACHE.items(), key=lambda kv: kv[1][1])[0]
+            _DNS_CACHE.pop(oldest, None)
+        _DNS_CACHE[domain] = (result, now + _DNS_CACHE_TTL_SECONDS)
+
+    return result
 
 
 async def validate_email_address(email: str, *, check_dns: bool = True) -> EmailValidationResult:

@@ -27,11 +27,15 @@ if _SENTRY_DSN:
         from sentry_sdk.integrations.fastapi import FastApiIntegration
         from sentry_sdk.integrations.logging import LoggingIntegration
 
+        # Sample rate is env-driven so we can crank it up while
+        # diagnosing perf issues, then dial it back. Default 100% is
+        # fine at current volume; lower it (e.g. 0.1) once traffic grows.
+        _traces_rate = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "1.0"))
         sentry_sdk.init(
             dsn=_SENTRY_DSN,
             environment=os.getenv("APP_ENV", "production"),
             release=os.getenv("RAILWAY_GIT_COMMIT_SHA", "dev"),
-            traces_sample_rate=0.05,  # 5% of requests get a trace
+            traces_sample_rate=_traces_rate,
             profiles_sample_rate=0.0,  # profiling off, costs extra
             integrations=[
                 FastApiIntegration(transaction_style="endpoint"),
@@ -47,6 +51,10 @@ if _SENTRY_DSN:
 logger.info(f"Starting Globe Genius Pipeline — ENV={os.getenv('APP_ENV', 'unknown')} PORT={os.getenv('PORT', 'not set')}")
 
 scheduler = AsyncIOScheduler()
+
+# Set RUN_SCHEDULER=0 on API workers when running multiple Uvicorn workers,
+# so cron jobs only fire once. Default ON to keep current behaviour.
+_RUN_SCHEDULER = os.getenv("RUN_SCHEDULER", "1") == "1"
 
 
 @asynccontextmanager
@@ -65,7 +73,10 @@ async def lifespan(app: FastAPI):
     # 1h is plenty of slack for any of our cron jobs to recover.
     DEFAULT_MISFIRE_GRACE_SECONDS = 3600
 
-    for job_def in get_scheduler_jobs():
+    if not _RUN_SCHEDULER:
+        logger.info("Scheduler disabled (RUN_SCHEDULER=0) — API-only worker, jobs will not run here")
+
+    for job_def in (get_scheduler_jobs() if _RUN_SCHEDULER else []):
         job_id = job_def["id"]
         func = job_def["func"]
         trigger = job_def["trigger"]
@@ -95,8 +106,9 @@ async def lifespan(app: FastAPI):
                 **cron_kwargs,
             )
 
-    scheduler.start()
-    logger.info(f"Scheduler started with {len(scheduler.get_jobs())} jobs")
+    if _RUN_SCHEDULER:
+        scheduler.start()
+        logger.info(f"Scheduler started with {len(scheduler.get_jobs())} jobs")
 
     # Wire RAG retriever to the travel planner (Supabase full-text search)
     try:
@@ -112,8 +124,9 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    scheduler.shutdown()
-    logger.info("Scheduler shut down")
+    if _RUN_SCHEDULER and scheduler.running:
+        scheduler.shutdown()
+        logger.info("Scheduler shut down")
 
 
 app = FastAPI(
