@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
-import { DM_Serif_Display, Plus_Jakarta_Sans } from "next/font/google";
+import { DM_Serif_Display, Plus_Jakarta_Sans, Geist } from "next/font/google";
 import "./globals.css";
+import { cn } from "@/lib/utils";
+
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 const dmSerif = DM_Serif_Display({
   weight: "400",
@@ -79,7 +82,7 @@ export default function RootLayout({
   return (
     <html
       lang="fr"
-      className={`${dmSerif.variable} ${plusJakarta.variable}`}
+      className={cn(dmSerif.variable, plusJakarta.variable, "font-sans", geist.variable)}
     >
       <body className="min-h-screen w-full">
         {/* JSON-LD Structured Data — server-rendered for SEO

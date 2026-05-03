@@ -708,14 +708,26 @@ async def send_grouped_flight_alerts(
         has_guide=has_guide,
     )
 
-    # Inline keyboard — quick action without leaving Telegram.
-    # 'Se désabonner' was removed (full opt-out is too aggressive for an
-    # accidental tap; users can disconnect Telegram from /profile if they
-    # really want out). The Pause button toggles indefinitely.
+    # Inline keyboard — quick actions without leaving Telegram:
+    #  - "Masquer <destination>": one-tap to hide future alerts for this
+    #    specific destination (most-asked feature: users skim notifs and
+    #    want to dismiss the city they're not interested in).
+    #  - "Pause": opens a sub-menu (7d / 30d / indefinite) on click; the
+    #    callback handler swaps in the duration buttons.
+    # 'Se désabonner' is intentionally absent — full opt-out is too easy
+    # to fat-finger; users can disconnect from /profile if they really
+    # want out.
     reply_markup = None
     if user_id:
+        # Truncate the destination label to keep the button text short on
+        # narrow screens (Telegram clips long button labels mid-word).
+        short_dest = (dest_city or destination_iata)[:18]
         reply_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⏸ Pause les alertes", callback_data=f"pause:{user_id}")]
+            [InlineKeyboardButton(
+                f"🚫 Masquer {short_dest}",
+                callback_data=f"block:{user_id}:{destination_iata}",
+            )],
+            [InlineKeyboardButton("⏸ Pause les alertes", callback_data=f"pause_menu:{user_id}")],
         ])
 
     try:

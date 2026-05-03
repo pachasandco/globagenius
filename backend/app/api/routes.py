@@ -1108,14 +1108,27 @@ def generate_telegram_link(user_id: str, user: dict = Depends(get_current_user))
 @router.post("/api/telegram/setup-webhook")
 async def setup_telegram_webhook(request: Request):
     _require_admin(request)
-    """Set Telegram webhook to point to our API."""
+    """Set Telegram webhook to point to our API and publish the slash-command
+    list (Telegram clients show these in the hamburger menu, making
+    /destinations and /pause discoverable without prior knowledge)."""
     import httpx
     webhook_url = f"{settings.BACKEND_URL}/api/telegram/webhook"
-    telegram_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/setWebhook"
+    base = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}"
+
+    commands = [
+        {"command": "destinations", "description": "Bloquer / débloquer une destination"},
+        {"command": "pause", "description": "Mettre les alertes en pause"},
+        {"command": "status", "description": "État du pipeline"},
+        {"command": "help", "description": "Aide"},
+    ]
 
     async with httpx.AsyncClient() as client:
-        resp = await client.post(telegram_url, json={"url": webhook_url})
-        return resp.json()
+        webhook_resp = await client.post(f"{base}/setWebhook", json={"url": webhook_url})
+        commands_resp = await client.post(f"{base}/setMyCommands", json={"commands": commands})
+        return {
+            "set_webhook": webhook_resp.json(),
+            "set_my_commands": commands_resp.json(),
+        }
 
 
 @router.get("/api/users/{user_id}/telegram/status")
