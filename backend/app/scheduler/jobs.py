@@ -1414,6 +1414,32 @@ async def job_scrape_oneway_flights():
         logger.warning(f"Split-ticket detection failed: {e}")
 
 
+def _user_passes_discount_floor(sub: dict, deal_discount_pct: float) -> bool:
+    """Return True if this user's premium min_discount allows this deal.
+
+    Free users have a fixed band policy and aren't subject to a per-user
+    floor — they get filtered earlier in the pipeline. Premium users
+    pick a floor (40 / 50 / 60); deals below that floor are dropped.
+
+    Used by both the one-way and split-ticket dispatchers so the
+    user-controlled threshold is enforced consistently across all
+    alert types (was previously only applied to round-trip flights —
+    that's how a user with min_discount=60 ended up receiving 45%
+    one-way alerts).
+    """
+    from app.thresholds import (
+        PREMIUM_DEFAULT_MIN_DISCOUNT,
+        PREMIUM_MIN_DISCOUNT_CHOICES,
+    )
+
+    raw = sub.get("min_discount")
+    if raw in PREMIUM_MIN_DISCOUNT_CHOICES:
+        floor = raw
+    else:
+        floor = PREMIUM_DEFAULT_MIN_DISCOUNT
+    return deal_discount_pct >= floor
+
+
 async def _detect_and_dispatch_oneway_alerts() -> None:
     """V5+ P1: scan recent one-way rows for standalone deals.
 
@@ -1441,7 +1467,7 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
     try:
         prefs_resp = (
             db.table("user_preferences")
-            .select("user_id,telegram_chat_id,airport_codes,flight_trip_types,blocked_destinations")
+            .select("user_id,telegram_chat_id,airport_codes,flight_trip_types,blocked_destinations,min_discount")
             .eq("telegram_connected", True)
             .execute()
         )
@@ -1568,6 +1594,11 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
             # Block check uses the actual destination city the user flies to.
             travel_dest = destination if direction == "outbound" else origin
             if travel_dest in blocked:
+                continue
+            # Honour the per-user discount floor (40 / 50 / 60). Without
+            # this gate, premium users with min_discount=60 still receive
+            # 40% / 50% one-way deals.
+            if not _user_passes_discount_floor(sub, qualification.discount_pct):
                 continue
             chat_id = sub["telegram_chat_id"]
             sub_user_id = sub.get("user_id")
@@ -1699,7 +1730,7 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
     try:
         prefs_resp = (
             db.table("user_preferences")
-            .select("user_id,telegram_chat_id,airport_codes,flight_trip_types,blocked_destinations,include_split_tickets")
+            .select("user_id,telegram_chat_id,airport_codes,flight_trip_types,blocked_destinations,include_split_tickets,min_discount")
             .eq("telegram_connected", True)
             .execute()
         )
@@ -1803,6 +1834,10 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                     continue
                 blocked = set(sub.get("blocked_destinations") or [])
                 if dest in blocked:
+                    continue
+                # Honour the per-user discount floor against the combo's
+                # savings vs the equivalent round-trip baseline.
+                if not _user_passes_discount_floor(sub, combo_savings_pct):
                     continue
                 chat_id = sub["telegram_chat_id"]
                 sub_user_id = sub.get("user_id")
