@@ -5,7 +5,6 @@ import {
   listUsers,
   grantPremium,
   revokePremium,
-  updateMinDiscount,
   resetPrefs,
   deleteUser,
   hasAdminKey,
@@ -92,14 +91,9 @@ export default function AdminUsersPage() {
     }
   }
 
-  async function handleMinDiscount(user: AdminUser, value: number) {
-    try {
-      await updateMinDiscount(user.id, value);
-      await reload();
-    } catch (e) {
-      alert(`Failed: ${e instanceof Error ? e.message : "error"}`);
-    }
-  }
+  // Note: admin-side override of min_discount removed in v10 — the
+  // discount threshold is user-controlled via /profile only. The
+  // matching backend endpoint and lib/admin helper are gone too.
 
   async function handleReset(user: AdminUser) {
     if (!confirm(`Reset preferences for ${user.email}?`)) return;
@@ -211,7 +205,6 @@ export default function AdminUsersPage() {
               <tr>
                 <th className="p-3">Email</th>
                 <th className="p-3">Tier</th>
-                <th className="p-3">Min%</th>
                 <th className="p-3">Stripe</th>
                 <th className="p-3">TG</th>
                 <th className="p-3">Grant</th>
@@ -242,21 +235,6 @@ export default function AdminUsersPage() {
                     >
                       {u.tier}
                     </span>
-                  </td>
-                  <td className="p-3">
-                    <select
-                      value={u.min_discount}
-                      onChange={(e) =>
-                        handleMinDiscount(u, parseInt(e.target.value, 10))
-                      }
-                      className="border border-gray-200 rounded px-2 py-1 text-xs"
-                    >
-                      {[20, 30, 40, 50, 60].map((v) => (
-                        <option key={v} value={v}>
-                          {v}%
-                        </option>
-                      ))}
-                    </select>
                   </td>
                   <td className="p-3">{u.stripe_customer_id ? "✓" : "—"}</td>
                   <td className="p-3">{u.telegram_connected ? "✓" : "—"}</td>

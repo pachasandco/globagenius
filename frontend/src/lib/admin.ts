@@ -56,11 +56,9 @@ export const grantPremium = (
 export const revokePremium = (id: string) =>
   adminFetch(`/api/admin/users/${id}/premium`, { method: "DELETE" });
 
-export const updateMinDiscount = (id: string, value: number) =>
-  adminFetch(`/api/admin/users/${id}/min_discount`, {
-    method: "PUT",
-    body: JSON.stringify({ value }),
-  });
+// updateMinDiscount removed in v10 — admin override of user-controlled
+// min_discount caused silent overrides of profile choices. The backend
+// endpoint is gone too.
 
 export const resetPrefs = (id: string) =>
   adminFetch(`/api/admin/users/${id}/reset_prefs`, { method: "POST" });

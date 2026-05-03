@@ -1590,17 +1590,6 @@ class AdminGrantPremiumRequest(BaseModel):
     reason: str | None = None
 
 
-class AdminMinDiscountRequest(BaseModel):
-    value: int
-
-    @field_validator("value")
-    @classmethod
-    def validate_value(cls, v: int) -> int:
-        if v not in {20, 30, 40, 50, 60}:
-            raise ValueError("value must be one of 20,30,40,50,60")
-        return v
-
-
 class AdminTestWelcomeEmailRequest(BaseModel):
     email: str
 
@@ -1904,26 +1893,18 @@ def admin_revoke_premium(user_id: str, request: Request):
     return {"ok": True, "revoked_count": len(resp.data or [])}
 
 
-@router.put("/api/admin/users/{user_id}/min_discount")
-def admin_update_min_discount(user_id: str, req: AdminMinDiscountRequest, request: Request):
-    _require_admin(request)
-    if not db:
-        raise HTTPException(status_code=503, detail="Database not configured")
-    resp = db.table("user_preferences").update({"min_discount": req.value}).eq("user_id", user_id).execute()
-    if not resp.data:
-        raise HTTPException(status_code=404, detail="User preferences not found")
-    return {"ok": True, "min_discount": req.value}
-
-
 @router.post("/api/admin/users/{user_id}/reset_prefs")
 def admin_reset_prefs(user_id: str, request: Request):
     _require_admin(request)
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
+    # NOTE: we deliberately don't touch `min_discount` here. That field
+    # is user-controlled via /profile (40/50/60), and resetting it from
+    # the admin would silently undo a user's choice — same class of bug
+    # as the now-removed admin override endpoint.
     defaults = {
         "airport_codes": ["CDG"],
         "offer_types": ["package", "flight", "accommodation"],
-        "min_discount": 20,
         "max_budget": None,
         "preferred_destinations": [],
     }
