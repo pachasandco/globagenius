@@ -2020,6 +2020,7 @@ async def job_sync_stripe_subscriptions():
 
     import stripe as stripe_lib
     from app.config import settings as _settings
+    from app.stripe_helpers import stripe_subscription_period_end
 
     if not _settings.STRIPE_SECRET_KEY:
         logger.warning("STRIPE_SECRET_KEY not set — skipping Stripe sync")
@@ -2051,7 +2052,7 @@ async def job_sync_stripe_subscriptions():
         try:
             sub = stripe_lib.Subscription.retrieve(sub_id)
             status = sub.get("status", "")
-            period_end = sub.get("current_period_end")  # Unix timestamp
+            period_end = stripe_subscription_period_end(sub)  # Unix timestamp
 
             if status in ("active", "trialing") and period_end:
                 expires_at = datetime.fromtimestamp(period_end, tz=timezone.utc)

@@ -15,6 +15,7 @@ from app.db import db
 from app.config import settings
 from app.notifications.welcome_email import send_welcome_email as _send_welcome_email
 from app.auth.email_validator import validate_email_address
+from app.stripe_helpers import stripe_subscription_period_end
 
 logger = logging.getLogger(__name__)
 
@@ -1460,7 +1461,7 @@ async def stripe_webhook(request: Request):
             try:
                 stripe.api_key = settings.STRIPE_SECRET_KEY
                 sub = stripe.Subscription.retrieve(subscription_id)
-                period_end = sub.get("current_period_end")
+                period_end = stripe_subscription_period_end(sub)
                 if period_end:
                     from datetime import datetime, timezone
                     premium_expires_at = datetime.fromtimestamp(period_end, tz=timezone.utc).isoformat()
@@ -1477,7 +1478,7 @@ async def stripe_webhook(request: Request):
     elif event_type == "customer.subscription.updated":
         # Renewal or plan change — update the expiry date
         customer_id = data.get("customer")
-        period_end = data.get("current_period_end")
+        period_end = stripe_subscription_period_end(data)
         status = data.get("status", "")
         if db and customer_id and period_end and status in ("active", "trialing"):
             from datetime import datetime, timezone
