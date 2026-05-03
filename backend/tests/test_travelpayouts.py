@@ -1,5 +1,6 @@
 from unittest.mock import patch
-from app.scraper.travelpayouts import get_calendar_prices
+from app.scraper.travelpayouts import get_calendar_prices, get_oneway_calendar
+from app.scraper import travelpayouts
 
 
 def test_get_calendar_prices_parses_response():
@@ -207,3 +208,87 @@ def test_get_prices_for_dates_omits_optional_months_when_blank():
 
     assert "departure_at" not in captured["params"]
     assert "return_at" not in captured["params"]
+
+
+# ─── get_oneway_calendar — switched from /v1/prices/cheap to
+#     /v2/prices/latest after the V8 audit found that /v1/prices/cheap
+#     ALWAYS returned round-trip fares (return_at populated), so 100% of
+#     rows were filtered out and zero one-way data ever landed in DB. ───
+
+def test_get_oneway_calendar_calls_v2_latest_with_one_way_true():
+    captured = {"url": None, "params": None}
+
+    def fake_get(url, params=None):
+        captured["url"] = url
+        captured["params"] = params
+        return {"success": True, "data": []}
+
+    with patch("app.scraper.travelpayouts._get", side_effect=fake_get):
+        get_oneway_calendar("CDG", "BKK")
+
+    assert captured["url"].endswith("/v2/prices/latest"), \
+        f"expected /v2/prices/latest, got {captured['url']}"
+    assert captured["params"]["one_way"] == "true"
+    assert captured["params"]["origin"] == "CDG"
+    assert captured["params"]["destination"] == "BKK"
+    assert captured["params"]["currency"] == "eur"
+
+
+def test_get_oneway_calendar_parses_v2_latest_array():
+    """The new endpoint returns {success, data: [{...}, ...]} with one
+    fare per item — not the nested-dict shape the old endpoint had."""
+    fake_response = {
+        "success": True,
+        "data": [
+            {
+                "value": 223,
+                "depart_date": "2026-05-20",
+                "return_date": None,
+                "found_at": "2026-04-01T10:00:00",
+                "gate": "Kiwi.com",
+                "number_of_changes": 1,
+            },
+            {
+                "value": 259,
+                "depart_date": "2026-05-22",
+                "return_date": None,
+                "gate": "Aviasales",
+                "number_of_changes": 0,
+            },
+        ],
+    }
+    with patch("app.scraper.travelpayouts._get", return_value=fake_response):
+        rows = get_oneway_calendar("CDG", "BKK")
+
+    assert len(rows) == 2
+    assert rows[0]["price"] == 223
+    assert rows[0]["departure_at"] == "2026-05-20"
+    assert rows[0]["transfers"] == 1
+    assert rows[1]["price"] == 259
+
+
+def test_get_oneway_calendar_drops_rows_with_return_date_set():
+    """Defensive: if the upstream ever leaks a round-trip into a one-way
+    response, it must be dropped."""
+    fake_response = {
+        "success": True,
+        "data": [
+            {"value": 100, "depart_date": "2026-05-10", "return_date": None},
+            {"value": 200, "depart_date": "2026-05-15", "return_date": "2026-05-25"},
+        ],
+    }
+    with patch("app.scraper.travelpayouts._get", return_value=fake_response):
+        rows = get_oneway_calendar("CDG", "BCN")
+
+    assert len(rows) == 1
+    assert rows[0]["departure_at"] == "2026-05-10"
+
+
+def test_get_oneway_calendar_returns_empty_on_unsuccess_response():
+    with patch("app.scraper.travelpayouts._get", return_value={"success": False}):
+        assert get_oneway_calendar("CDG", "BKK") == []
+
+
+def test_get_oneway_calendar_returns_empty_on_none_response():
+    with patch("app.scraper.travelpayouts._get", return_value=None):
+        assert get_oneway_calendar("CDG", "BKK") == []

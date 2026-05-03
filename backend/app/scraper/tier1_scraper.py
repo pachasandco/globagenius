@@ -60,11 +60,13 @@ def scrape_tier1_airport(origin: str) -> list[dict]:
 
 
 async def scrape_all_tier1() -> tuple[list[dict], int]:
-    """Scrape all Tier 1 airports. Returns (flights, error_count)."""
-    from app.config import settings
+    """Scrape all Tier 1 airports. Returns (flights, error_count).
 
-    # Tier 1 is CDG + ORY only (main hubs with LCC coverage)
-    tier1_airports = [a for a in settings.MVP_AIRPORTS if a in ("CDG", "ORY")]
+    Tier 1 covers all airports with at least one route in tier1_routes.py.
+    Currently BVA (Ryanair hub), CDG (Vueling), ORY (Vueling)."""
+    from app.scraper.tier1_routes import TIER1_ROUTES
+
+    tier1_airports = sorted({o for o, _, _ in TIER1_ROUTES})
 
     all_flights: list[dict] = []
     errors = 0

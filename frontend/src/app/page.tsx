@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import RedirectIfLoggedIn from "./_components/RedirectIfLoggedIn";
 import LandingAnimated, { HeroContent } from "./_components/LandingAnimated";
+import { LandingNotificationHero } from "./_components/LandingNotificationHero";
 
 export const metadata: Metadata = {
   alternates: {
@@ -10,12 +10,29 @@ export const metadata: Metadata = {
   },
 };
 
+/**
+ * Fetches destination guides for the landing "Nos guides destination" section.
+ * Now returns 3 random guides per visit (no caching) instead of the 6 most recent
+ * — keeps the section fresh for repeat visitors.
+ */
+async function fetchRecentDestinationGuides(): Promise<Array<{ iata: string; destination: string; cover_photo: string; title: string }>> {
+  try {
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const res = await fetch(`${API_URL}/api/destinations?random=true&limit=3`, { cache: "no-store" });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.items ?? [];
+  } catch {
+    return [];
+  }
+}
+
 const faqs = [
   { q: "Comment fonctionne Globe Genius ?", a: "On surveille en permanence les prix des vols au départ de 9 aéroports français. Dès qu’on détecte une baisse de prix significative, on vous envoie une alerte sur Telegram avec tous les détails pour réserver." },
-  { q: "Quelle est la différence entre Gratuit et Premium ?", a: "En Gratuit, vous recevez jusqu’à 3 alertes complètes par semaine sur les deals à -40% et plus. En Premium, vous accédez à tous les deals sans limite (jusqu’à -70%+), y compris les erreurs de prix des compagnies, avec prix et liens de réservation débloqués." },
+  { q: "Quelle est la différence entre Gratuit et Premium ?", a: "En Gratuit, vous recevez 1 deal aller-retour entre -20% et -40% chaque jour, plus 1 grosse promo (≥-40%) une fois par semaine. En Premium, vous choisissez votre seuil (-40, -50 ou -60%), vous recevez les alertes sans limite, et vous accédez en plus aux aller simple et aux combos malins (2 billets séparés moins chers qu'un A/R)." },
   { q: "Comment fonctionne la garantie 30 jours ?", a: "Si Premium ne vous convient pas, contactez-nous dans les 30 jours suivant votre achat et on vous rembourse intégralement, sans question." },
   { q: "Les prix incluent-ils les bagages ?", a: "Les prix affichés sont ceux des compagnies aériennes. Les bagages en soute sont parfois inclus selon la compagnie et le tarif. On le précise dans chaque alerte quand l’information est disponible." },
-  { q: "Combien de temps entre la publication du prix et votre alerte ?", a: "Pour les vols Ryanair et Vueling au départ de Paris (CDG/ORY), on scrape les prix directement sur les APIs des compagnies toutes les 20 minutes. Dès qu’une anomalie est détectée, l’alerte Telegram part dans la foulée, généralement moins de 5 minutes après l’apparition du deal. Pour les autres aéroports et destinations, on utilise un agrégateur de vols interrogé toutes les 2 heures." },
+  { q: "Combien de temps entre la publication du prix et votre alerte ?", a: "Les prix sont mis à jour toutes les 20 minutes au départ de Paris (Beauvais, CDG et Orly), et toutes les 2 heures sur les autres aéroports français. Dès qu'une bonne affaire est repérée, l'alerte Telegram part dans la foulée, généralement moins de 5 minutes après l'apparition du deal." },
   { q: "Pourquoi certains deals disparaissent avant que j’aie pu réserver ?", a: "Les tarifs érronés (« erreurs de prix ») sont des oublis de configuration des compagnies. Dès qu’elles s’en rendent compte, elles corrigent le tarif — parfois en quelques heures. C’est pourquoi les alertes temps réel sont déterminantes : réserver dans l’heure qui suit l’alerte maximise vos chances d’obtenir le prix affiché. Passez commande rapidement et contactez la compagnie si le tarif change avant l’émission." },
 ];
 
@@ -29,7 +46,8 @@ const faqSchema = {
   })),
 };
 
-export default function Landing() {
+export default async function Landing() {
+  const recentGuides = await fetchRecentDestinationGuides();
   return (
     <div className="min-h-screen bg-[var(--color-cream)]">
       <RedirectIfLoggedIn />
@@ -57,32 +75,104 @@ export default function Landing() {
 
       <main>
         {/* ── HERO ── */}
-        <section className="relative min-h-[480px] flex items-center overflow-hidden">
-          <Image
-            src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1400&q=80"
-            alt="Plage tropicale ensoleillée — voyagez moins cher avec Globe Genius"
-            fill
-            priority
-            className="object-cover"
-            sizes="100vw"
-          />
-          <div className="absolute inset-0 bg-gradient-to-r from-[var(--color-ink)]/90 via-[var(--color-ink)]/70 to-[var(--color-ink)]/30" />
+        {/*
+          The hero used to show a tropical beach photo, then a clumsy
+          stylised world map. Replaced by a floating Telegram-style
+          notification card that loops through the three V5 deal flavours
+          (round-trip, one-way, split-ticket combo). Shows the product in
+          action: the user receives an alert and reads the price drop.
+        */}
+        <section className="relative min-h-[520px] sm:min-h-[600px] flex items-center overflow-hidden">
+          <LandingNotificationHero />
           <HeroContent />
         </section>
 
         {/* ── STATS BAR ── */}
         <section className="flex flex-wrap justify-center gap-8 sm:gap-12 py-6 px-6 bg-white border-t border-[var(--color-sand)]">
           {[
-            { value: "≥50%", label: "réduction minimum" },
-            { value: "-70%", label: "meilleur deal détecté" },
-            { value: "6×/jour", label: "scraping des prix" },
-            { value: "9", label: "aéroports de départ" },
+            { value: "-20%", label: "alerte chaque jour (gratuit)" },
+            { value: "-70%", label: "meilleur deal repéré" },
+            { value: "24h/24", label: "surveillance des prix" },
+            { value: "9", label: "aéroports français" },
           ].map((s) => (
             <div key={s.label} className="text-center">
               <div className="text-2xl font-extrabold text-[var(--color-ink)]">{s.value}</div>
               <div className="text-xs text-gray-400 mt-1">{s.label}</div>
             </div>
           ))}
+        </section>
+
+        {recentGuides.length > 0 && (
+          <section className="py-16 px-6 sm:px-12 bg-white border-t border-[var(--color-sand)]">
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-[var(--color-ink)] text-center mb-2">
+              Nos guides destination
+            </h2>
+            <p className="text-center text-gray-500 text-sm mb-10">
+              Des guides écrits pour préparer chaque destination, mis à jour à chaque nouveau deal détecté.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
+              {recentGuides.map((g) => (
+                <Link key={g.iata} href={`/destination/${g.iata.toLowerCase()}`}
+                      className="group block overflow-hidden rounded-2xl border border-[var(--color-sand)] bg-white hover:border-[var(--color-coral)] transition-colors">
+                  {g.cover_photo && (
+                    <div className="relative aspect-video overflow-hidden">
+                      {/* Using <img> here intentionally — <Image> with `fill` requires extra layout setup
+                          and these cards are below the fold. */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={g.cover_photo} alt={g.destination}
+                           className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform" />
+                    </div>
+                  )}
+                  <div className="p-4">
+                    <div className="text-xs text-gray-400">{g.destination}</div>
+                    <div className="font-bold text-[var(--color-ink)]">{g.title}</div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ── 3 TYPES DE DEALS ── */}
+        <section className="py-16 px-6 sm:px-12 bg-white border-t border-[var(--color-sand)]">
+          <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-[var(--color-ink)] text-center mb-2">
+            On cherche partout pour vous
+          </h2>
+          <p className="text-center text-gray-500 text-sm max-w-xl mx-auto mb-10">
+            La plupart des comparateurs ne regardent qu&apos;un seul type de billet&nbsp;: l&apos;aller-retour classique.
+            Nous, on en surveille trois — c&apos;est comme ça qu&apos;on attrape des deals que les autres laissent passer.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-sand)] rounded-2xl p-6">
+              <div className="text-2xl mb-3">✈️</div>
+              <h3 className="font-bold text-[var(--color-ink)] mb-2">Aller-retour classique</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                Le bon plan le plus courant&nbsp;: aller + retour, mêmes dates, prix total imbattable.
+                Surveillé en continu sur les <strong>9 aéroports français</strong>.
+              </p>
+            </div>
+            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-sand)] rounded-2xl p-6">
+              <div className="text-2xl mb-3">🎫</div>
+              <h3 className="font-bold text-[var(--color-ink)] mb-2">Aller simple</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                Tour du monde, expat, séjour long&nbsp;? On guette aussi les promos sur les sens uniques.
+                Personne d&apos;autre ne le fait.
+              </p>
+            </div>
+            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-sand)] rounded-2xl p-6">
+              <div className="text-2xl mb-3">💡</div>
+              <h3 className="font-bold text-[var(--color-ink)] mb-2">
+                Combo malin <span className="text-[var(--color-coral)]">— 2× aller simple</span>
+              </h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                Parfois, deux billets aller simple sur deux compagnies différentes coûtent <strong>moins cher</strong> qu&apos;un A/R.
+                On fait le calcul à votre place — économie typique <strong>-30%</strong>.
+              </p>
+            </div>
+          </div>
+          <p className="text-center text-xs text-gray-400 mt-6 max-w-xl mx-auto">
+            💬 L&apos;aller simple et le combo malin sont réservés aux abonnés Premium et s&apos;activent dans votre profil.
+          </p>
         </section>
 
         {/* Deals passés, comment ça marche, FAQ */}
@@ -101,12 +191,12 @@ export default function Landing() {
               <div className="font-bold text-[var(--color-ink)] text-sm mb-1">Gratuit</div>
               <div className="text-3xl font-extrabold text-[var(--color-ink)] mb-5">0€</div>
               <div className="text-sm text-gray-500 leading-loose mb-6">
-                ✓ Deals à partir de -40%<br />
-                ✓ 3 alertes complètes / semaine<br />
-                ✓ 9 aéroports de départ<br />
-                <span className="text-gray-300">✗ Deals au-delà de -50% (masqués)</span><br />
+                ✓ <span className="text-[var(--color-ink)] font-medium">1 deal -20% à -40%</span> par jour<br />
+                ✓ <span className="text-[var(--color-ink)] font-medium">1 grosse promo ≥-40%</span> par semaine<br />
+                ✓ Aller-retour, 9 aéroports de départ<br />
+                <span className="text-gray-300">✗ Choisir le seuil de promo</span><br />
                 <span className="text-gray-300">✗ Alertes illimitées</span><br />
-                <span className="text-gray-300">✗ Erreurs de prix</span>
+                <span className="text-gray-300">✗ Aller simple &amp; combos malins</span>
               </div>
               <Link href="/signup" className="block text-center py-3 rounded-xl font-bold text-sm border-2 border-[var(--color-ink)] text-[var(--color-ink)] hover:bg-[var(--color-ink)] hover:text-white transition-colors">
                 S&apos;inscrire gratuitement
@@ -123,10 +213,11 @@ export default function Landing() {
                 <span className="text-gray-500 text-sm">/an</span>
               </div>
               <div className="text-sm text-gray-400 leading-loose mb-6">
-                ✓ <span className="text-white">Tous les deals, jusqu&apos;à -70%</span><br />
-                ✓ <span className="text-white">Erreurs de prix des compagnies</span><br />
+                ✓ <span className="text-white">Tous les deals jusqu&apos;à -70%+</span><br />
+                ✓ <span className="text-white">Filtre personnalisé : -40, -50 ou -60%</span><br />
+                ✓ <span className="text-white">Alertes illimitées, sans quota</span><br />
+                ✓ <span className="text-white">Aller simple &amp; combos malins</span><br />
                 ✓ <span className="text-white">9 aéroports de départ</span><br />
-                ✓ <span className="text-white">Alertes Telegram prioritaires</span><br />
                 ✓ <span className="text-white">Garantie satisfait 30 jours</span><br />
                 <span className="text-[var(--color-forest)]">= 2,42€/mois</span>
               </div>

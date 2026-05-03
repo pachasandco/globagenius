@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signup } from "@/lib/api";
+import { suggestEmailCorrection } from "@/lib/email-suggestion";
 
 export default function SignupPage() {
   const [email, setEmail] = useState("");
@@ -12,6 +13,8 @@ export default function SignupPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  const emailSuggestion = useMemo(() => suggestEmailCorrection(email), [email]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -65,6 +68,19 @@ export default function SignupPage() {
               placeholder="votre@email.com"
               className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none text-sm transition-colors"
             />
+            {emailSuggestion && (
+              <p className="text-xs text-gray-500 mt-1.5">
+                Vouliez-vous dire{" "}
+                <button
+                  type="button"
+                  onClick={() => setEmail(emailSuggestion)}
+                  className="text-[#FF6B47] font-semibold hover:underline"
+                >
+                  {emailSuggestion}
+                </button>
+                {" "}?
+              </p>
+            )}
           </div>
 
           <div>

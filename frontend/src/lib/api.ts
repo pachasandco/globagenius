@@ -60,7 +60,23 @@ export function changePassword(userId: string, currentPassword: string, newPassw
   });
 }
 
+export function forgotPassword(email: string) {
+  return fetchAPI<{ ok: boolean }>("/api/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function resetPassword(token: string, newPassword: string) {
+  return fetchAPI<{ ok: boolean }>("/api/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ token, new_password: newPassword }),
+  });
+}
+
 // ─── Preferences ───
+
+export type FlightTripType = "round_trip" | "one_way";
 
 export interface UserPreferences {
   id: string;
@@ -75,6 +91,8 @@ export interface UserPreferences {
   notifications_enabled: boolean;
   deal_tier: string;
   blocked_destinations: string[];
+  flight_trip_types: FlightTripType[];
+  include_split_tickets: boolean;
 }
 
 export function getPreferences(userId: string) {
@@ -88,11 +106,36 @@ export function updatePreferences(userId: string, prefs: {
   preferred_destinations?: string[] | null;
   deal_tier?: string;
   blocked_destinations?: string[];
+  flight_trip_types?: FlightTripType[];
+  include_split_tickets?: boolean;
+  // V9: premium-only discount floor (40/50/60). Null or omitted = no
+  // change. Free users always pass null — the field has no effect for them.
+  min_discount?: number | null;
 }) {
   return fetchAPI<UserPreferences>(`/api/users/${userId}/preferences`, {
     method: "PUT",
     body: JSON.stringify(prefs),
   });
+}
+
+export async function cancelSubscription(): Promise<{
+  ok: boolean;
+  had_subscription: boolean;
+  cancelled: boolean;
+}> {
+  const token = typeof window !== "undefined" ? localStorage.getItem("gg_token") : "";
+  const res = await fetch(`${API_URL}/api/users/me/cancel-subscription`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { detail?: string }).detail || `HTTP ${res.status}`);
+  }
+  return res.json();
 }
 
 // ─── Telegram ───
@@ -129,11 +172,13 @@ export interface FlightDeal {
   origin: string;
   destination: string;
   departure_date: string;
-  return_date: string;
+  return_date: string | null;
   airline: string | null;
   stops: number;
   trip_duration_days: number | null;
   duration_minutes: number | null;
+  trip_type: FlightTripType;
+  direction: "outbound" | "inbound" | null;
   // Nullable when locked
   price: number | null;
   baseline_price: number | null;
@@ -168,4 +213,70 @@ export function getFlightDeals(
 
 export function getPipelineStatus() {
   return fetchAPI<PipelineStatus>("/api/status");
+}
+
+// ─── Destination guides ───
+
+export interface DestinationGuide {
+  article: {
+    id: string;
+    iata: string;
+    destination: string;
+    slug: string;
+    title: string;
+    h1: string;
+    meta_description: string;
+    lead: string;
+    nut_graf: string;
+    top_picks: Array<{
+      name: string;
+      angle: string;
+      description: string;
+      practical: string;
+    }>;
+    itinerary: Array<{
+      day: number;
+      title: string;
+      morning: string;
+      lunch: string;
+      afternoon: string;
+      evening: string;
+      lodging: string;
+      rain_plan: string;
+      budget_option: string;
+      premium_option: string;
+    }>;
+    infos_pratiques: Record<string, string>;
+    faq: Array<{ q: string; a: string }>;
+    sources: string[];
+    tags: string[];
+    word_count: number;
+    generated_at: string;
+  };
+  photo: {
+    url: string;
+    photographer_name: string;
+    photographer_url: string;
+  };
+  deals: Array<{
+    origin: string;
+    destination: string;
+    departure_date: string;
+    return_date: string | null;
+    price: number;
+    baseline_price: number;
+    discount_pct: number;
+    airline: string | null;
+    source_url: string | null;
+    trip_type: string;
+  }>;
+}
+
+export async function getDestinationGuide(iata: string): Promise<DestinationGuide | null> {
+  const res = await fetch(`${API_URL}/api/destinations/${iata.toUpperCase()}`, {
+    cache: "no-store",
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
 }

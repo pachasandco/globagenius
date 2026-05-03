@@ -409,4 +409,80 @@ def test_format_grouped_flight_alerts_sort_within_month_by_price():
     idx_80 = msg.find("80€")
     idx_150 = msg.find("150€")
     assert idx_80 > 0 and idx_150 > 0
-    assert idx_80 < idx_150
+
+
+# ─── V8.2 multi-origin format ─────────────────────────────────────────
+
+def test_city_for_iata_strips_airport_specifier():
+    from app.notifications.telegram import _city_for_iata
+    assert _city_for_iata("CDG") == "Paris"
+    assert _city_for_iata("ORY") == "Paris"
+    assert _city_for_iata("BVA") == "Paris"
+    assert _city_for_iata("BOD") == "Bordeaux"
+    assert _city_for_iata("MRS") == "Marseille"
+    # Unknown IATA falls back to the code unchanged.
+    assert _city_for_iata("ZZZ") == "ZZZ"
+
+
+def test_format_grouped_flight_single_origin_keeps_iata_label():
+    """When all offers come from the same origin, behaviour is unchanged:
+    header carries the airport-specific label."""
+    from app.notifications.telegram import format_grouped_flight_alerts
+    offers = [
+        {"departure_date": "2026-09-01", "return_date": "2026-09-10",
+         "price": 89, "discount_pct": 55, "origin": "CDG"},
+        {"departure_date": "2026-09-15", "return_date": "2026-09-22",
+         "price": 75, "discount_pct": 62, "origin": "CDG"},
+    ]
+    msg = format_grouped_flight_alerts("Paris", "Barcelone", "BCN", offers,
+                                       tier="premium", origin_iata="CDG")
+    # Single-origin header keeps the IATA-specific label.
+    assert "Paris CDG (CDG)" in msg
+    # No multi-origin badge.
+    assert "aéroports" not in msg
+    # No "via XXX" annotation per offer.
+    assert "via CDG" not in msg
+    assert "via ORY" not in msg
+
+
+def test_format_grouped_flight_multi_origin_uses_city_label_and_per_offer_origin():
+    """V8.2: when offers span multiple origins (CDG+ORY+BVA), the header
+    drops the airport-specific suffix and each offer line gets a 'via XXX'
+    annotation so the user knows which airport each fare flies from."""
+    from app.notifications.telegram import format_grouped_flight_alerts
+    offers = [
+        {"departure_date": "2026-09-01", "return_date": "2026-09-10",
+         "price": 89, "discount_pct": 55, "origin": "CDG"},
+        {"departure_date": "2026-09-15", "return_date": "2026-09-22",
+         "price": 75, "discount_pct": 62, "origin": "ORY"},
+        {"departure_date": "2026-10-05", "return_date": "2026-10-12",
+         "price": 45, "discount_pct": 70, "origin": "BVA"},
+    ]
+    msg = format_grouped_flight_alerts("Paris", "Barcelone", "BCN", offers,
+                                       tier="premium", origin_iata="CDG")
+    # City-only label in header, no airport-specific suffix.
+    assert "Paris → Barcelone" in msg
+    assert "Paris CDG" not in msg
+    # Multi-origin badge present in header.
+    assert "3 aéroports" in msg
+    # Each offer line tags its origin.
+    assert "via CDG" in msg
+    assert "via ORY" in msg
+    assert "via BVA" in msg
+
+
+def test_format_grouped_flight_two_origins_only_still_shows_per_offer_origin():
+    """Multi-origin handling triggers as soon as there are >= 2 distinct
+    origins, not just 3+."""
+    from app.notifications.telegram import format_grouped_flight_alerts
+    offers = [
+        {"departure_date": "2026-09-01", "return_date": "2026-09-10",
+         "price": 89, "discount_pct": 55, "origin": "CDG"},
+        {"departure_date": "2026-09-15", "return_date": "2026-09-22",
+         "price": 75, "discount_pct": 62, "origin": "ORY"},
+    ]
+    msg = format_grouped_flight_alerts("Paris", "Barcelone", "BCN", offers,
+                                       tier="premium", origin_iata="CDG")
+    assert "2 aéroports" in msg
+    assert "via CDG" in msg
+    assert "via ORY" in msg

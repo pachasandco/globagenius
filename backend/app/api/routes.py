@@ -5,7 +5,7 @@ import secrets
 import logging
 import stripe
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, HTTPException, Request, Depends, BackgroundTasks
 from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, field_validator
@@ -14,6 +14,7 @@ import jwt
 from app.db import db
 from app.config import settings
 from app.notifications.welcome_email import send_welcome_email as _send_welcome_email
+from app.auth.email_validator import validate_email_address
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ security = HTTPBearer(auto_error=False)
 
 VALID_AIRPORTS = settings.MVP_AIRPORTS
 VALID_OFFER_TYPES = ["package", "flight", "accommodation"]
+VALID_FLIGHT_TRIP_TYPES = ["round_trip", "one_way"]
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 # Simple in-memory rate limiter
@@ -205,6 +207,12 @@ class PreferencesRequest(BaseModel):
     preferred_destinations: list[str] | None = None
     deal_tier: str = "regular"
     blocked_destinations: list[str] = []
+    flight_trip_types: list[str] = ["round_trip"]
+    include_split_tickets: bool = False
+    # V9: premium-only discount floor preference. Validated to a small set
+    # so we never store odd values (e.g. 35) that the dispatch logic doesn't
+    # support. Free users may keep any historical value — it has no effect.
+    min_discount: int | None = None
 
     @field_validator("deal_tier")
     @classmethod
@@ -214,6 +222,32 @@ class PreferencesRequest(BaseModel):
             raise ValueError(f"deal_tier must be one of {sorted(allowed)}")
         return v
 
+    @field_validator("min_discount")
+    @classmethod
+    def validate_min_discount(cls, v: int | None) -> int | None:
+        if v is None:
+            return None
+        from app.thresholds import PREMIUM_MIN_DISCOUNT_CHOICES
+        if v not in PREMIUM_MIN_DISCOUNT_CHOICES:
+            raise ValueError(
+                f"min_discount must be one of {PREMIUM_MIN_DISCOUNT_CHOICES}"
+            )
+        return v
+
+    @field_validator("flight_trip_types")
+    @classmethod
+    def validate_flight_trip_types(cls, v: list[str]) -> list[str]:
+        if not v:
+            return ["round_trip"]
+        invalid = [t for t in v if t not in VALID_FLIGHT_TRIP_TYPES]
+        if invalid:
+            raise ValueError(
+                f"flight_trip_types must be subset of {VALID_FLIGHT_TRIP_TYPES}, got invalid: {invalid}"
+            )
+        # Dedup while preserving order
+        seen: set[str] = set()
+        return [t for t in v if not (t in seen or seen.add(t))]
+
 
 class TelegramConnectRequest(BaseModel):
     user_id: str
@@ -222,6 +256,49 @@ class TelegramConnectRequest(BaseModel):
 @router.get("/health")
 def health():
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
+@router.get("/health/deep")
+def health_deep():
+    """Deep healthcheck: ping DB + verify external service config.
+
+    Used by uptime monitors and load balancers that need to know
+    whether the instance is degraded (running but unable to do its
+    job) versus simply alive.
+    Returns HTTP 200 when every component is "ok", 503 otherwise.
+    """
+    components: dict[str, str] = {}
+
+    # 1. DB ping — a 'select 1' equivalent via supabase-py
+    try:
+        if db is None:
+            components["db"] = "missing"
+        else:
+            db.table("users").select("id").limit(1).execute()
+            components["db"] = "ok"
+    except Exception as e:
+        components["db"] = "error"
+        logger.warning(f"/health/deep: DB ping failed: {e}")
+
+    # 2. Stripe — we don't make a network call (would slow each check),
+    # we just confirm the secret key is configured.
+    components["stripe"] = "ok" if settings.STRIPE_SECRET_KEY else "missing"
+
+    # 3. Telegram bot token presence
+    components["telegram"] = "ok" if settings.TELEGRAM_BOT_TOKEN else "missing"
+
+    # 4. Brevo API key presence
+    components["brevo"] = "ok" if settings.BREVO_API_KEY else "missing"
+
+    overall_ok = all(v == "ok" for v in components.values())
+    payload = {
+        "status": "ok" if overall_ok else "degraded",
+        "components": components,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if overall_ok:
+        return payload
+    raise HTTPException(status_code=503, detail=payload)
 
 
 @router.get("/api/status")
@@ -345,8 +422,77 @@ def debug_data(request: Request):
         return {"error": str(e)}
 
 
-GLOBAL_MIN_DISCOUNT = 40   # aligned with Telegram dispatch threshold
-FREE_TIER_WEEKLY_LIMIT = 3  # full unlocked deals per week for free users
+from app.thresholds import (
+    GLOBAL_MIN_DISCOUNT_PCT as GLOBAL_MIN_DISCOUNT,
+    FREE_TIER_HOMEPAGE_UNLOCK_LIMIT,
+)
+
+
+@router.get("/api/landing/deals")
+def landing_deals(limit: int = 6):
+    """Public endpoint: top current deals for the landing page hero map.
+
+    Anonymous-safe: returns origin, destination, discount_pct only.
+    Real prices are NOT exposed — the landing pitches social proof
+    ('there really are deals'), not free booking access.
+    """
+    if not db:
+        return {"items": []}
+
+    if limit < 1:
+        limit = 1
+    if limit > 12:
+        limit = 12
+
+    freshness_cutoff = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat()
+    qi_resp = (
+        db.table("qualified_items")
+        .select("id, type, discount_pct, score, created_at, item_id, trip_type")
+        .eq("status", "active")
+        .eq("type", "flight")
+        .gte("discount_pct", GLOBAL_MIN_DISCOUNT)
+        .gte("reverified_at", freshness_cutoff)
+        .order("discount_pct", desc=True)
+        .limit(limit * 4)
+        .execute()
+    )
+    qualified = qi_resp.data or []
+    if not qualified:
+        return {"items": []}
+
+    item_ids = [q["item_id"] for q in qualified if q.get("item_id")]
+    flights_by_id: dict[str, dict] = {}
+    if item_ids:
+        rf_resp = (
+            db.table("raw_flights")
+            .select("id, origin, destination, trip_type, direction")
+            .in_("id", item_ids)
+            .execute()
+        )
+        for f in (rf_resp.data or []):
+            flights_by_id[f["id"]] = f
+
+    # Dedup by destination so the map doesn't pin the same city twice
+    seen_dests: set[str] = set()
+    items: list[dict] = []
+    for q in qualified:
+        flight = flights_by_id.get(q.get("item_id")) or {}
+        origin = flight.get("origin") or ""
+        destination = flight.get("destination") or ""
+        if not origin or not destination or destination in seen_dests:
+            continue
+        seen_dests.add(destination)
+        items.append({
+            "origin": origin,
+            "destination": destination,
+            "discount_pct": int(round(q["discount_pct"])),
+            "trip_type": flight.get("trip_type") or q.get("trip_type") or "round_trip",
+            "direction": flight.get("direction"),
+        })
+        if len(items) >= limit:
+            break
+
+    return {"items": items}
 
 
 @router.get("/api/packages")
@@ -387,6 +533,37 @@ def list_packages(
     )
     qualified = qi_resp.data or []
 
+    is_premium = _is_premium_user(user)
+    user_id = (user.get("sub") or user.get("user_id")) if user else None
+
+    # Single fetch for blocked_destinations, flight_trip_types and airport_codes
+    # (avoids multiple round-trips to user_preferences for the same user_id).
+    allowed_trip_types: set[str] = {"round_trip"}
+    user_blocked: set[str] = set()
+    user_airports: set[str] = set()
+    if user_id:
+        try:
+            up_resp = (
+                db.table("user_preferences")
+                .select("blocked_destinations, flight_trip_types, airport_codes")
+                .eq("user_id", user_id)
+                .single()
+                .execute()
+            )
+            up_data = up_resp.data or {}
+            user_blocked = set(up_data.get("blocked_destinations") or [])
+            ftt = up_data.get("flight_trip_types") or ["round_trip"]
+            if ftt:
+                allowed_trip_types = set(ftt)
+            user_airports = set(up_data.get("airport_codes") or [])
+        except Exception as e:
+            logger.warning(f"Failed to fetch user preferences for {user_id}: {e}")
+
+    qualified = [
+        q for q in qualified
+        if (q.get("trip_type") or "round_trip") in allowed_trip_types
+    ]
+
     if not qualified:
         return {"items": [], "plan": plan}
 
@@ -396,31 +573,12 @@ def list_packages(
     if item_ids:
         rf_resp = (
             db.table("raw_flights")
-            .select("id, origin, destination, departure_date, return_date, airline, stops, source_url, trip_duration_days, duration_minutes")
+            .select("id, origin, destination, departure_date, return_date, airline, stops, source_url, trip_duration_days, duration_minutes, trip_type, direction")
             .in_("id", item_ids)
             .execute()
         )
         for f in (rf_resp.data or []):
             flights_by_id[f["id"]] = f
-
-    is_premium = _is_premium_user(user)
-    user_id = (user.get("sub") or user.get("user_id")) if user else None
-
-    # Fetch blocked destinations for this user (if logged in)
-    user_blocked: set[str] = set()
-    if user_id:
-        try:
-            bp_resp = (
-                db.table("user_preferences")
-                .select("blocked_destinations")
-                .eq("user_id", user_id)
-                .single()
-                .execute()
-            )
-            blocked_list = (bp_resp.data or {}).get("blocked_destinations") or []
-            user_blocked = set(blocked_list)
-        except Exception:
-            pass
 
     # For free users: count how many deals they've already received this week
     # via Telegram (sent_alerts) — the homepage quota mirrors Telegram's.
@@ -449,9 +607,24 @@ def list_packages(
         dest = flight.get("destination", "")
         if dest and dest in user_blocked:
             continue
+        # Filter by user's home airports — anonymous users see everything,
+        # authenticated users only see deals departing from airports they
+        # actually track. For one-way inbound rows the origin is the foreign
+        # city, so we check the destination too (it's the user's airport).
+        if user_id and user_airports:
+            f_origin = flight.get("origin", "")
+            f_direction = flight.get("direction") or ""
+            relevant = f_origin in user_airports or (
+                f_direction == "inbound" and dest in user_airports
+            )
+            if not relevant:
+                continue
+        flight_trip_type = flight.get("trip_type") or qi.get("trip_type") or "round_trip"
+        flight_direction = flight.get("direction") or qi.get("direction") or ""
         dedup_key = (
             f"{flight.get('origin','')}-{dest}"
-            f"-{flight.get('departure_date','')}-{flight.get('return_date','')}"
+            f"-{flight.get('departure_date','')}-{flight.get('return_date','') or ''}"
+            f"-{flight_trip_type}-{flight_direction}"
         )
         if dedup_key in seen_flights:
             continue
@@ -460,9 +633,10 @@ def list_packages(
         if is_premium:
             unlocked = True
         elif user_id:
-            # Free user: allow up to FREE_TIER_WEEKLY_LIMIT unlocked deals
-            # across both Telegram and the homepage this week.
-            remaining = FREE_TIER_WEEKLY_LIMIT - free_weekly_used - free_unlocked_this_request
+            # Free user: allow up to FREE_TIER_HOMEPAGE_UNLOCK_LIMIT
+            # unlocked deals (full price + link) on the homepage per
+            # rolling 7d. Independent of the Telegram lane logic.
+            remaining = FREE_TIER_HOMEPAGE_UNLOCK_LIMIT - free_weekly_used - free_unlocked_this_request
             if remaining > 0:
                 unlocked = True
                 free_unlocked_this_request += 1
@@ -480,11 +654,13 @@ def list_packages(
             "origin": flight.get("origin", ""),
             "destination": flight.get("destination", ""),
             "departure_date": flight.get("departure_date", ""),
-            "return_date": flight.get("return_date", ""),
+            "return_date": flight.get("return_date"),
             "airline": flight.get("airline"),
             "stops": flight.get("stops", 0),
             "trip_duration_days": flight.get("trip_duration_days"),
             "duration_minutes": flight.get("duration_minutes"),
+            "trip_type": flight.get("trip_type") or qi.get("trip_type") or "round_trip",
+            "direction": flight.get("direction") or qi.get("direction"),
             "price": qi["price"] if unlocked else None,
             "baseline_price": qi["baseline_price"] if unlocked else None,
             "source_url": flight.get("source_url", "") if unlocked else None,
@@ -534,8 +710,17 @@ async def trigger_job(job_name: str, request: Request):
 
 # ─── AUTH ───
 
+async def _send_welcome_email_safe(email: str) -> None:
+    """Background-task wrapper that swallows errors so a failed email
+    never surfaces to the user (signup already returned 200)."""
+    try:
+        await _send_welcome_email(email)
+    except Exception as e:
+        logger.warning(f"Failed to send welcome email to {email}: {e}")
+
+
 @router.post("/api/auth/signup")
-async def signup(req: SignupRequest, request: Request):
+async def signup(req: SignupRequest, request: Request, bg_tasks: BackgroundTasks):
     _check_rate_limit(f"signup:{_client_ip(request)}")
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
@@ -543,30 +728,55 @@ async def signup(req: SignupRequest, request: Request):
     if len(req.password) < 6:
         raise HTTPException(status_code=400, detail="Le mot de passe doit contenir au moins 6 caracteres")
 
-    existing = db.table("users").select("id").eq("email", req.email).execute()
+    email_check = await validate_email_address(req.email)
+    if not email_check.is_valid:
+        if email_check.reason == "typo_tld":
+            raise HTTPException(
+                status_code=400,
+                detail=f"L'extension du domaine '{email_check.domain}' semble incorrecte. Vérifiez l'adresse.",
+            )
+        if email_check.reason == "no_mx":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Le domaine '{email_check.domain}' ne peut pas recevoir d'email. Vérifiez l'adresse.",
+            )
+        raise HTTPException(status_code=400, detail="Adresse email invalide.")
+
+    loop = asyncio.get_running_loop()
+
+    existing = await loop.run_in_executor(
+        None,
+        lambda: db.table("users").select("id").eq("email", req.email).execute(),
+    )
     if existing.data:
         raise HTTPException(status_code=409, detail="Cet email est deja utilise")
 
-    user = db.table("users").insert({
-        "email": req.email,
-        "password_hash": _hash_password(req.password),
-    }).execute()
+    password_hash = await loop.run_in_executor(None, _hash_password, req.password)
+
+    user = await loop.run_in_executor(
+        None,
+        lambda: db.table("users").insert({
+            "email": req.email,
+            "password_hash": password_hash,
+        }).execute(),
+    )
     if not user.data:
         raise HTTPException(status_code=500, detail="Erreur lors de la creation du compte")
 
     user_id = user.data[0]["id"]
 
-    db.table("user_preferences").insert({
-        "user_id": user_id,
-        "airport_codes": ["CDG"],
-        "offer_types": ["package", "flight", "accommodation"],
-    }).execute()
+    await loop.run_in_executor(
+        None,
+        lambda: db.table("user_preferences").insert({
+            "user_id": user_id,
+            "airport_codes": ["CDG"],
+            "offer_types": ["package", "flight", "accommodation"],
+        }).execute(),
+    )
 
-    # Send welcome email (fire and forget)
-    try:
-        await _send_welcome_email(req.email)
-    except Exception as e:
-        logger.warning(f"Failed to send welcome email: {e}")
+    # Send welcome email out-of-band so the user gets their token immediately
+    # instead of waiting on the Brevo HTTP call (up to 10s).
+    bg_tasks.add_task(_send_welcome_email_safe, req.email)
 
     token = _create_jwt(user_id, req.email)
     return {"user_id": user_id, "email": req.email, "token": token}
@@ -582,23 +792,147 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
 @router.post("/api/auth/login")
-def login(req: LoginRequest, request: Request):
+async def login(req: LoginRequest, request: Request):
     _check_rate_limit(f"login:{_client_ip(request)}")
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
-    user = db.table("users").select("*").eq("email", req.email.lower().strip()).execute()
+    loop = asyncio.get_running_loop()
+    email_norm = req.email.lower().strip()
+
+    # Supabase SDK is sync — run it off the event loop so other requests
+    # are not blocked while we wait on the DB roundtrip.
+    user = await loop.run_in_executor(
+        None,
+        lambda: db.table("users").select("*").eq("email", email_norm).execute(),
+    )
     if not user.data:
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
 
-    if not _verify_password(req.password, user.data[0]["password_hash"]):
+    # bcrypt.checkpw is CPU-bound (~100ms at default cost). Off-loading
+    # it keeps the worker's event loop free.
+    is_valid = await loop.run_in_executor(
+        None, _verify_password, req.password, user.data[0]["password_hash"]
+    )
+    if not is_valid:
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
 
     user_id = user.data[0]["id"]
     email = user.data[0]["email"]
     token = _create_jwt(user_id, email)
     return {"user_id": user_id, "email": email, "token": token}
+
+
+# ─── PASSWORD RESET (V7) ───
+#
+# Anti-enumeration: forgot-password ALWAYS returns 200, regardless of
+# whether the email exists. Only the side-effect (DB write + email send)
+# differs. The user-facing message is the same in both cases.
+
+@router.post("/api/auth/forgot-password")
+async def forgot_password(req: ForgotPasswordRequest, request: Request):
+    _check_rate_limit(f"forgot:{_client_ip(request)}")
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    email = (req.email or "").strip().lower()
+    if not email or not EMAIL_REGEX.match(email):
+        # Even on a malformed email, return success — same anti-enumeration
+        # principle. Caller can't tell the difference between bad email,
+        # unknown email, or successful send.
+        return {"ok": True}
+
+    try:
+        user_resp = db.table("users").select("id, email").eq("email", email).execute()
+    except Exception as e:
+        logger.warning(f"forgot-password: user lookup failed: {e}")
+        return {"ok": True}
+
+    user_data = (user_resp.data or [None])[0]
+    if not user_data:
+        # Email not registered — silently succeed.
+        return {"ok": True}
+
+    from app.auth.password_reset import generate_reset_token, PASSWORD_RESET_TTL_HOURS
+    from app.notifications.password_reset_email import send_password_reset_email
+
+    token = generate_reset_token()
+    expires_at = (
+        datetime.now(timezone.utc) + timedelta(hours=PASSWORD_RESET_TTL_HOURS)
+    ).isoformat()
+    try:
+        db.table("password_reset_tokens").insert({
+            "token": token,
+            "user_id": user_data["id"],
+            "expires_at": expires_at,
+        }).execute()
+    except Exception as e:
+        logger.warning(f"forgot-password: token insert failed: {e}")
+        return {"ok": True}
+
+    reset_url = f"{settings.FRONTEND_URL}/reset-password/{token}"
+    try:
+        await send_password_reset_email(user_data["email"], reset_url)
+    except Exception as e:
+        logger.warning(f"forgot-password: email send failed: {e}")
+
+    return {"ok": True}
+
+
+@router.post("/api/auth/reset-password")
+def reset_password(req: ResetPasswordRequest, request: Request):
+    _check_rate_limit(f"reset:{_client_ip(request)}")
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    if not req.token or len(req.new_password) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="Le mot de passe doit contenir au moins 6 caracteres",
+        )
+
+    from app.auth.password_reset import is_token_valid
+
+    try:
+        token_resp = (
+            db.table("password_reset_tokens")
+            .select("token, user_id, expires_at, used_at")
+            .eq("token", req.token)
+            .maybe_single()
+            .execute()
+        )
+        token_row = token_resp.data
+    except Exception as e:
+        logger.warning(f"reset-password: token lookup failed: {e}")
+        raise HTTPException(status_code=400, detail="Lien invalide ou expire")
+
+    if not is_token_valid(token_row):
+        raise HTTPException(status_code=400, detail="Lien invalide ou expire")
+
+    user_id = token_row["user_id"]
+    new_hash = _hash_password(req.new_password)
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    try:
+        db.table("users").update({"password_hash": new_hash}).eq("id", user_id).execute()
+        db.table("password_reset_tokens").update(
+            {"used_at": now_iso}
+        ).eq("token", req.token).execute()
+    except Exception as e:
+        logger.error(f"reset-password: persistence failed: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la reinitialisation")
+
+    return {"ok": True}
 
 
 # ─── PREFERENCES ───
@@ -646,8 +980,15 @@ def update_preferences(user_id: str, req: PreferencesRequest, user: dict = Depen
         "preferred_destinations": req.preferred_destinations or [],
         "deal_tier": effective_deal_tier,
         "blocked_destinations": req.blocked_destinations,
+        "flight_trip_types": req.flight_trip_types,
+        "include_split_tickets": req.include_split_tickets,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+    # V9: only persist min_discount when premium AND a value is supplied.
+    # Free users have no min_discount filter (the V9 free policy is fixed),
+    # so writing one would be a UI lie ("set the floor!" but it's ignored).
+    if req.min_discount is not None and tier == "premium":
+        update_data["min_discount"] = req.min_discount
 
     resp = db.table("user_preferences").update(update_data).eq("user_id", user_id).execute()
     if not resp.data:
@@ -797,10 +1138,23 @@ def telegram_status(user_id: str, user: dict = Depends(get_current_user)):
 
 @router.get("/api/articles")
 def list_articles():
-    """List all generated destination articles."""
+    """List legacy generated articles only (those without an IATA code).
+
+    V9 destination guides live under /destination/{iata} and are listed
+    via /api/destinations. Excluding them from this endpoint avoids the
+    sitemap surfacing duplicate URLs (/articles/{slug} and
+    /destination/{iata}) for the same content, which Google flags as
+    duplicate content.
+    """
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
-    resp = db.table("articles").select("*").order("created_at", desc=True).execute()
+    resp = (
+        db.table("articles")
+        .select("*")
+        .is_("iata", "null")
+        .order("created_at", desc=True)
+        .execute()
+    )
     return {"articles": resp.data or []}
 
 
@@ -812,6 +1166,123 @@ def get_article(slug: str):
     if not resp.data:
         raise HTTPException(status_code=404, detail="Article not found")
     return resp.data[0]
+
+
+@router.get("/api/destinations")
+def list_destinations(limit: int = 6, random: bool = False):
+    """Public list of destinations with an article. Used by the landing
+    page and the home page. `random=true` returns a randomized subset
+    (used on the landing for fresh discovery).
+    """
+    if not db:
+        return {"items": []}
+    try:
+        bounded = max(1, min(limit, 50))
+        # When random, pull a wider pool and shuffle in Python.
+        pool_size = 50 if random else bounded
+        r = (
+            db.table("articles")
+            .select("iata,destination,title,cover_photo,generated_at")
+            .not_.is_("iata", "null")
+            .order("generated_at", desc=True)
+            .limit(pool_size)
+            .execute()
+        )
+        items = r.data or []
+        if random and len(items) > bounded:
+            import secrets
+            indices = list(range(len(items)))
+            picked: list[int] = []
+            for _ in range(bounded):
+                idx = secrets.randbelow(len(indices))
+                picked.append(indices.pop(idx))
+            items = [items[i] for i in picked]
+        return {"items": items[:bounded]}
+    except Exception as e:
+        logger.warning(f"List destinations failed: {e}")
+        return {"items": []}
+
+
+@router.get("/api/destinations/{iata}")
+def get_destination(iata: str):
+    """Public endpoint backing the /destination/[iata] page.
+
+    Returns the article + cover photo + up to 5 active deals towards
+    this destination. 404 if no article generated yet.
+    """
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    iata_upper = (iata or "").upper().strip()
+    if not iata_upper or len(iata_upper) > 4:
+        raise HTTPException(status_code=400, detail="Invalid IATA code")
+
+    art_resp = (
+        db.table("articles")
+        .select("*")
+        .eq("iata", iata_upper)
+        .limit(1)
+        .execute()
+    )
+    if not art_resp.data:
+        raise HTTPException(status_code=404, detail="No guide for this destination yet")
+    article = art_resp.data[0]
+
+    photo = {
+        "url": article.get("cover_photo", ""),
+        "photographer_name": article.get("photographer_name", ""),
+        "photographer_url": article.get("photographer_url", ""),
+    }
+
+    # Active deals towards this destination, freshest first.
+    # We use raw_flights linked from qualified_items so we have the
+    # origin / dates / source_url to propose.
+    deals: list[dict] = []
+    try:
+        # Step 1: get freshest qualified_items for this dest
+        qi_resp = (
+            db.table("qualified_items")
+            .select("item_id,discount_pct,price,baseline_price,trip_type")
+            .eq("status", "active")
+            .eq("type", "flight")
+            .gte("discount_pct", 30)
+            .order("discount_pct", desc=True)
+            .limit(20)
+            .execute()
+        )
+        qi_rows = qi_resp.data or []
+        if qi_rows:
+            item_ids = [q["item_id"] for q in qi_rows if q.get("item_id")]
+            rf_resp = (
+                db.table("raw_flights")
+                .select("id,origin,destination,departure_date,return_date,airline,source_url,trip_type")
+                .in_("id", item_ids[:50])
+                .eq("destination", iata_upper)
+                .execute()
+            )
+            rf_by_id = {r["id"]: r for r in (rf_resp.data or [])}
+            for q in qi_rows:
+                rf = rf_by_id.get(q.get("item_id"))
+                if not rf:
+                    continue
+                deals.append({
+                    "origin": rf.get("origin"),
+                    "destination": rf.get("destination"),
+                    "departure_date": rf.get("departure_date"),
+                    "return_date": rf.get("return_date"),
+                    "price": q.get("price"),
+                    "baseline_price": q.get("baseline_price"),
+                    "discount_pct": q.get("discount_pct"),
+                    "airline": rf.get("airline"),
+                    "source_url": rf.get("source_url"),
+                    "trip_type": rf.get("trip_type"),
+                })
+                if len(deals) >= 5:
+                    break
+    except Exception as e:
+        logger.warning(f"Deal lookup for destination {iata_upper} failed: {e}")
+
+    return {"article": article, "photo": photo, "deals": deals}
 
 
 @router.post("/api/articles/generate")
@@ -1027,6 +1498,37 @@ async def stripe_webhook(request: Request):
             }).eq("stripe_customer_id", customer_id).execute()
             logger.info(f"Premium deactivated for customer {customer_id}")
 
+    elif event_type == "charge.refunded":
+        # V9: a refunded charge (full or partial) revokes premium access
+        # immediately. Without this, a user requesting their 30-day
+        # money-back guarantee keeps the service until the next nightly
+        # sync — bad UX and potentially fraud-enabling.
+        # Stripe sends both the refunded charge object AND the invoice
+        # later, but the charge event is the fastest signal.
+        customer_id = data.get("customer")
+        if db and customer_id:
+            from datetime import datetime, timezone
+            db.table("user_preferences").update({
+                "is_premium": False,
+                "premium_expires_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("stripe_customer_id", customer_id).execute()
+            logger.info(f"Premium revoked (refund) for customer {customer_id}")
+
+    elif event_type == "invoice.payment_failed":
+        # V9: a failed renewal payment (expired card, insufficient funds)
+        # must downgrade the user immediately, not wait for Stripe's
+        # internal dunning to mark the sub as past_due → cancelled (which
+        # can take days). Without this, the user keeps premium access for
+        # free during the dunning grace period.
+        customer_id = data.get("customer")
+        if db and customer_id:
+            from datetime import datetime, timezone
+            db.table("user_preferences").update({
+                "is_premium": False,
+                "premium_expires_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("stripe_customer_id", customer_id).execute()
+            logger.info(f"Premium revoked (payment_failed) for customer {customer_id}")
+
     return {"ok": True}
 
 
@@ -1083,6 +1585,202 @@ class AdminMinDiscountRequest(BaseModel):
         if v not in {20, 30, 40, 50, 60}:
             raise ValueError("value must be one of 20,30,40,50,60")
         return v
+
+
+class AdminTestWelcomeEmailRequest(BaseModel):
+    email: str
+
+
+@router.post("/api/admin/email/test-welcome")
+async def admin_test_welcome_email(req: AdminTestWelcomeEmailRequest, request: Request):
+    """Re-send the welcome email to an arbitrary address. Useful for verifying
+    the Brevo template configuration after a deploy, or for resending the
+    welcome to early users who got an older version."""
+    _require_admin(request)
+    try:
+        await _send_welcome_email(req.email)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Send failed: {e}")
+    return {
+        "status": "sent",
+        "to": req.email,
+        "transport": "brevo_template" if (settings.BREVO_API_KEY and settings.BREVO_WELCOME_TEMPLATE_ID) else "smtp_fallback",
+        "brevo_template_id": settings.BREVO_WELCOME_TEMPLATE_ID,
+    }
+
+
+@router.get("/api/admin/scrapers/health")
+def admin_scrapers_health(request: Request):
+    """Per-scraper health snapshot for the last 24h and 7d.
+
+    Reads from scrape_logs (last run, success/fail count) and from
+    raw_flights (actual rows landed per source). Useful to spot dead
+    scrapers — a scraper can log success while persisting zero rows."""
+    _require_admin(request)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    since_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    since_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+
+    actors: dict[str, dict] = {}
+
+    # scrape_logs aggregation
+    try:
+        logs = (
+            db.table("scrape_logs")
+            .select("actor_id,status,items_count,errors_count,started_at")
+            .gte("started_at", since_7d)
+            .order("started_at", desc=True)
+            .range(0, 9999)
+            .execute()
+            .data
+            or []
+        )
+    except Exception as e:
+        logs = []
+        logger.warning(f"scrape_logs read failed: {e}")
+
+    for row in logs:
+        actor = row.get("actor_id") or "?"
+        a = actors.setdefault(actor, {
+            "actor_id": actor,
+            "runs_7d": 0, "runs_24h": 0,
+            "successes_7d": 0, "failures_7d": 0, "partial_7d": 0,
+            "items_logged_7d": 0, "errors_7d": 0,
+            "last_run_at": None,
+        })
+        a["runs_7d"] += 1
+        if (row.get("started_at") or "") >= since_24h:
+            a["runs_24h"] += 1
+        s = row.get("status")
+        if s == "success":
+            a["successes_7d"] += 1
+        elif s == "failed":
+            a["failures_7d"] += 1
+        elif s == "partial":
+            a["partial_7d"] += 1
+        a["items_logged_7d"] += (row.get("items_count") or 0)
+        a["errors_7d"] += (row.get("errors_count") or 0)
+        if not a["last_run_at"] or (row.get("started_at") or "") > a["last_run_at"]:
+            a["last_run_at"] = row.get("started_at")
+
+    # Cross-check against raw_flights for the actual rows landed by source
+    sources_to_check = ["ryanair_direct", "vueling_direct", "travelpayouts"]
+    raw_24h: dict[str, int] = {}
+    raw_7d: dict[str, int] = {}
+    for src in sources_to_check:
+        try:
+            r24 = db.table("raw_flights").select("id", count="exact", head=True).eq("source", src).gte("scraped_at", since_24h).execute()
+            r7 = db.table("raw_flights").select("id", count="exact", head=True).eq("source", src).gte("scraped_at", since_7d).execute()
+            raw_24h[src] = r24.count or 0
+            raw_7d[src] = r7.count or 0
+        except Exception:
+            raw_24h[src] = -1
+            raw_7d[src] = -1
+
+    # Build a clean per-scraper view that combines both signals
+    health = []
+    for src in sources_to_check:
+        # Match scrape_logs actor_id to source. tier1 actor_id covers
+        # ryanair+vueling combined; we still expose raw counts per source.
+        log_actor = "tier1" if src in ("ryanair_direct", "vueling_direct") else "flights"
+        log_data = actors.get(log_actor, {})
+        health.append({
+            "source": src,
+            "log_actor": log_actor,
+            "rows_in_db_24h": raw_24h.get(src, 0),
+            "rows_in_db_7d": raw_7d.get(src, 0),
+            "log_runs_24h": log_data.get("runs_24h", 0),
+            "log_runs_7d": log_data.get("runs_7d", 0),
+            "log_successes_7d": log_data.get("successes_7d", 0),
+            "log_failures_7d": log_data.get("failures_7d", 0),
+            "last_run_at": log_data.get("last_run_at"),
+            # Red flag if a scraper is "running" but landing nothing.
+            "alert": (raw_24h.get(src, 0) == 0 and log_data.get("runs_24h", 0) > 2),
+        })
+
+    # One-way check (separate actor)
+    oneway_log = actors.get("flights_oneway", {})
+    try:
+        ow_24 = db.table("raw_flights").select("id", count="exact", head=True).eq("trip_type", "one_way").gte("scraped_at", since_24h).execute().count or 0
+        ow_7 = db.table("raw_flights").select("id", count="exact", head=True).eq("trip_type", "one_way").gte("scraped_at", since_7d).execute().count or 0
+    except Exception:
+        ow_24 = ow_7 = -1
+    oneway = {
+        "trip_type": "one_way",
+        "rows_in_db_24h": ow_24,
+        "rows_in_db_7d": ow_7,
+        "log_runs_24h": oneway_log.get("runs_24h", 0),
+        "log_runs_7d": oneway_log.get("runs_7d", 0),
+        "last_run_at": oneway_log.get("last_run_at"),
+        "alert": (ow_24 == 0 and oneway_log.get("runs_24h", 0) > 0),
+    }
+
+    return {
+        "snapshot_at": datetime.now(timezone.utc).isoformat(),
+        "scrapers": health,
+        "oneway": oneway,
+        "actors_raw": list(actors.values()),
+    }
+
+
+@router.get("/api/admin/email/diagnose")
+async def admin_email_diagnose(request: Request):
+    """Diagnose why Brevo sends fail in prod. Returns:
+    - the outbound IP this container uses (for Brevo IP whitelist),
+    - the HTTP status returned by a probe call to Brevo /v3/account,
+    - whether the welcome template is reachable.
+    """
+    _require_admin(request)
+    import httpx as _httpx
+
+    out_ip: str | None = None
+    out_ip_error: str | None = None
+    try:
+        async with _httpx.AsyncClient(timeout=5.0) as c:
+            r = await c.get("https://api.ipify.org?format=json")
+            r.raise_for_status()
+            out_ip = r.json().get("ip")
+    except Exception as e:
+        out_ip_error = str(e)
+
+    brevo_account_status: int | None = None
+    brevo_account_body: str | None = None
+    if settings.BREVO_API_KEY:
+        try:
+            async with _httpx.AsyncClient(timeout=10.0) as c:
+                r = await c.get(
+                    "https://api.brevo.com/v3/account",
+                    headers={"api-key": settings.BREVO_API_KEY, "accept": "application/json"},
+                )
+                brevo_account_status = r.status_code
+                brevo_account_body = r.text[:200]
+        except Exception as e:
+            brevo_account_body = f"exception: {e}"
+
+    brevo_template_status: int | None = None
+    if settings.BREVO_API_KEY and settings.BREVO_WELCOME_TEMPLATE_ID:
+        try:
+            async with _httpx.AsyncClient(timeout=10.0) as c:
+                r = await c.get(
+                    f"https://api.brevo.com/v3/smtp/templates/{settings.BREVO_WELCOME_TEMPLATE_ID}",
+                    headers={"api-key": settings.BREVO_API_KEY, "accept": "application/json"},
+                )
+                brevo_template_status = r.status_code
+        except Exception:
+            pass
+
+    return {
+        "outbound_ip": out_ip,
+        "outbound_ip_error": out_ip_error,
+        "brevo_api_key_configured": bool(settings.BREVO_API_KEY),
+        "brevo_template_id": settings.BREVO_WELCOME_TEMPLATE_ID,
+        "brevo_account_probe_status": brevo_account_status,
+        "brevo_account_probe_body": brevo_account_body,
+        "brevo_template_probe_status": brevo_template_status,
+        "smtp_host_configured": bool(settings.SMTP_HOST),
+    }
 
 
 @router.get("/api/admin/users")
@@ -1217,6 +1915,95 @@ def admin_reset_prefs(user_id: str, request: Request):
     }
     resp = db.table("user_preferences").update(defaults).eq("user_id", user_id).execute()
     return {"ok": True, "reset": bool(resp.data)}
+
+
+class AdminDeleteUserRequest(BaseModel):
+    confirm_email: str  # client must retype the user's email exactly
+
+
+@router.delete("/api/admin/users/{user_id}")
+def admin_delete_user(user_id: str, req: AdminDeleteUserRequest, request: Request):
+    """Hard-delete a user. Most child tables CASCADE on users(id), but
+    telegram_subscribers.user_id has no ON DELETE — we null it out so the
+    Telegram bot subscriber row stays intact (chat/username history preserved)
+    but is no longer linked to the deleted account.
+
+    Stripe customer rows are NOT touched here — they live in Stripe and
+    can be archived from the Stripe dashboard if desired.
+
+    Body must include confirm_email matching the user's actual email,
+    to prevent fat-finger deletes from the admin UI.
+    """
+    _require_admin(request)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    user_resp = db.table("users").select("id,email").eq("id", user_id).execute()
+    if not user_resp.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    user = user_resp.data[0]
+
+    if (req.confirm_email or "").strip().lower() != user["email"].lower():
+        raise HTTPException(
+            status_code=400,
+            detail="confirm_email does not match the user's actual email",
+        )
+
+    # V9: cancel any active Stripe subscription before nuking the row
+    # so the customer doesn't keep being billed for a deleted account.
+    # Best-effort — a Stripe outage doesn't block the admin delete.
+    cancel_result = _cancel_stripe_subscription_for_user(user_id)
+    if cancel_result["had_subscription"]:
+        logger.info(
+            f"[admin_delete] user={user_id} stripe={cancel_result}"
+        )
+
+    db.table("telegram_subscribers").update({"user_id": None}).eq("user_id", user_id).execute()
+    db.table("users").delete().eq("id", user_id).execute()
+
+    logger.info(f"[admin] Deleted user {user_id} ({user['email']})")
+    return {
+        "ok": True,
+        "deleted_id": user_id,
+        "deleted_email": user["email"],
+        "stripe_cancelled": cancel_result["cancelled"],
+    }
+
+
+@router.post("/api/admin/users/{user_id}/telegram/generate-link")
+def admin_generate_telegram_link(user_id: str, request: Request):
+    """Generate a Telegram connection link on behalf of a user.
+
+    Use case: a premium user signed up but never connected Telegram (skipped
+    onboarding step, or hit the broken-webhook bug from April 2026). Ops can
+    paste the resulting deep_link into a personal email — when the user
+    taps it, Telegram opens, /start <token> fires, our webhook consumes
+    the token and flips telegram_connected to true.
+    """
+    _require_admin(request)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    # Sanity: confirm user exists
+    user_row = db.table("users").select("id, email").eq("id", user_id).execute()
+    if not user_row.data:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    token = secrets.token_urlsafe(16)
+    db.table("user_preferences").update({
+        "telegram_connect_token": token,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("user_id", user_id).execute()
+
+    bot_username = "Globegenius_bot"
+    deep_link = f"https://t.me/{bot_username}?start={token}"
+    return {
+        "ok": True,
+        "user_id": user_id,
+        "email": user_row.data[0].get("email"),
+        "link": deep_link,
+        "token": token,
+    }
 
 
 @router.get("/api/admin/routes")
@@ -1400,6 +2187,99 @@ def create_wishlist(
     return {"wishlist": resp.data[0] if resp.data else row}
 
 
+def _cancel_stripe_subscription_for_user(user_id: str) -> dict:
+    """Best-effort cancellation of the user's active Stripe subscription
+    before we delete the user from DB.
+
+    Returns a small dict describing what happened so callers can log it.
+    Never raises: cancellation failure must not block account deletion.
+
+    V9: account deletion used to nuke the user row without touching
+    Stripe → the subscription kept renewing and billing the user with
+    no service. RGPD-non-compliant and a guaranteed dispute.
+    """
+    result: dict = {
+        "had_subscription": False,
+        "cancelled": False,
+        "subscription_id": None,
+        "error": None,
+    }
+    if not db:
+        result["error"] = "no_db"
+        return result
+    try:
+        prefs = (
+            db.table("user_preferences")
+            .select("stripe_subscription_id,stripe_customer_id")
+            .eq("user_id", user_id)
+            .execute()
+        )
+    except Exception as e:
+        result["error"] = f"prefs_read_failed: {e}"
+        return result
+    if not prefs.data:
+        return result
+    sub_id = prefs.data[0].get("stripe_subscription_id")
+    if not sub_id:
+        return result
+    result["had_subscription"] = True
+    result["subscription_id"] = sub_id
+    if not settings.STRIPE_SECRET_KEY:
+        result["error"] = "no_stripe_key"
+        return result
+    try:
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        # Cancel immediately rather than at period end — the user
+        # asked for account deletion, they want a clean break.
+        # Stripe will fire customer.subscription.deleted to our
+        # webhook, but since the DB row is about to disappear, the
+        # webhook update is a no-op (which is fine).
+        stripe.Subscription.cancel(sub_id)
+        result["cancelled"] = True
+    except stripe.error.InvalidRequestError as e:
+        # Already cancelled, doesn't exist, etc. — log but don't block.
+        result["error"] = f"stripe_invalid: {e}"
+    except Exception as e:
+        result["error"] = f"stripe_unknown: {e}"
+    return result
+
+
+@router.post("/api/users/me/cancel-subscription", status_code=200)
+def cancel_subscription_self(current_user: dict = Depends(get_current_user)):
+    """User-initiated subscription cancellation.
+
+    Reuses _cancel_stripe_subscription_for_user(). The user's account
+    stays intact; only the Stripe subscription is cancelled. Stripe
+    fires customer.subscription.deleted shortly after, which the
+    webhook turns into is_premium=False — so the user keeps premium
+    until the end of their paid period (Stripe behaviour) but no new
+    invoice is generated.
+
+    Idempotent: calling it on a free user returns 200 with
+    had_subscription=False. A Stripe error returns 502 so the frontend
+    can prompt a retry.
+    """
+    user_id = current_user.get("user_id") or current_user.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="auth missing")
+
+    result = _cancel_stripe_subscription_for_user(user_id)
+
+    if result["had_subscription"] and not result["cancelled"]:
+        # Stripe is supposed to have cancelled the sub but didn't.
+        # 502 because the Stripe upstream is the failing dependency.
+        raise HTTPException(
+            status_code=502,
+            detail=f"stripe cancellation failed: {result.get('error') or 'unknown'}"
+        )
+
+    return {
+        "ok": True,
+        "had_subscription": result["had_subscription"],
+        "cancelled": result["cancelled"],
+    }
+
+
 @router.delete("/api/users/{user_id}/account", status_code=200)
 def delete_account(
     user_id: str,
@@ -1409,6 +2289,15 @@ def delete_account(
         raise HTTPException(status_code=403, detail="Accès refusé")
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
+    # V9: cancel Stripe subscription FIRST. If the DB delete races ahead,
+    # we'd lose the stripe_subscription_id and the customer would keep
+    # being billed. Best-effort: a Stripe outage shouldn't block the
+    # user from deleting their account.
+    cancel_result = _cancel_stripe_subscription_for_user(user_id)
+    if cancel_result["had_subscription"]:
+        logger.info(
+            f"[delete_account] user={user_id} stripe={cancel_result}"
+        )
     # Disconnect Telegram before deleting so the bot can't send stale alerts
     try:
         db.table("user_preferences").update({
@@ -1419,7 +2308,7 @@ def delete_account(
         pass
     # Delete user row — cascades wipe preferences, wishlists, sent_alerts, etc.
     db.table("users").delete().eq("id", user_id).execute()
-    return {"ok": True}
+    return {"ok": True, "stripe_cancelled": cancel_result["cancelled"]}
 
 
 @router.delete("/api/users/{user_id}/wishlists/{wishlist_id}", status_code=200)
@@ -1487,10 +2376,11 @@ def admin_ctr(request: Request, days: int = 30):
     )
     total_sent = sent_resp.count or 0
 
-    # Clicks recorded (tokens created in window)
+    # Clicks recorded (tokens created in window). V5+ P1: also pull
+    # trip_type and qualification_method so we can break down CTR.
     tokens_resp = (
         db.table("alert_redirect_tokens")
-        .select("destination,origin,click_count,clicked_at")
+        .select("destination,origin,click_count,clicked_at,trip_type,qualification_method")
         .gte("created_at", since)
         .execute()
     )
@@ -1502,30 +2392,50 @@ def admin_ctr(request: Request, days: int = 30):
 
     ctr = round(total_clicked / total_tokens * 100, 1) if total_tokens > 0 else 0.0
 
-    # CTR per destination (top 10)
-    by_dest: dict[str, dict] = {}
-    for t in tokens:
-        dest = t.get("destination") or "?"
-        entry = by_dest.setdefault(dest, {"tokens": 0, "clicked": 0, "clicks": 0})
-        entry["tokens"] += 1
-        if t.get("click_count", 0) > 0:
-            entry["clicked"] += 1
-            entry["clicks"] += t["click_count"]
-
-    top_destinations = sorted(
-        [
+    def _bucket_stats(tokens: list[dict], key_fn) -> list[dict]:
+        """Aggregate tokens by an arbitrary key extractor and compute CTR."""
+        agg: dict[str, dict] = {}
+        for t in tokens:
+            key = key_fn(t) or "unknown"
+            entry = agg.setdefault(key, {"tokens": 0, "clicked": 0, "clicks": 0})
+            entry["tokens"] += 1
+            if t.get("click_count", 0) > 0:
+                entry["clicked"] += 1
+                entry["clicks"] += t["click_count"]
+        return [
             {
-                "destination": dest,
+                "key": k,
                 "tokens": v["tokens"],
                 "clicked": v["clicked"],
                 "clicks": v["clicks"],
                 "ctr": round(v["clicked"] / v["tokens"] * 100, 1) if v["tokens"] else 0,
             }
-            for dest, v in by_dest.items()
-        ],
+            for k, v in agg.items()
+        ]
+
+    # CTR per destination (top 10 by CTR, requires ≥3 tokens to avoid noise)
+    by_dest = _bucket_stats(tokens, lambda t: t.get("destination"))
+    top_destinations = sorted(
+        [d for d in by_dest if d["tokens"] >= 3],
         key=lambda x: x["ctr"],
         reverse=True,
     )[:10]
+    # Rename 'key' → 'destination' for backwards compat with the frontend.
+    top_destinations = [{**d, "destination": d.pop("key")} for d in top_destinations]
+
+    # V5+ P1: CTR breakdown by trip_type (round_trip vs one_way vs split_ticket)
+    by_trip_type = sorted(
+        _bucket_stats(tokens, lambda t: t.get("trip_type")),
+        key=lambda x: x["tokens"],
+        reverse=True,
+    )
+
+    # V5+ P1: CTR breakdown by qualification_method
+    by_qualification = sorted(
+        _bucket_stats(tokens, lambda t: t.get("qualification_method")),
+        key=lambda x: x["tokens"],
+        reverse=True,
+    )
 
     return {
         "period_days": days,
@@ -1535,4 +2445,6 @@ def admin_ctr(request: Request, days: int = 30):
         "total_clicks": total_clicks,
         "ctr_pct": ctr,
         "top_destinations": top_destinations,
+        "by_trip_type": by_trip_type,
+        "by_qualification_method": by_qualification,
     }

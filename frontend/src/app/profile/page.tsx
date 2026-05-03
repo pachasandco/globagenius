@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getPreferences, updatePreferences, changePassword, clearSessionCookie } from "@/lib/api";
+import { getPreferences, updatePreferences, changePassword, clearSessionCookie, getTelegramStatus, generateTelegramLink, cancelSubscription, type FlightTripType } from "@/lib/api";
 
 const AIRPORTS = [
   { code: "CDG", label: "Paris Charles de Gaulle" },
@@ -156,7 +156,13 @@ const ALL_DESTINATIONS = [
 export default function ProfilePage() {
   const [airports, setAirports] = useState<string[]>([]);
   const [offerTypes, setOfferTypes] = useState<string[]>([]);
+  const [flightTripTypes, setFlightTripTypes] = useState<FlightTripType[]>(["round_trip"]);
+  const [includeSplitTickets, setIncludeSplitTickets] = useState<boolean>(false);
   const [dealTier, setDealTier] = useState<string>("regular");
+  // V9: premium-only discount floor. 40 = "voir tous les bons plans",
+  // 50 = "seulement les très bonnes affaires", 60 = "uniquement les
+  // perles rares". Free users have a fixed policy and never see this UI.
+  const [minDiscount, setMinDiscount] = useState<40 | 50 | 60>(40);
   const [blockedDestinations, setBlockedDestinations] = useState<string[]>([]);
   const [destSearch, setDestSearch] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -175,6 +181,13 @@ export default function ProfilePage() {
   const [success, setSuccess] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [cancellingSubscription, setCancellingSubscription] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  // Telegram connection state. null = not yet known (avoids flashing the
+  // 'connect Telegram' card to users who are actually connected).
+  const [telegramConnected, setTelegramConnected] = useState<boolean | null>(null);
+  const [telegramLinking, setTelegramLinking] = useState(false);
+  const [telegramLinkOpened, setTelegramLinkOpened] = useState(false);
   const router = useRouter();
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -213,6 +226,20 @@ export default function ProfilePage() {
         if (prefs.blocked_destinations) {
           setBlockedDestinations(prefs.blocked_destinations);
         }
+        if (prefs.flight_trip_types && prefs.flight_trip_types.length > 0) {
+          setFlightTripTypes(prefs.flight_trip_types);
+        }
+        if (typeof prefs.include_split_tickets === "boolean") {
+          setIncludeSplitTickets(prefs.include_split_tickets);
+        }
+        // V9: load min_discount with strict whitelist. Anything outside
+        // {40, 50, 60} (e.g. legacy 20/30 from V7) is coerced to 40 so the
+        // UI doesn't show an undefined state.
+        if (prefs.min_discount === 50 || prefs.min_discount === 60) {
+          setMinDiscount(prefs.min_discount);
+        } else {
+          setMinDiscount(40);
+        }
       })
       .catch(() => {
         setError("Erreur lors du chargement des préférences");
@@ -228,7 +255,57 @@ export default function ProfilePage() {
         .then((d) => setIsPremium(d.is_premium || false))
         .catch(() => {});
     }
+
+    // Initial Telegram status
+    getTelegramStatus(id)
+      .then((d) => setTelegramConnected(!!d.connected))
+      .catch(() => setTelegramConnected(false));
   }, [router, API_URL]);
+
+  // While the user is in the middle of linking (link opened in another tab),
+  // poll Telegram status every 4s so the UI flips to "connected" automatically
+  // when /start <token> hits the bot. Stop polling once connected or after the
+  // user has opened the link but hasn't completed within ~5 minutes.
+  useEffect(() => {
+    if (!telegramLinkOpened || telegramConnected || !userId) return;
+    let cancelled = false;
+    let pollCount = 0;
+    const interval = setInterval(async () => {
+      pollCount += 1;
+      if (pollCount > 75) {
+        clearInterval(interval); // give up after ~5 min
+        return;
+      }
+      try {
+        const d = await getTelegramStatus(userId);
+        if (!cancelled && d.connected) {
+          setTelegramConnected(true);
+          clearInterval(interval);
+        }
+      } catch { /* ignore */ }
+    }, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [telegramLinkOpened, telegramConnected, userId]);
+
+  async function handleConnectTelegram() {
+    if (!userId) return;
+    setTelegramLinking(true);
+    setError("");
+    try {
+      const { link } = await generateTelegramLink(userId);
+      // Open Telegram in a new tab/app. Once the user clicks Start there,
+      // our polling loop will detect telegram_connected=true within ~4s.
+      window.open(link, "_blank", "noopener,noreferrer");
+      setTelegramLinkOpened(true);
+    } catch {
+      setError("Impossible de générer le lien Telegram. Réessaie dans un instant.");
+    } finally {
+      setTelegramLinking(false);
+    }
+  }
 
   function blockDestination(code: string) {
     setBlockedDestinations((prev) => prev.includes(code) ? prev : [...prev, code]);
@@ -255,6 +332,13 @@ export default function ProfilePage() {
         offer_types: offerTypes.length > 0 ? offerTypes : ["flight"],
         deal_tier: dealTier,
         blocked_destinations: blockedDestinations,
+        flight_trip_types: flightTripTypes.length > 0 ? flightTripTypes : ["round_trip"],
+        // Combos require A/R tracking — silently disable if user dropped round_trip.
+        include_split_tickets: includeSplitTickets && flightTripTypes.includes("round_trip"),
+        // V9: only premium users get the min_discount filter. Sending
+        // null for free users keeps the backend from quietly persisting
+        // a value that has no effect.
+        min_discount: isPremium ? minDiscount : null,
       });
       setSuccess("Préférences mises à jour avec succès !");
       setTimeout(() => setSuccess(""), 3000);
@@ -262,6 +346,25 @@ export default function ProfilePage() {
       setError("Erreur lors de la sauvegarde des préférences");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleCancelSubscription() {
+    setCancellingSubscription(true);
+    setError("");
+    try {
+      const r = await cancelSubscription();
+      if (r.had_subscription) {
+        setSuccess("Abonnement annulé. Vous gardez Premium jusqu'à la fin de la période en cours.");
+      } else {
+        setSuccess("Aucun abonnement actif à annuler.");
+      }
+      setCancelConfirmOpen(false);
+      setTimeout(() => setSuccess(""), 6000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur d'annulation");
+    } finally {
+      setCancellingSubscription(false);
     }
   }
 
@@ -371,9 +474,14 @@ export default function ProfilePage() {
           <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-xl leading-none">
             Globe<span className="text-[#FF6B47]">Genius</span>
           </Link>
-          <Link href="/home" className="text-gray-400 text-sm hover:text-gray-600">
-            Accueil
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link href="/home" className="text-gray-400 text-sm hover:text-gray-600">
+              Accueil
+            </Link>
+            <Link href="/planificateur" className="text-gray-400 text-sm hover:text-gray-600">
+              Planificateur
+            </Link>
+          </div>
         </div>
       </div>
 
@@ -390,6 +498,64 @@ export default function ProfilePage() {
         {success && (
           <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">
             ✅ {success}
+          </div>
+        )}
+
+        {/* ── Telegram connection (visible only when NOT connected) ── */}
+        {/*
+          Stays hidden while telegramConnected === null (initial fetch in
+          flight) so connected users never see a flash of this card.
+          Once telegramLinkOpened is true and the user finishes /start in
+          Telegram, our polling effect flips telegramConnected to true and
+          this block disappears.
+        */}
+        {telegramConnected === false && (
+          <div className="mb-10 p-5 bg-[#0088cc]/5 border-2 border-[#0088cc]/30 rounded-2xl">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-xl bg-[#0088cc] text-white flex items-center justify-center text-xl shrink-0">
+                ✈️
+              </div>
+              <div className="flex-1">
+                <h2 className="text-lg font-semibold text-[#0A1F3D] mb-1">
+                  Connectez Telegram pour recevoir vos alertes
+                </h2>
+                <p className="text-sm text-gray-600 mb-4">
+                  {telegramLinkOpened
+                    ? "Telegram s'est ouvert dans un nouvel onglet. Cliquez sur \"Start\" dans la conversation avec @Globegenius_bot pour finaliser. Cette page se mettra à jour automatiquement."
+                    : "Vos préférences sont prêtes mais aucune alerte ne vous est envoyée tant que Telegram n'est pas relié à votre compte."}
+                </p>
+                {!telegramLinkOpened ? (
+                  <button
+                    onClick={handleConnectTelegram}
+                    disabled={telegramLinking}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0088cc] hover:bg-[#006daa] text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {telegramLinking ? "Génération du lien…" : "🔗 Connecter Telegram"}
+                  </button>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="inline-flex items-center gap-2 text-sm text-gray-500">
+                      <span className="inline-block w-2 h-2 rounded-full bg-[#0088cc] animate-pulse" />
+                      En attente de la confirmation Telegram…
+                    </span>
+                    <button
+                      onClick={handleConnectTelegram}
+                      disabled={telegramLinking}
+                      className="text-xs text-gray-500 underline hover:text-[#0088cc] transition-colors"
+                    >
+                      Renvoyer le lien
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Telegram connected confirmation (transient, shows once after linking) ── */}
+        {telegramConnected === true && telegramLinkOpened && (
+          <div className="mb-10 p-4 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">
+            ✅ Telegram connecté avec succès. Vous recevrez vos alertes au prochain cycle.
           </div>
         )}
 
@@ -568,6 +734,128 @@ export default function ProfilePage() {
           </div>
         </div>
 
+        {/* ── Types de vols ── */}
+        <div className="mb-12">
+          <h2 className="text-xl font-semibold mb-1">Types de vols</h2>
+          <p className="text-gray-400 text-sm mb-6">
+            Choisissez les types d&apos;alertes que vous souhaitez recevoir sur Telegram.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {[
+              { id: "round_trip" as FlightTripType, label: "Aller-retour", desc: "Vols A/R en promo (par défaut)", icon: "🔄" },
+              { id: "one_way" as FlightTripType, label: "Aller simple", desc: "Aller seul ou retour seul en promo", icon: "➡️" },
+            ].map((tt) => {
+              const selected = flightTripTypes.includes(tt.id);
+              return (
+                <button
+                  key={tt.id}
+                  type="button"
+                  onClick={() =>
+                    setFlightTripTypes((prev) =>
+                      selected
+                        ? (prev.length > 1 ? prev.filter((t) => t !== tt.id) : prev)
+                        : [...prev, tt.id]
+                    )
+                  }
+                  className="text-left p-4 rounded-xl border-2 transition-all relative"
+                  style={{
+                    borderColor: selected ? "#06b6d4" : "#e5e7eb",
+                    background: selected ? "#ecfeff" : "white",
+                  }}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span>{tt.icon}</span>
+                    <span className="font-semibold text-sm">{tt.label}</span>
+                  </div>
+                  <div className="text-xs text-gray-500">{tt.desc}</div>
+                  {selected && (
+                    <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-cyan-500 flex items-center justify-center">
+                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Sub-option of 'Aller-retour' — combos malins (2x one-way) */}
+          {flightTripTypes.includes("round_trip") && (
+            <div className="mt-3 ml-4 pl-4 border-l-2 border-cyan-100">
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={includeSplitTickets}
+                  onChange={(e) => setIncludeSplitTickets(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-cyan-500 cursor-pointer"
+                />
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-[#0A1F3D] group-hover:text-cyan-700 transition-colors">
+                    💡 Inclure les combos malins (2 billets)
+                  </div>
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    Recevez aussi les A/R reconstitués avec 2 aller simples séparés quand c&apos;est moins cher.
+                    <span className="block mt-0.5 text-gray-400">
+                      ⚠️ Bagages et annulation gérés séparément pour chaque billet.
+                    </span>
+                  </div>
+                </div>
+              </label>
+            </div>
+          )}
+
+          <p className="text-xs text-gray-400 mt-2">
+            Au moins un type doit rester sélectionné.
+          </p>
+        </div>
+
+        {/* ── V9 Niveau de promo (Premium only) ── */}
+        {isPremium && (
+          <div className="mb-12">
+            <h2 className="text-xl font-semibold mb-1">Niveau de promo</h2>
+            <p className="text-gray-400 text-sm mb-6">
+              À partir de quel niveau de réduction souhaitez-vous être alerté&nbsp;? Plus vous montez, moins vous recevez d&apos;alertes — mais celles que vous recevez sont exceptionnelles.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {[
+                { value: 40 as const, label: "À partir de -40%", desc: "Tous les bons plans détectés (cadence normale).", icon: "📊" },
+                { value: 50 as const, label: "À partir de -50%", desc: "Seulement les très bonnes affaires.", icon: "🔥" },
+                { value: 60 as const, label: "À partir de -60%", desc: "Uniquement les perles rares (erreurs de prix).", icon: "💎" },
+              ].map((opt) => {
+                const selected = minDiscount === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setMinDiscount(opt.value)}
+                    className="text-left p-4 rounded-xl border-2 transition-all relative"
+                    style={{
+                      borderColor: selected ? "#06b6d4" : "#e5e7eb",
+                      background: selected ? "#ecfeff" : "white",
+                    }}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span>{opt.icon}</span>
+                      <span className="font-semibold text-sm">{opt.label}</span>
+                    </div>
+                    <div className="text-xs text-gray-500">{opt.desc}</div>
+                    {selected && (
+                      <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-cyan-500 flex items-center justify-center">
+                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* ── Destinations masquées ── */}
         <div className="mb-12">
           <h2 className="text-xl font-semibold mb-1">Destinations masquées</h2>
@@ -648,6 +936,61 @@ export default function ProfilePage() {
             La suppression de votre compte est irréversible. Toutes vos données seront effacées.
           </p>
 
+          {isPremium && (
+            <div className="mb-8 p-4 border border-[var(--color-sand)] rounded-xl bg-white">
+              <h3 className="font-semibold text-[var(--color-ink)] mb-1">Abonnement Premium</h3>
+              <p className="text-sm text-gray-500 mb-3">
+                Vous pouvez annuler à tout moment. Vous gardez l&apos;accès Premium jusqu&apos;à la fin de la
+                période payée. Aucun nouveau prélèvement.
+              </p>
+              {!cancelConfirmOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setCancelConfirmOpen(true)}
+                  className="text-sm text-[var(--color-coral)] hover:underline"
+                >
+                  Annuler mon abonnement
+                </button>
+              ) : (
+                <div className="flex gap-2 items-center">
+                  <button
+                    type="button"
+                    onClick={handleCancelSubscription}
+                    disabled={cancellingSubscription}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold"
+                  >
+                    {cancellingSubscription ? "Annulation…" : "Confirmer l'annulation"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCancelConfirmOpen(false)}
+                    className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700"
+                  >
+                    Garder l&apos;abonnement
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {isPremium ? (
+            // Premium users: nudge them to cancel their subscription first
+            // so they can keep using the app until end-of-period before
+            // deleting. The delete button itself stays available below as
+            // a safety net (it also cancels Stripe), but the friendlier
+            // path is "annule l'abonnement" → wait → delete when free.
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-sm text-amber-900">
+              <strong>Pour supprimer votre compte&nbsp;:</strong> annulez d'abord votre abonnement
+              ci-dessus. Vous gardez l'accès Premium jusqu'à la fin de la période payée, puis vous
+              passerez en gratuit et pourrez supprimer votre compte.
+              <br />
+              <span className="text-xs text-amber-700 mt-1 block">
+                Si vous supprimez votre compte maintenant, l'abonnement Stripe sera également annulé
+                automatiquement (pas de remboursement — pour un remboursement, contactez-nous par email).
+              </span>
+            </div>
+          ) : null}
+
           {!showDeleteConfirm ? (
             <button
               onClick={() => setShowDeleteConfirm(true)}
@@ -659,6 +1002,11 @@ export default function ProfilePage() {
             <div className="bg-red-50 border border-red-200 rounded-xl p-5 space-y-4">
               <p className="text-sm text-red-700 font-medium">
                 Êtes-vous sûr ? Cette action supprimera définitivement votre compte, vos préférences et vos alertes.
+                {isPremium && (
+                  <span className="block mt-2 text-red-800 font-semibold">
+                    ⚠️ Votre abonnement Stripe sera également annulé. Aucun remboursement automatique.
+                  </span>
+                )}
               </p>
               <div className="flex gap-3">
                 <button

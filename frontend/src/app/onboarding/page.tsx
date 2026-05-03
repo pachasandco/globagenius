@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getPreferences, updatePreferences, generateTelegramLink } from "@/lib/api";
+import { getPreferences, updatePreferences, generateTelegramLink, type FlightTripType } from "@/lib/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -27,6 +27,8 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(1);
   const [airports, setAirports] = useState<string[]>(["CDG"]);
   const [offerTypes, setOfferTypes] = useState<string[]>(["flight"]);
+  const [flightTripTypes, setFlightTripTypes] = useState<FlightTripType[]>(["round_trip"]);
+  const [includeSplitTickets, setIncludeSplitTickets] = useState<boolean>(false);
   const [dealTier, setDealTier] = useState<string>("regular");
   const [isPremium, setIsPremium] = useState(false);
   const [telegramLink, setTelegramLink] = useState("");
@@ -54,6 +56,12 @@ export default function OnboardingPage() {
         }
         if (prefs.deal_tier) {
           setDealTier(prefs.deal_tier);
+        }
+        if (prefs.flight_trip_types && prefs.flight_trip_types.length > 0) {
+          setFlightTripTypes(prefs.flight_trip_types);
+        }
+        if (typeof prefs.include_split_tickets === "boolean") {
+          setIncludeSplitTickets(prefs.include_split_tickets);
         }
       })
       .catch(() => {
@@ -85,6 +93,8 @@ export default function OnboardingPage() {
         airport_codes: airports.length > 0 ? airports : ["CDG"],
         offer_types: offerTypes.length > 0 ? offerTypes : ["flight"],
         deal_tier: dealTier,
+        flight_trip_types: flightTripTypes.length > 0 ? flightTripTypes : ["round_trip"],
+        include_split_tickets: includeSplitTickets && flightTripTypes.includes("round_trip"),
       });
       setStep(3);
     } catch {
@@ -182,9 +192,76 @@ export default function OnboardingPage() {
             <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-center mb-2">
               Type d&apos;alertes
             </h2>
-            <p className="text-gray-400 text-sm text-center mb-8">
+            <p className="text-gray-400 text-sm text-center mb-6">
               Choisissez le niveau de deal que vous souhaitez recevoir.
             </p>
+
+            {/* Flight trip types */}
+            <div className="mb-6">
+              <p className="text-sm font-semibold text-[#0A1F3D] mb-2">Types de vols</p>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { id: "round_trip" as FlightTripType, label: "Aller-retour", icon: "🔄" },
+                  { id: "one_way" as FlightTripType, label: "Aller simple", icon: "➡️" },
+                ].map((tt) => {
+                  const selected = flightTripTypes.includes(tt.id);
+                  return (
+                    <button
+                      key={tt.id}
+                      type="button"
+                      onClick={() =>
+                        setFlightTripTypes((prev) =>
+                          selected
+                            ? (prev.length > 1 ? prev.filter((t) => t !== tt.id) : prev)
+                            : [...prev, tt.id]
+                        )
+                      }
+                      className="text-left p-3 rounded-xl border-2 transition-all relative"
+                      style={{
+                        borderColor: selected ? "#06b6d4" : "#e5e7eb",
+                        background: selected ? "#ecfeff" : "white",
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span>{tt.icon}</span>
+                        <span className="font-semibold text-sm">{tt.label}</span>
+                      </div>
+                      {selected && (
+                        <div className="absolute top-2 right-2 w-4 h-4 rounded-full bg-cyan-500 flex items-center justify-center">
+                          <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Sub-option of 'Aller-retour' — combos malins (2x one-way) */}
+              {flightTripTypes.includes("round_trip") && (
+                <div className="mt-3 ml-3 pl-3 border-l-2 border-cyan-100">
+                  <label className="flex items-start gap-2 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={includeSplitTickets}
+                      onChange={(e) => setIncludeSplitTickets(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-cyan-500 cursor-pointer"
+                    />
+                    <div className="flex-1">
+                      <div className="text-sm font-medium text-[#0A1F3D] group-hover:text-cyan-700 transition-colors">
+                        💡 Inclure les combos malins (2 billets)
+                      </div>
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        A/R reconstitués avec 2 aller simples séparés quand c&apos;est moins cher.
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              )}
+            </div>
+
+            <p className="text-sm font-semibold text-[#0A1F3D] mb-2">Niveau de deal</p>
 
             <div className="mb-8 grid grid-cols-1 gap-3">
               {[
@@ -242,6 +319,8 @@ export default function OnboardingPage() {
                         airport_codes: airports.length > 0 ? airports : ["CDG"],
                         offer_types: offerTypes.length > 0 ? offerTypes : ["flight"],
                         deal_tier: dealTier,
+                        flight_trip_types: flightTripTypes.length > 0 ? flightTripTypes : ["round_trip"],
+                        include_split_tickets: includeSplitTickets && flightTripTypes.includes("round_trip"),
                       });
                     } catch { /* ignore */ }
                     router.push("/home?upgrade=1");

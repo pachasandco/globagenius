@@ -65,6 +65,15 @@ export const updateMinDiscount = (id: string, value: number) =>
 export const resetPrefs = (id: string) =>
   adminFetch(`/api/admin/users/${id}/reset_prefs`, { method: "POST" });
 
+export const deleteUser = (id: string, confirmEmail: string) =>
+  adminFetch<{ ok: boolean; deleted_id: string; deleted_email: string }>(
+    `/api/admin/users/${id}`,
+    {
+      method: "DELETE",
+      body: JSON.stringify({ confirm_email: confirmEmail }),
+    }
+  );
+
 export function setAdminKey(key: string) {
   localStorage.setItem("gg_admin_key", key);
 }

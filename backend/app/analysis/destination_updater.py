@@ -229,11 +229,44 @@ def _score_destination(
     return round(score, 1)
 
 
+# Long-haul destinations we always keep regardless of seasonal score, so the
+# CDG-only long-courrier scrape covers a wide enough net for fare-mistake
+# alerts. Without this, the seasonal scorer would drop most US/Asie/Caraïbes
+# destinations to the bottom of the ranking and the top-N cut would prune them
+# even though they're exactly the routes premium users want most.
+LONG_HAUL_GUARANTEED = [
+    # Amérique du Nord
+    "JFK", "EWR", "MIA", "LAX", "SFO", "YUL", "YYZ", "MEX", "CUN",
+    # Caraïbes
+    "PUJ", "PTP", "FDF",
+    # Amérique du Sud
+    "GIG", "GRU", "EZE", "SCL", "BOG", "LIM",
+    # Asie
+    "BKK", "NRT", "HND", "ICN", "HKG", "SIN", "KUL", "DEL", "BOM", "DPS",
+    # Océanie
+    "SYD",
+    # Océan Indien
+    "MLE", "MRU", "RUN", "ZNZ", "SEZ",
+    # Afrique
+    "JNB", "CPT", "NBO",
+    # Moyen-Orient
+    "DXB", "DOH",
+]
+
+
 def compute_priority_destinations(max_count: int = 40) -> list[dict]:
     """Compute the ranked list of priority destinations.
 
     Returns list of dicts ready to upsert into `priority_destinations` table:
     {iata, label_fr, region, score, is_long_haul, season, updated_at}
+
+    Strategy:
+    1. Score every destination in DESTINATION_UNIVERSE.
+    2. Take the top `max_count` by score (short/medium-haul wins here).
+    3. Force-include LONG_HAUL_GUARANTEED entries that didn't make the cut,
+       so the long-courrier net always covers all major hubs even when the
+       seasonal scorer ranks them low. Total list size grows by however many
+       long-haul destinations had to be force-added — that's intentional.
     """
     season = get_current_season()
     logger.info(f"Computing priority destinations for season={season}")
@@ -267,11 +300,28 @@ def compute_priority_destinations(max_count: int = 40) -> list[dict]:
             deduped.append(d)
 
     top = deduped[:max_count]
+    top_iatas = {d["iata"] for d in top}
+
+    # Force-include the long-haul guaranteed list so CDG long-courrier scraping
+    # covers all major hubs regardless of seasonal score.
+    by_iata = {d["iata"]: d for d in deduped}
+    forced_added = 0
+    for iata in LONG_HAUL_GUARANTEED:
+        if iata in top_iatas:
+            continue
+        d = by_iata.get(iata)
+        if d is None:
+            # Not in DESTINATION_UNIVERSE — skip silently rather than crash
+            # the weekly job over a typo.
+            continue
+        top.append(d)
+        forced_added += 1
 
     long_haul_count = sum(1 for d in top if d["is_long_haul"])
     logger.info(
-        f"Priority destinations computed: {len(top)} total, "
-        f"{long_haul_count} long-haul, season={season}"
+        f"Priority destinations computed: {len(top)} total "
+        f"({forced_added} long-haul force-added), {long_haul_count} long-haul "
+        f"overall, season={season}"
     )
     for d in top[:10]:
         logger.debug(f"  #{top.index(d)+1} {d['iata']} ({d['label_fr']}) score={d['score']}")

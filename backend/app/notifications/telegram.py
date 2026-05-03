@@ -36,20 +36,33 @@ def _make_redirect_token(
     origin: str,
     dest: str,
     url: str,
+    trip_type: str | None = None,
+    qualification_method: str | None = None,
 ) -> str:
-    """Persist a short opaque token → URL mapping and return the tracking URL."""
+    """Persist a short opaque token → URL mapping and return the tracking URL.
+
+    `trip_type` and `qualification_method` are optional analytics tags so
+    /api/admin/ctr can break clicks down by round_trip vs one_way vs
+    split_ticket and by zscore_* vs fallback_discount vs oneway_discount.
+    Falls back to UTM-tagged URL on insert failure to never block the alert.
+    """
     from app.db import db
     token = f"{dest}-{secrets.token_urlsafe(6)}"
     if db:
+        row = {
+            "token": token,
+            "user_id": user_id,
+            "alert_key": alert_key,
+            "origin": origin,
+            "destination": dest,
+            "url": url,
+        }
+        if trip_type is not None:
+            row["trip_type"] = trip_type
+        if qualification_method is not None:
+            row["qualification_method"] = qualification_method
         try:
-            db.table("alert_redirect_tokens").insert({
-                "token": token,
-                "user_id": user_id,
-                "alert_key": alert_key,
-                "origin": origin,
-                "destination": dest,
-                "url": url,
-            }).execute()
+            db.table("alert_redirect_tokens").insert(row).execute()
         except Exception:
             return _add_utms(url, origin, dest)
     return f"{settings.FRONTEND_URL}/r/{token}"
@@ -169,6 +182,24 @@ def _fmt_date_fr(date_str: str) -> str:
         return date_str
 
 
+def _city_for_iata(iata: str) -> str:
+    """City-only label, no airport-specifier and no IATA code.
+
+    Used by V8.2 multi-origin alerts where we want a single 'Paris' header
+    even when the underlying offers come from CDG / ORY / BVA. Strips the
+    second word from IATA_TO_CITY entries like 'Paris CDG' / 'Paris Orly'.
+    Fallbacks: if the IATA isn't known, returns the code unchanged.
+    """
+    from app.config import IATA_TO_CITY
+    label = IATA_TO_CITY.get(iata)
+    if not label:
+        return iata
+    # 'Paris CDG' → 'Paris'; 'Bordeaux' → 'Bordeaux'; 'Bâle-Mulhouse' → 'Bâle-Mulhouse'.
+    # We split on space only, so multi-word city names with hyphens stay intact.
+    head = label.split(" ")[0]
+    return head
+
+
 def format_flight_deal_alert(flight: dict, discount_pct: float, baseline_price: float) -> str:
     """Format an alert message for a flight-only deal (no hotel package)."""
     origin = flight["origin"]
@@ -197,7 +228,9 @@ def format_flight_deal_alert(flight: dict, discount_pct: float, baseline_price: 
     lines = [
         f"*{badge}*",
         "",
-        f"✈️ *{origin_label} ({origin}) → {dest_label} ({dest})*",
+        f"🛫 *{origin_label} → {dest_label}*",
+        f"🛬 *{dest_label} → {origin_label}*",
+        "",
         f"💰 *{price} € A/R · -{disc} %*",
         f"📅 {dep_str} – {ret_str}{duration_str}",
         f"Prix habituel : ~{baseline} €~",
@@ -207,6 +240,268 @@ def format_flight_deal_alert(flight: dict, discount_pct: float, baseline_price: 
         lines += ["", f"👉 [Voir le deal]({url})"]
 
     return "\n".join(lines)
+
+
+def format_oneway_deal_alert(
+    flight: dict,
+    discount_pct: float,
+    baseline_price: float,
+    return_estimate: float | None = None,
+    user_id: str | None = None,
+    alert_key: str | None = None,
+    has_guide: bool = False,
+) -> str:
+    """V5: format an alert for a one-way flight deal (no return leg).
+
+    `flight` must include origin, destination, departure_date, price, source_url,
+    direction ('outbound' | 'inbound'). `return_estimate` is the typical price for
+    the reverse leg if known — surfaced as a hint to defuse the "is this really
+    a deal?" doubt mentioned in V5 design notes."""
+    origin = flight["origin"]
+    dest = flight["destination"]
+    direction = flight.get("direction") or "outbound"
+
+    dep_str = _fmt_date_fr(flight["departure_date"])
+    price = int(round(flight["price"]))
+    disc = int(round(discount_pct))
+    baseline = int(round(baseline_price))
+    badge = _deal_badge(discount_pct)
+    # V9: defensive fallback — historic one-way rows in DB had source_url
+    # null because the scraper didn't build it. Without a source_url the
+    # alert ended at "✅ Vol vérifié" with no booking link, leaving the
+    # user with no way to act on the deal. Build the Aviasales one-way
+    # deep link on the fly when missing so every alert has a link.
+    url = flight.get("source_url") or ""
+    if not url or url == "N/A":
+        try:
+            from app.notifications.aviasales import build_aviasales_oneway_url
+            url = build_aviasales_oneway_url(
+                origin, dest, flight.get("departure_date", ""),
+                marker=settings.TRAVELPAYOUTS_MARKER or None,
+            )
+        except Exception:
+            url = ""
+
+    from app.config import iata_label
+    origin_label = iata_label(origin)
+    dest_label = iata_label(dest)
+
+    # One-way alert: the user's home airport is the origin for outbound,
+    # the destination for inbound. Tell them in their own perspective:
+    #   outbound → 🛫 départ de Paris (CDG) → Tokyo (NRT)
+    #   inbound  → 🛬 retour de Tokyo (NRT) → Paris (CDG)
+    if direction == "outbound":
+        route_line = f"🛫 *Départ de {origin_label} → {dest_label}*"
+        direction_label = "Aller simple"
+    else:
+        route_line = f"🛬 *Retour de {origin_label} → {dest_label}*"
+        direction_label = "Retour simple"
+
+    lines = [
+        f"*{badge}*",
+        "",
+        route_line,
+        "",
+        f"💰 *{price} € · {direction_label} · -{disc} %*",
+        f"📅 {dep_str}",
+        f"Prix habituel : ~{baseline} €~",
+    ]
+    if return_estimate is not None:
+        lines.append(f"↩️ Retour estimé : ~{int(round(return_estimate))} €")
+    lines.append("✅ Vol vérifié")
+    if url and url != "N/A":
+        # When called with a user_id + alert_key, route through /r/:token so
+        # the click is attributable to the user. Otherwise fall back to UTMs.
+        if user_id and alert_key:
+            tracked_url = _make_redirect_token(
+                user_id, alert_key, origin, dest, url,
+                trip_type="one_way",
+                qualification_method="oneway_discount",
+            )
+        else:
+            tracked_url = _add_utms(url, origin, dest)
+        lines += ["", f"👉 [Voir le deal]({tracked_url})"]
+
+    if has_guide:
+        article_iata = dest if direction == "outbound" else origin
+        article_label = iata_label(article_iata)
+        lines += ["", f"📖 [Le guide complet de {article_label}]({settings.FRONTEND_URL}/destination/{article_iata.lower()})"]
+
+    return "\n".join(lines)
+
+
+def format_split_ticket_alert(
+    outbound: dict,
+    inbound: dict,
+    roundtrip_baseline: float,
+    user_id: str | None = None,
+    alert_key: str | None = None,
+    has_guide: bool = False,
+) -> str:
+    """V5: format a 'combo malin' 2x one-way alert when buying two separate
+    one-way tickets is cheaper than the round-trip baseline on the same route.
+
+    V9 redesign: aligned visually with format_grouped_flight_alerts so a
+    user reading their feed doesn't see "two different products". Same
+    badge, same header, same ~price~ strike-through baseline, same ✅
+    Vol vérifié footer line, same per-leg "Voir le deal" link styling.
+    Carrier names are normalised via normalize_airline_name() so we
+    never expose Cyrillic agency strings in the user-facing message.
+
+    Both `outbound` and `inbound` must include origin, destination,
+    departure_date, price, source_url, airline.
+    """
+    from app.config import iata_label
+    from app.notifications.airlines import normalize_airline_name
+
+    origin = outbound["origin"]
+    dest = outbound["destination"]
+    origin_label = iata_label(origin)
+    dest_label = iata_label(dest)
+
+    total = int(round(outbound["price"] + inbound["price"]))
+    rt_baseline = int(round(roundtrip_baseline))
+    savings = max(0, rt_baseline - total)
+    saving_pct = int(round((savings / rt_baseline) * 100)) if rt_baseline > 0 else 0
+
+    out_dep = _fmt_date_fr(outbound["departure_date"])
+    in_dep = _fmt_date_fr(inbound["departure_date"])
+
+    out_carrier = normalize_airline_name(outbound.get("airline")) or "—"
+    in_carrier = normalize_airline_name(inbound.get("airline")) or "—"
+    out_price = int(round(outbound["price"]))
+    in_price = int(round(inbound["price"]))
+
+    # Reuse the same badge ladder as the round-trip grouped formatter
+    # so visual hierarchy is consistent across alert types.
+    badge = _deal_badge(saving_pct)
+
+    # V9: same defensive fallback as the one-way alert. A leg with a null
+    # source_url falls back to a freshly built Aviasales one-way deep link
+    # so the user always lands on a bookable page for each leg.
+    from app.notifications.aviasales import build_aviasales_oneway_url
+    out_url = outbound.get("source_url") or ""
+    if not out_url or out_url == "N/A":
+        try:
+            out_url = build_aviasales_oneway_url(
+                outbound["origin"], outbound["destination"],
+                outbound.get("departure_date", ""),
+                marker=settings.TRAVELPAYOUTS_MARKER or None,
+            )
+        except Exception:
+            out_url = ""
+    in_url = inbound.get("source_url") or ""
+    if not in_url or in_url == "N/A":
+        try:
+            in_url = build_aviasales_oneway_url(
+                inbound["origin"], inbound["destination"],
+                inbound.get("departure_date", ""),
+                marker=settings.TRAVELPAYOUTS_MARKER or None,
+            )
+        except Exception:
+            in_url = ""
+
+    def _wrap(url: str) -> str:
+        # Both legs share the same alert_key — a click on either counts
+        # as engagement on the combo (per V5+ P1 product decision).
+        if user_id and alert_key:
+            return _make_redirect_token(
+                user_id, alert_key, origin, dest, url,
+                trip_type="split_ticket",
+                qualification_method="oneway_discount",
+            )
+        return _add_utms(url, origin, dest)
+
+    lines = [
+        f"*{badge} · 💡 Combo malin*",
+        "",
+        f"🛫 *{origin_label} → {dest_label}*",
+        f"🛬 *{dest_label} → {origin_label}*",
+        "",
+        f"💰 *{total} € total · -{saving_pct} %*",
+        f"   Prix habituel A/R : ~{rt_baseline} €~",
+        f"   Économie : {savings} €",
+        "   ✅ 2 billets vérifiés",
+        "",
+        # Outbound leg
+        f"✈️ *Aller* — {out_carrier} · {out_price} € · {out_dep}",
+    ]
+    if out_url and out_url != "N/A":
+        lines.append(f"   👉 [Voir le deal aller]({_wrap(out_url)})")
+    lines.append("")
+    # Inbound leg
+    lines.append(f"✈️ *Retour* — {in_carrier} · {in_price} € · {in_dep}")
+    if in_url and in_url != "N/A":
+        lines.append(f"   👉 [Voir le deal retour]({_wrap(in_url)})")
+
+    lines += [
+        "",
+        "⚠️ Bagages et annulation gérés séparément pour chaque billet.",
+    ]
+    if has_guide:
+        lines += ["", f"📖 [Le guide complet de {dest_label}]({settings.FRONTEND_URL}/destination/{dest.lower()})"]
+    return "\n".join(lines)
+
+
+async def send_oneway_deal_alert(
+    chat_id: int,
+    flight: dict,
+    discount_pct: float,
+    baseline_price: float,
+    return_estimate: float | None = None,
+    user_id: str | None = None,
+    alert_key: str | None = None,
+    has_guide: bool = False,
+) -> bool:
+    """V5: send a Telegram alert for a one-way flight deal.
+
+    When user_id+alert_key are provided, the booking link is wrapped in a
+    /r/:token redirect for per-user click tracking. Otherwise UTMs only.
+    """
+    bot = _get_bot()
+    if not bot:
+        logger.warning("Telegram bot not configured, skipping one-way alert")
+        return False
+    msg = format_oneway_deal_alert(
+        flight, discount_pct, baseline_price, return_estimate,
+        user_id=user_id, alert_key=alert_key, has_guide=has_guide,
+    )
+    try:
+        await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send one-way alert to {chat_id}: {e}")
+        return False
+
+
+async def send_split_ticket_alert(
+    chat_id: int,
+    outbound: dict,
+    inbound: dict,
+    roundtrip_baseline: float,
+    user_id: str | None = None,
+    alert_key: str | None = None,
+    has_guide: bool = False,
+) -> bool:
+    """V5: send a Telegram alert for a 2x one-way (split-ticket) combo.
+
+    user_id+alert_key enable /r/:token tracking on both legs (clicks on
+    either leg count as engagement on the combo, per product decision).
+    """
+    bot = _get_bot()
+    if not bot:
+        logger.warning("Telegram bot not configured, skipping split-ticket alert")
+        return False
+    msg = format_split_ticket_alert(
+        outbound, inbound, roundtrip_baseline,
+        user_id=user_id, alert_key=alert_key, has_guide=has_guide,
+    )
+    try:
+        await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send split-ticket alert to {chat_id}: {e}")
+        return False
 
 
 async def send_flight_deal_alert(
@@ -244,6 +539,7 @@ def format_grouped_flight_alerts(
     user_id: str | None = None,
     alert_key: str | None = None,
     origin_iata: str | None = None,
+    has_guide: bool = False,
 ) -> str:
     """Format a grouped Telegram alert for multiple flight offers to one destination.
 
@@ -275,17 +571,30 @@ def format_grouped_flight_alerts(
     badge = _deal_badge(max_discount)
 
     from app.config import iata_label
+
+    # V8.2: detect multi-origin alerts (e.g. user tracks CDG + ORY + BVA
+    # and the same destination has deals from several Paris airports).
+    # When that happens, the header drops the IATA-specific label and
+    # uses a city-level one ("Paris" instead of "Paris CDG"), and each
+    # offer line gets its own origin-IATA tag.
+    origin_iatas_in_offers = {o.get("origin") for o in offers if o.get("origin")}
+    multi_origin = len(origin_iatas_in_offers) > 1
+
     origin_display = origin_iata or (offers[0].get("origin") if offers else "")
-    origin_label = iata_label(origin_display)
+    origin_label = iata_label(origin_display) if not multi_origin else _city_for_iata(origin_display)
     dest_label = iata_label(destination_iata)
-    noun = "offre" if total == 1 else "offres"
+    noun = "offre disponible" if total == 1 else "offres disponibles"
 
     header = (
         f"*{badge}*\n"
         f"\n"
-        f"✈️ *{origin_label} ({origin_display}) → {dest_label} ({destination_iata})*\n"
-        f"🗓 {total} {noun} disponibles"
+        f"🛫 *{origin_label} → {dest_label}*\n"
+        f"🛬 *{dest_label} → {origin_label}*\n"
+        f"\n"
+        f"🗓 {total} {noun}"
     )
+    if multi_origin:
+        header += f"  · *{len(origin_iatas_in_offers)} aéroports*"
 
     # Group by (year, month) chronologically
     by_month: dict[tuple[int, int], list[dict]] = {}
@@ -313,8 +622,15 @@ def format_grouped_flight_alerts(
             baseline = o.get("baseline_price")
             baseline_str = f"\n   Prix habituel : ~{int(round(baseline))} €~" if baseline and baseline > price else ""
 
+            # V8.2: when the alert mixes several origin airports, tag the
+            # specific origin on each offer line so the user knows which
+            # airport this particular fare flies from.
+            origin_tag = ""
+            if multi_origin and o.get("origin"):
+                origin_tag = f"  ·  via {o['origin']}"
+
             lines.append(
-                f"\n💰 *{price} € A/R · -{disc} %*\n"
+                f"\n💰 *{price} € A/R · -{disc} %*{origin_tag}\n"
                 f"   {dep_str} – {ret_str} · {duration} jours"
                 f"{baseline_str}\n"
                 f"   ✅ Vol vérifié"
@@ -324,7 +640,9 @@ def format_grouped_flight_alerts(
             if booking_url:
                 if user_id and alert_key and origin_iata:
                     tracked = _make_redirect_token(
-                        user_id, alert_key, origin_iata, destination_iata, booking_url
+                        user_id, alert_key, origin_iata, destination_iata, booking_url,
+                        trip_type="round_trip",
+                        qualification_method=o.get("qualification_method"),
                     )
                 else:
                     tracked = _add_utms(booking_url, origin_iata or "", destination_iata)
@@ -347,6 +665,12 @@ def format_grouped_flight_alerts(
 
     if remaining > 0:
         msg_parts.append(f"_+ {remaining} autres dates disponibles_")
+
+    if has_guide:
+        msg_parts.append("")
+        msg_parts.append(
+            f"📖 [Le guide complet de {dest_label}]({settings.FRONTEND_URL}/destination/{destination_iata.lower()})"
+        )
 
     msg_parts.append("")
     msg_parts.append(f"👉 [Toutes les offres {destination_iata}]({settings.FRONTEND_URL}/home?dest={destination_iata})")
@@ -371,6 +695,7 @@ async def send_grouped_flight_alerts(
     user_id: str | None = None,
     alert_key: str | None = None,
     origin_iata: str | None = None,
+    has_guide: bool = False,
 ) -> bool:
     """Send a grouped Telegram alert containing multiple flight offers for one destination."""
     bot = _get_bot()
@@ -380,16 +705,17 @@ async def send_grouped_flight_alerts(
     msg = format_grouped_flight_alerts(
         origin_city, dest_city, destination_iata, offers, tier,
         user_id=user_id, alert_key=alert_key, origin_iata=origin_iata,
+        has_guide=has_guide,
     )
 
-    # Inline keyboard — quick actions without leaving Telegram
+    # Inline keyboard — quick action without leaving Telegram.
+    # 'Se désabonner' was removed (full opt-out is too aggressive for an
+    # accidental tap; users can disconnect Telegram from /profile if they
+    # really want out). The Pause button toggles indefinitely.
     reply_markup = None
     if user_id:
         reply_markup = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("⏸ Pause", callback_data=f"pause:{user_id}"),
-                InlineKeyboardButton("🔕 Se désabonner", callback_data=f"unsub:{user_id}"),
-            ]
+            [InlineKeyboardButton("⏸ Pause les alertes", callback_data=f"pause:{user_id}")]
         ])
 
     try:

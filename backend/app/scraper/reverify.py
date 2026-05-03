@@ -77,6 +77,43 @@ def _reverify_via_transavia(
         return None
 
 
+def _reverify_via_vueling(
+    origin: str, destination: str, departure_date: str, initial_price: float
+) -> bool | None:
+    """Re-verify via Vueling direct endpoint. Returns None if not covered.
+
+    Vueling's GetAllFlights endpoint takes (year, month, day, monthsRange)
+    and returns the cheapest fare per departure day across the range. We
+    request a 1-month window centred on the departure month and look up
+    the requested date in the response."""
+    try:
+        from app.scraper.tier1_vueling import get_calendar_fares, is_demoted
+        if is_demoted(origin, destination):
+            return None
+        # Parse YYYY-MM-DD into year/month for the API call.
+        try:
+            year = int(departure_date[:4])
+            month = int(departure_date[5:7])
+        except (ValueError, IndexError):
+            return None
+        fares = get_calendar_fares(
+            origin=origin,
+            destination=destination,
+            year=year,
+            month=month,
+            months_range=1,
+        )
+        max_acceptable = initial_price * (1.0 + PRICE_TOLERANCE_PCT / 100.0)
+        for fare in fares:
+            if fare.get("departure_date") == departure_date:
+                if 0 < fare["price"] <= max_acceptable:
+                    return True
+        return False if fares else None
+    except Exception as e:
+        logger.warning(f"Vueling reverify {origin}->{destination}: {e}")
+        return None
+
+
 async def reverify_flight_price(flight: dict) -> bool:
     """Return True if the deal is still valid, False otherwise.
 
@@ -95,17 +132,37 @@ async def reverify_flight_price(flight: dict) -> bool:
 
     # --- Tier 1: try direct endpoints first ---
     if _is_tier1_route(origin, destination):
-        # Try Ryanair
-        if source == "ryanair_direct" or source == "travelpayouts":
-            result = _reverify_via_ryanair(origin, destination, departure_date, return_date, initial_price)
+        # Build a priority list. The fare's own source goes first because
+        # confirming a Vueling fare via Vueling (or a Ryanair fare via
+        # Ryanair) is the most accurate. Other endpoints serve as a
+        # cross-check/fallback when the primary source returns nothing.
+        ordered: list[str] = []
+        if source == "vueling_direct":
+            ordered = ["vueling", "ryanair"]
+        elif source == "ryanair_direct":
+            ordered = ["ryanair", "vueling"]
+        else:
+            # travelpayouts or unknown: try both, ryanair first by convention.
+            ordered = ["ryanair", "vueling"]
+
+        for kind in ordered:
+            if kind == "ryanair":
+                result = _reverify_via_ryanair(origin, destination, departure_date, return_date, initial_price)
+                tag = "Ryanair"
+            elif kind == "vueling":
+                result = _reverify_via_vueling(origin, destination, departure_date, initial_price)
+                tag = "Vueling"
+            else:
+                continue
             if result is not None:
                 if result:
-                    logger.info(f"Reverify Ryanair {origin}->{destination} {departure_date}: OK")
+                    logger.info(f"Reverify {tag} {origin}->{destination} {departure_date}: OK")
                 else:
-                    logger.info(f"Reverify Ryanair {origin}->{destination} {departure_date}: REJECTED")
+                    logger.info(f"Reverify {tag} {origin}->{destination} {departure_date}: REJECTED")
                 return result
 
-        # Try Transavia
+        # Try Transavia (kept for backward-compat, currently always None
+        # because the scraper is globally disabled).
         result = _reverify_via_transavia(origin, destination, departure_date, initial_price)
         if result is not None:
             if result:

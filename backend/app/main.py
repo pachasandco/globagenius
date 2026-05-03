@@ -15,9 +15,46 @@ logger = logging.getLogger(__name__)
 
 import os
 
+# ── Sentry init ──
+# Initialised before anything else so any boot-time exception (DB
+# connection, Stripe key validation, Telegram token check) gets reported.
+# DSN is read from SENTRY_DSN env var; if absent, sentry-sdk is a no-op
+# so dev / CI runs stay quiet.
+_SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.logging import LoggingIntegration
+
+        # Sample rate is env-driven so we can crank it up while
+        # diagnosing perf issues, then dial it back. Default 100% is
+        # fine at current volume; lower it (e.g. 0.1) once traffic grows.
+        _traces_rate = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "1.0"))
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            environment=os.getenv("APP_ENV", "production"),
+            release=os.getenv("RAILWAY_GIT_COMMIT_SHA", "dev"),
+            traces_sample_rate=_traces_rate,
+            profiles_sample_rate=0.0,  # profiling off, costs extra
+            integrations=[
+                FastApiIntegration(transaction_style="endpoint"),
+                LoggingIntegration(level=None, event_level=40),  # WARNING+
+            ],
+            send_default_pii=False,  # never send Authorization headers / cookies
+        )
+        logger.info("Sentry initialised — environment=%s", os.getenv("APP_ENV", "production"))
+    except Exception as e:
+        # Never block startup on a Sentry import / init issue.
+        logger.error("Sentry init failed (continuing without it): %s", e)
+
 logger.info(f"Starting Globe Genius Pipeline — ENV={os.getenv('APP_ENV', 'unknown')} PORT={os.getenv('PORT', 'not set')}")
 
 scheduler = AsyncIOScheduler()
+
+# Set RUN_SCHEDULER=0 on API workers when running multiple Uvicorn workers,
+# so cron jobs only fire once. Default ON to keep current behaviour.
+_RUN_SCHEDULER = os.getenv("RUN_SCHEDULER", "1") == "1"
 
 
 @asynccontextmanager
@@ -28,7 +65,18 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Telegram bot token configured ✓")
 
-    for job_def in get_scheduler_jobs():
+    # APScheduler defaults misfire_grace_time to 1 second, which means a
+    # cron job whose firing instant is missed by even a brief Railway
+    # restart is silently skipped. We saw this on update_destinations:
+    # the priority_destinations table hadn't been refreshed for 9 days
+    # because the Monday 03:00 firing was always missed during deploys.
+    # 1h is plenty of slack for any of our cron jobs to recover.
+    DEFAULT_MISFIRE_GRACE_SECONDS = 3600
+
+    if not _RUN_SCHEDULER:
+        logger.info("Scheduler disabled (RUN_SCHEDULER=0) — API-only worker, jobs will not run here")
+
+    for job_def in (get_scheduler_jobs() if _RUN_SCHEDULER else []):
         job_id = job_def["id"]
         func = job_def["func"]
         trigger = job_def["trigger"]
@@ -39,7 +87,11 @@ async def lifespan(app: FastAPI):
                 kwargs["hours"] = job_def["hours"]
             if "minutes" in job_def:
                 kwargs["minutes"] = job_def["minutes"]
-            scheduler.add_job(func, "interval", id=job_id, **kwargs)
+            scheduler.add_job(
+                func, "interval", id=job_id,
+                misfire_grace_time=DEFAULT_MISFIRE_GRACE_SECONDS,
+                **kwargs,
+            )
         elif trigger == "cron":
             cron_kwargs = {}
             if "hour" in job_def:
@@ -48,10 +100,15 @@ async def lifespan(app: FastAPI):
                 cron_kwargs["minute"] = job_def["minute"]
             if "day_of_week" in job_def:
                 cron_kwargs["day_of_week"] = job_def["day_of_week"]
-            scheduler.add_job(func, "cron", id=job_id, **cron_kwargs)
+            scheduler.add_job(
+                func, "cron", id=job_id,
+                misfire_grace_time=DEFAULT_MISFIRE_GRACE_SECONDS,
+                **cron_kwargs,
+            )
 
-    scheduler.start()
-    logger.info(f"Scheduler started with {len(scheduler.get_jobs())} jobs")
+    if _RUN_SCHEDULER:
+        scheduler.start()
+        logger.info(f"Scheduler started with {len(scheduler.get_jobs())} jobs")
 
     # Wire RAG retriever to the travel planner (Supabase full-text search)
     try:
@@ -67,8 +124,9 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    scheduler.shutdown()
-    logger.info("Scheduler shut down")
+    if _RUN_SCHEDULER and scheduler.running:
+        scheduler.shutdown()
+        logger.info("Scheduler shut down")
 
 
 app = FastAPI(

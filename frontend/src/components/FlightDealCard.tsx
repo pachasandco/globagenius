@@ -1,11 +1,16 @@
 import type { FlightDeal } from "@/lib/api";
 
 export function FlightDealCard({ deal }: { deal: FlightDeal }) {
-  const days = deal.trip_duration_days ?? Math.round(
-    (new Date(deal.return_date).getTime() - new Date(deal.departure_date).getTime()) / 86400000
-  );
+  const isOneWay = deal.trip_type === "one_way";
   const dep = new Date(deal.departure_date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
-  const ret = new Date(deal.return_date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+  const ret = !isOneWay && deal.return_date
+    ? new Date(deal.return_date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })
+    : null;
+  const days = !isOneWay && deal.return_date
+    ? (deal.trip_duration_days ?? Math.round(
+        (new Date(deal.return_date).getTime() - new Date(deal.departure_date).getTime()) / 86400000
+      ))
+    : null;
   const isPremium = deal.tier === "premium";
   const discount = Math.round(deal.discount_pct);
   const stopsLabel = deal.stops === 0 ? "Direct" : `${deal.stops} escale${deal.stops > 1 ? "s" : ""}`;
@@ -34,9 +39,15 @@ export function FlightDealCard({ deal }: { deal: FlightDeal }) {
         {deal.origin} → {deal.destination}
       </div>
 
-      <div className="text-sm text-[#0A1F3D]/60 mb-3">
-        {dep} – {ret} · {days} jour{days > 1 ? "s" : ""}
-      </div>
+      {isOneWay ? (
+        <div className="text-sm text-[#0A1F3D]/60 mb-3">
+          ➡️ Aller simple · {dep}
+        </div>
+      ) : (
+        <div className="text-sm text-[#0A1F3D]/60 mb-3">
+          {dep} – {ret} · {days} jour{(days ?? 0) > 1 ? "s" : ""}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-1.5 mb-4">
         {deal.airline && (

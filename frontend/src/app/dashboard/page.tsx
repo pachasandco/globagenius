@@ -5,11 +5,16 @@ import Link from "next/link";
 import { getFlightDeals, getPipelineStatus, type FlightDeal, type PipelineStatus } from "@/lib/api";
 
 function FlightDealCard({ deal, wishlisted }: { deal: FlightDeal; wishlisted?: boolean }) {
-  const days = deal.trip_duration_days ?? Math.round(
-    (new Date(deal.return_date).getTime() - new Date(deal.departure_date).getTime()) / 86400000
-  );
+  const isOneWay = deal.trip_type === "one_way";
+  const days = !isOneWay && deal.return_date
+    ? (deal.trip_duration_days ?? Math.round(
+        (new Date(deal.return_date).getTime() - new Date(deal.departure_date).getTime()) / 86400000
+      ))
+    : null;
   const depDate = new Date(deal.departure_date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
-  const retDate = new Date(deal.return_date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+  const retDate = !isOneWay && deal.return_date
+    ? new Date(deal.return_date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })
+    : null;
   const isPremium = deal.tier === "premium";
   const discount = Math.round(deal.discount_pct);
   const stopsLabel = deal.stops === 0 ? "Direct" : `${deal.stops} escale${deal.stops > 1 ? "s" : ""}`;
@@ -26,7 +31,9 @@ function FlightDealCard({ deal, wishlisted }: { deal: FlightDeal; wishlisted?: b
             {deal.origin} → {deal.destination}
           </div>
           <div className="text-gray-400 text-xs">
-            {depDate} – {retDate} · {days} jour{days > 1 ? "s" : ""} · {stopsLabel}
+            {isOneWay
+              ? `➡️ Aller simple · ${depDate} · ${stopsLabel}`
+              : `${depDate} – ${retDate} · ${days} jour${(days ?? 0) > 1 ? "s" : ""} · ${stopsLabel}`}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -45,7 +52,7 @@ function FlightDealCard({ deal, wishlisted }: { deal: FlightDeal; wishlisted?: b
         <div className="flex items-end justify-between mb-3">
           <div>
             <div className="text-xs text-gray-400 mb-0.5">
-              Vol aller-retour{deal.airline ? ` · ${deal.airline}` : ""}
+              {isOneWay ? "Vol aller simple" : "Vol aller-retour"}{deal.airline ? ` · ${deal.airline}` : ""}
             </div>
             {locked ? (
               <div className="flex items-baseline gap-2 select-none">

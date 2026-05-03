@@ -7,7 +7,8 @@ from app.db import db
 from app.scraper.travelpayouts_flights import scrape_all_flights
 from app.scraper.tier1_scraper import scrape_all_tier1
 from app.analysis.baselines import compute_baseline, compute_baselines_by_bucket, MIN_SAMPLE_COUNT
-from app.scraper.travelpayouts import get_prices_for_dates
+from app.scraper.travelpayouts import get_prices_for_dates, get_oneway_calendar
+from app.scraper.normalizer import normalize_flight
 from app.scraper.travelpayouts_flights import _normalize_priced_entry
 from app.analysis.route_selector import get_priority_destinations, is_long_haul
 from app.analysis.destination_updater import update_priority_destinations_in_db
@@ -44,6 +45,16 @@ def get_scheduler_jobs() -> list[dict]:
             "trigger": "cron",
             "hour": h,
         } for h in [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22]],
+        # ── VOLS ONE-WAY : toutes les 4h, décalées de 30min du round-trip ──
+        # V5 : récupère les aller-simples (outbound + inbound) pour les routes priorité.
+        # Cadence + faible que les A/R car volume API plus faible.
+        *[{
+            "id": f"scrape_oneway_{h:02d}",
+            "func": job_scrape_oneway_flights,
+            "trigger": "cron",
+            "hour": h,
+            "minute": 30,
+        } for h in [1, 5, 9, 13, 17, 21]],
         # ── TRAVELPAYOUTS ENRICHMENT : 1x/jour a 4h ──
         {
             "id": "travelpayouts_enrichment",
@@ -122,6 +133,16 @@ def get_scheduler_jobs() -> list[dict]:
             "trigger": "cron",
             "hour": 7,
         },
+        # ── SCRAPER WATCHDOG : toutes les 2h, alerte admin Telegram ──
+        # V8.3 : si un scraper tourne mais ne persiste aucune ligne sur 24h,
+        # envoie une alerte au TELEGRAM_ADMIN_CHAT_ID. Cooldown 6h/source.
+        *[{
+            "id": f"scraper_watchdog_{h:02d}",
+            "func": job_scraper_watchdog,
+            "trigger": "cron",
+            "hour": h,
+            "minute": 15,  # offset des autres jobs
+        } for h in [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23]],
     ]
 
 
@@ -262,7 +283,12 @@ async def _analyze_new_flights(flights: list[dict]):
 
         # Anomaly detection (existing helper)
         anomaly = detect_anomaly(price=flight["price"], baseline=baseline)
-        if not anomaly:
+        # Track which qualification path succeeded — needed downstream to
+        # measure baseline maturity (fallback share) and to filter analytics.
+        qualification_method: str | None = None
+        if anomaly:
+            qualification_method = f"zscore_{anomaly.alert_level}"
+        else:
             # Fallback: qualify on raw discount alone when z-score is unreliable
             # (high variance baselines or young seasonal cells with few samples).
             # A deal ≥40% below avg_price is worth showing regardless of z-score.
@@ -280,6 +306,7 @@ async def _analyze_new_flights(flights: list[dict]):
                         z_score=round(raw_z, 2),
                         alert_level="good_deal",
                     )
+                    qualification_method = "fallback_discount"
             if not anomaly:
                 counters["rejected_no_anomaly"] += 1
                 continue
@@ -338,6 +365,7 @@ async def _analyze_new_flights(flights: list[dict]):
             "tier": tier,
             "status": "active",
             "reverified_at": now_utc,
+            "qualification_method": qualification_method or "unknown",
         }
         if competitor_prices is not None:
             qualified_item_row["competitor_prices"] = competitor_prices
@@ -357,6 +385,9 @@ async def _analyze_new_flights(flights: list[dict]):
             # Stash score back on the flight dict so the grouped dispatcher
             # can surface it in offers without re-computing.
             flight["score"] = score
+            # Propagate qualification_method for downstream click-tracking
+            # analytics (CTR breakdown by qualification path).
+            flight["_qualification_method"] = qualification_method or "unknown"
             qualified_flights.append((flight, anomaly, tier))
 
     logger.info(f"Analyze pipeline counters: {counters}")
@@ -461,14 +492,14 @@ async def _dispatch_grouped_flight_alerts(
     try:
         prefs_resp = (
             db.table("user_preferences")
-            .select("user_id,telegram_chat_id,telegram_connected,airport_codes,alerts_paused_until,deal_tier,blocked_destinations")
+            .select("user_id,telegram_chat_id,telegram_connected,airport_codes,alerts_paused_until,deal_tier,blocked_destinations,flight_trip_types")
             .eq("telegram_connected", True)
             .execute()
         )
         all_prefs = prefs_resp.data or []
     except Exception as e:
         err_msg = str(e)
-        if "alerts_paused_until" in err_msg or "deal_tier" in err_msg or "blocked_destinations" in err_msg:
+        if any(col in err_msg for col in ("alerts_paused_until", "deal_tier", "blocked_destinations", "flight_trip_types")):
             logger.warning("Migration not yet applied — fetching prefs without optional columns")
             try:
                 prefs_resp = (
@@ -531,6 +562,8 @@ async def _dispatch_grouped_flight_alerts(
     paused_until_by_user: dict[str, str] = {}
     deal_tier_by_user: dict[str, str] = {}
     blocked_by_user: dict[str, set] = {}
+    trip_types_by_user: dict[str, set[str]] = {}
+    min_discount_by_user: dict[str, int] = {}
     for pref in all_prefs:
         if isinstance(pref, dict) and pref.get("user_id"):
             uid = pref["user_id"]
@@ -540,15 +573,45 @@ async def _dispatch_grouped_flight_alerts(
             blocked = pref.get("blocked_destinations") or []
             if blocked:
                 blocked_by_user[uid] = set(blocked)
+            # V5: flight trip type filter — default to round-trip only
+            # to preserve pre-V5 behaviour for migrated users.
+            trip_types_by_user[uid] = set(pref.get("flight_trip_types") or ["round_trip"])
+            # V9: premium-only discount floor preference. Free users
+            # ignore this (they have a fixed band policy instead).
+            md = pref.get("min_discount")
+            if isinstance(md, (int, float)):
+                min_discount_by_user[uid] = int(md)
 
-    # Track teasers already sent this run — at most once per user per run
-    teaser_sent_quota: set[str] = set()
+    # V7: track premium teasers sent this run as a fast in-memory dedup
+    # (the persistent dedup uses sent_alerts.alert_type='teaser_premium' with
+    # a 7-day window). The 'limit reached' teaser was removed in V7.
     teaser_sent_premium: set[str] = set()
     # Track best price already dispatched per (user_id, destination, dep_date, ret_date)
     # this run. When a user tracks multiple origins (CDG + ORY + BVA) and the same
     # itinerary appears from several airports, only send the cheapest one.
     # Key: (user_id, dest, dep_date, ret_date) → best price sent
     dispatched_this_run: dict[tuple, float] = {}
+
+    # V8.2: accumulate offers per (user, destination) BEFORE sending so a
+    # user who tracks several origins (CDG + ORY + BVA) gets ONE Telegram
+    # message with all matching dates from all of their airports, instead
+    # of one message per origin. The send happens after the subs loop.
+    # Schema:
+    #   pending[(user_id, destination)] = {
+    #     "chat_id": str, "tier": str, "user_id": str,
+    #     "offers": [offer dicts ...],
+    #     "keys_to_store": [alert_keys ...],
+    #     "best_origin": str,  # the origin of the cheapest offer (header reference)
+    #   }
+    pending_by_user_dest: dict[tuple[str, str], dict] = {}
+
+    # V9 in-memory free-lane counters: (user_id) -> {"daily": int, "weekly": int}
+    # Initialised from DB at sub-time, decremented as we accept candidates so
+    # the cap holds across multiple subs (origins) for the same user in one
+    # dispatch pass. Without this, a user tracking 3 origins could receive
+    # 3 daily-band alerts in one run.
+    free_lane_room: dict[str, dict[str, int]] = {}
+    free_lane_by_key: dict[str, str] = {}
 
     for sub in subs:
         if not isinstance(sub, dict):
@@ -579,22 +642,60 @@ async def _dispatch_grouped_flight_alerts(
             if not sub_origin or chat_id is None:
                 continue
 
-            # Free tier weekly quota
-            FREE_TIER_WEEKLY_LIMIT = 3
-            weekly_sent_count = 0
+            # V9 Free tier policy — strict band-based daily + weekly caps.
+            # We need TWO separate counters for free users:
+            #   - daily_band_sent: full alerts in [20%, 40%) over last 24h
+            #   - weekly_big_sent: full alerts in [40%, ∞) over last 7d
+            # No teaser path, no FREE_TIER_WEEKLY_LIMIT (3) anymore.
+            from app.thresholds import (
+                FREE_TIER_DAILY_BAND_MIN_PCT,
+                FREE_TIER_DAILY_BAND_MAX_PCT,
+                FREE_TIER_WEEKLY_BIG_MIN_PCT,
+                FREE_TIER_DAILY_LIMIT,
+                FREE_TIER_WEEKLY_BIG_LIMIT,
+            )
+            free_daily_band_sent = 0
+            free_weekly_big_sent = 0
             if sub_tier == "free" and user_id:
-                week_start = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-                try:
-                    wk_resp = (
-                        db.table("sent_alerts")
-                        .select("alert_key", count="exact")
-                        .eq("user_id", user_id)
-                        .gte("created_at", week_start)
-                        .execute()
-                    )
-                    weekly_sent_count = wk_resp.count or 0
-                except Exception as e:
-                    logger.warning(f"Failed to count weekly alerts for {user_id}: {e}")
+                # First sub for this user → fetch counts from DB. Subsequent
+                # subs use the in-memory copy mutated as alerts are queued.
+                if user_id not in free_lane_room:
+                    day_start = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+                    week_start = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+                    daily_seen = 0
+                    weekly_seen = 0
+                    try:
+                        # Both counts use sent_alerts.alert_type='flight'.
+                        # We tag the row's lane with alert_key prefix:
+                        #   'fday:' for daily-band alerts
+                        #   'fwk:'  for weekly-big alerts
+                        # so we can distinguish them cheaply.
+                        day_resp = (
+                            db.table("sent_alerts")
+                            .select("alert_key", count="exact")
+                            .eq("user_id", user_id)
+                            .like("alert_key", "fday:%")
+                            .gte("created_at", day_start)
+                            .execute()
+                        )
+                        daily_seen = day_resp.count or 0
+                        wk_resp = (
+                            db.table("sent_alerts")
+                            .select("alert_key", count="exact")
+                            .eq("user_id", user_id)
+                            .like("alert_key", "fwk:%")
+                            .gte("created_at", week_start)
+                            .execute()
+                        )
+                        weekly_seen = wk_resp.count or 0
+                    except Exception as e:
+                        logger.warning(f"V9 free tier counts failed for {user_id}: {e}")
+                    free_lane_room[user_id] = {
+                        "daily": max(0, FREE_TIER_DAILY_LIMIT - daily_seen),
+                        "weekly": max(0, FREE_TIER_WEEKLY_BIG_LIMIT - weekly_seen),
+                    }
+                free_daily_band_sent = FREE_TIER_DAILY_LIMIT - free_lane_room[user_id]["daily"]
+                free_weekly_big_sent = FREE_TIER_WEEKLY_BIG_LIMIT - free_lane_room[user_id]["weekly"]
 
             for (grp_origin, grp_dest), flight_tuples in groups.items():
                 if grp_origin != sub_origin:
@@ -633,22 +734,61 @@ async def _dispatch_grouped_flight_alerts(
                         matching_wl = wl
                         break
 
-                # Build candidate list
-                # Only deals ≥40% pass for everyone.
-                # Free:    40–50% → full info (max 3/week), >50% → masked teaser
-                # Premium: ≥40%  → full info, no limit
-                FREE_TIER_FULL_MAX = 50   # above this → masked for free users
-                GLOBAL_MIN_DISCOUNT = 40  # below this → no alert for anyone
+                # V9 — different policies for free and premium.
+                # Free  : round-trip only, two lanes:
+                #         - "daily band"    [20%, 40%)  → 1 / 24h
+                #         - "weekly big"    >= 40%       → 1 / 7d
+                # Premium: round-trip + opt-in oneway/combo, single floor
+                #         picked by the user (40 / 50 / 60), no quota.
+                # Wishlist match overrides everything: price-target only.
+                from app.thresholds import (
+                    GLOBAL_MIN_DISCOUNT_PCT as GLOBAL_MIN_DISCOUNT,
+                    PREMIUM_DEFAULT_MIN_DISCOUNT,
+                    PREMIUM_MIN_DISCOUNT_CHOICES,
+                )
+
+                # V5: per-user trip-type filter. Default to round-trip-only
+                # so existing users keep their current Telegram experience.
+                user_allowed_trip_types = trip_types_by_user.get(user_id or "", {"round_trip"})
+
+                # V9: free users only ever receive round-trip alerts —
+                # one-way and combos are premium-only regardless of opt-in.
+                if sub_tier == "free":
+                    user_allowed_trip_types = {"round_trip"}
+
+                # V9: premium discount floor. Reads user_preferences.min_discount
+                # but clamps to {40, 50, 60}. Anything outside falls back to default.
+                premium_floor = PREMIUM_DEFAULT_MIN_DISCOUNT
+                if sub_tier == "premium" and user_id:
+                    raw = min_discount_by_user.get(user_id)
+                    if raw in PREMIUM_MIN_DISCOUNT_CHOICES:
+                        premium_floor = raw
 
                 candidates: list[tuple[str | None, dict, object, str]] = []
                 for flight, anomaly, tier in flight_tuples:
+                    flight_trip_type = flight.get("trip_type") or "round_trip"
+                    if flight_trip_type not in user_allowed_trip_types:
+                        continue
                     if matching_wl is not None:
                         max_price = matching_wl.get("max_price")
                         if max_price is not None and flight.get("price", 9999) > max_price:
                             continue
                     else:
-                        if anomaly.discount_pct < GLOBAL_MIN_DISCOUNT:
-                            continue
+                        # V9 — branch on tier for the discount gate.
+                        disc = anomaly.discount_pct
+                        if sub_tier == "premium":
+                            if disc < premium_floor:
+                                continue
+                        else:
+                            # Free: anything in [20, ∞) is potentially relevant —
+                            # the lane (daily band vs weekly big) is decided
+                            # at dispatch time after we know which lanes still
+                            # have capacity for this user this run.
+                            from app.thresholds import (
+                                FREE_TIER_DAILY_BAND_MIN_PCT as _FREE_DAY_MIN,
+                            )
+                            if disc < _FREE_DAY_MIN:
+                                continue
                     key = None
                     if user_id:
                         key = compute_alert_key(
@@ -664,54 +804,52 @@ async def _dispatch_grouped_flight_alerts(
                 if not candidates:
                     continue
 
-                # Free tier: deals >50% → masked teaser (once per run)
-                if sub_tier == "free" and not tier_error and chat_id is not None and user_id not in teaser_sent_premium:
-                    masked = [
-                        (f, a) for f, a, _ in flight_tuples
-                        if a.discount_pct > FREE_TIER_FULL_MAX
-                    ]
-                    if masked:
-                        teaser_sent_premium.add(user_id)
-                        best_f, best_a = max(masked, key=lambda x: x[1].discount_pct)
-                        try:
-                            from app.notifications.telegram import _get_bot
-                            bot = _get_bot()
-                            if bot:
-                                await bot.send_message(
-                                    chat_id=chat_id,
-                                    text=(
-                                        f"🔥 Deal exceptionnel détecté\n\n"
-                                        f"🌍 ██████ → ██████\n"
-                                        f"💰 ███€  ·  -{int(best_a.discount_pct)}%\n\n"
-                                        f"Les détails sont réservés aux membres premium.\n"
-                                        f"💎 Débloquer → {settings.FRONTEND_URL}/premium"
-                                    ),
-                                )
-                        except Exception:
-                            pass
-
-                # Free tier: weekly quota gate (max 3 full alerts/week)
-                if sub_tier == "free" and matching_wl is None and weekly_sent_count >= FREE_TIER_WEEKLY_LIMIT:
-                    if not tier_error and chat_id is not None and user_id not in teaser_sent_quota:
-                        teaser_sent_quota.add(user_id)
-                        try:
-                            from app.notifications.telegram import _get_bot
-                            bot = _get_bot()
-                            if bot:
-                                await bot.send_message(
-                                    chat_id=chat_id,
-                                    text=(
-                                        f"🔒 Limite hebdomadaire atteinte\n\n"
-                                        f"Tu as reçu {FREE_TIER_WEEKLY_LIMIT} alertes cette semaine "
-                                        f"(limite du compte gratuit).\n\n"
-                                        f"💎 Passe en premium pour recevoir toutes les alertes "
-                                        f"en temps réel, sans limite.\n"
-                                        f"👉 {settings.FRONTEND_URL}/premium"
-                                    ),
-                                )
-                        except Exception:
-                            pass
-                    continue
+                # V9: classify each candidate into a free-tier lane.
+                # daily_band  = [20, 40)  → 1 / 24h
+                # weekly_big  = >= 40     → 1 / 7d
+                # Premium ignores lanes; everything passes the floor gate.
+                if sub_tier == "free":
+                    room = free_lane_room.get(user_id, {"daily": 0, "weekly": 0}) if user_id else {"daily": 0, "weekly": 0}
+                    if room["daily"] <= 0 and room["weekly"] <= 0:
+                        continue
+                    weekly_pool = []
+                    daily_pool = []
+                    for cand in candidates:
+                        disc = cand[2].discount_pct
+                        if disc >= FREE_TIER_WEEKLY_BIG_MIN_PCT:
+                            if room["weekly"] > 0:
+                                weekly_pool.append(cand)
+                        elif (
+                            FREE_TIER_DAILY_BAND_MIN_PCT <= disc
+                            < FREE_TIER_DAILY_BAND_MAX_PCT
+                        ):
+                            if room["daily"] > 0:
+                                daily_pool.append(cand)
+                    chosen_lane = None
+                    chosen_cand = None
+                    # Weekly_big takes priority when both lanes have capacity:
+                    # the user gets the rare "wow" deal first.
+                    if weekly_pool:
+                        chosen_cand = max(weekly_pool, key=lambda c: c[2].discount_pct)
+                        chosen_lane = "fwk"
+                    elif daily_pool:
+                        chosen_cand = max(daily_pool, key=lambda c: c[2].discount_pct)
+                        chosen_lane = "fday"
+                    if not chosen_cand:
+                        continue
+                    # Decrement the in-memory counter so the next sub for this
+                    # user (if any) sees one less slot in this lane.
+                    if user_id:
+                        if chosen_lane == "fwk":
+                            free_lane_room[user_id]["weekly"] -= 1
+                        else:
+                            free_lane_room[user_id]["daily"] -= 1
+                    candidates = [chosen_cand]
+                    # Tag the alert_key with the lane prefix so the next run
+                    # can count it. Stored in free_lane_by_key keyed by the
+                    # original alert_key (we look it up at persistence time).
+                    if chosen_cand[0]:
+                        free_lane_by_key[chosen_cand[0]] = chosen_lane
 
                 already_keys: set[str] = set()
                 if user_id:
@@ -764,6 +902,9 @@ async def _dispatch_grouped_flight_alerts(
                         "discount_pct": anomaly.discount_pct,
                         "score": flight.get("score", 0),
                         "airline": flight.get("airline", ""),
+                        # Propagate the qualification path so click tracking
+                        # can break CTR down by zscore_* vs fallback_discount.
+                        "qualification_method": flight.get("_qualification_method"),
                         "booking_url": build_aviasales_url(
                             flight["origin"],
                             flight["destination"],
@@ -787,55 +928,121 @@ async def _dispatch_grouped_flight_alerts(
                 if not offers:
                     continue
 
-                # Within a single run, if we already dispatched this destination
-                # at the same or cheaper price (from another origin), skip.
-                best_offer_price = min((o["price"] for o in offers), default=0)
-                run_key = (user_id or "", grp_dest)
-                prev_best = dispatched_this_run.get(run_key)
-                if prev_best is not None and best_offer_price >= prev_best:
-                    continue
-
-                origin_city = iata_label(grp_origin)
-                dest_city = iata_label(grp_dest)
-                try:
-                    success = await send_grouped_flight_alerts(
-                        chat_id=chat_id,
-                        origin_city=origin_city,
-                        dest_city=dest_city,
-                        destination_iata=grp_dest,
-                        offers=offers,
-                        tier=sub_tier,
-                        user_id=user_id,
-                        alert_key=keys_to_store[0] if keys_to_store else None,
-                        origin_iata=grp_origin,
-                    )
-                    if success:
-                        logger.info(f"✅ Sent {len(offers)} flight alerts to {origin_city}→{dest_city} for user {user_id}")
-                        dispatched_this_run[(user_id or "", grp_dest)] = best_offer_price
-                        if sub_tier == "free":
-                            weekly_sent_count += 1
-                except Exception as e:
-                    logger.warning(f"Failed to send grouped flight alert: {e}")
-                    success = False
-
-                if success and user_id and keys_to_store:
-                    rows = [{
-                        "user_id": user_id,
+                # V8.2: accumulate this (user, dest) bucket. We send AFTER
+                # the subs loop so a user with multiple origins gets one
+                # merged Telegram alert covering all their airports.
+                bucket_key = (user_id or "", grp_dest)
+                bucket = pending_by_user_dest.get(bucket_key)
+                if bucket is None:
+                    bucket = pending_by_user_dest[bucket_key] = {
                         "chat_id": chat_id,
-                        "alert_key": k,
-                        "destination": grp_dest,
-                        "alert_type": "flight",
-                    } for k in keys_to_store]
-                    try:
-                        db.table("sent_alerts").upsert(
-                            rows, on_conflict="user_id,alert_key"
-                        ).execute()
-                    except Exception as e:
-                        logger.warning(f"Failed to upsert sent_alerts: {e}")
+                        "tier": sub_tier,
+                        "user_id": user_id,
+                        "offers": [],
+                        "keys_to_store": [],
+                        "best_origin": grp_origin,
+                        "best_price": float("inf"),
+                    }
+                bucket["offers"].extend(offers)
+                bucket["keys_to_store"].extend(keys_to_store)
+                cheapest = min(o["price"] for o in offers)
+                if cheapest < bucket["best_price"]:
+                    bucket["best_price"] = cheapest
+                    bucket["best_origin"] = grp_origin
+                # Always upgrade tier to premium if any sub for this user
+                # is premium (rare but possible mid-tier transition).
+                if sub_tier == "premium":
+                    bucket["tier"] = "premium"
         except Exception as e:
             logger.warning(f"Grouped dispatch error for subscriber: {e}")
 
         await asyncio.sleep(0)
+
+    # V8.2: flush accumulated alerts. ONE message per (user, destination).
+    for (uid, grp_dest), bucket in pending_by_user_dest.items():
+        offers = bucket["offers"]
+        if not offers:
+            continue
+        # Dedup offers by (origin, departure_date, return_date, price_bucket)
+        # — when overlapping subs produced the same flight twice.
+        seen_offer_keys: set[tuple] = set()
+        unique_offers: list[dict] = []
+        for o in offers:
+            k = (o.get("origin"), o.get("departure_date"), o.get("return_date"), int(o.get("price", 0)) // 50)
+            if k in seen_offer_keys:
+                continue
+            seen_offer_keys.add(k)
+            unique_offers.append(o)
+        offers = unique_offers
+        if not offers:
+            continue
+
+        # Sort by discount descending so the most attractive deal lands first.
+        offers.sort(key=lambda o: -(o.get("discount_pct") or 0))
+
+        chat_id = bucket["chat_id"]
+        sub_tier = bucket["tier"]
+        keys_to_store = list(set(bucket["keys_to_store"]))
+        best_origin = bucket["best_origin"]
+        origin_city = iata_label(best_origin)
+        dest_city = iata_label(grp_dest)
+
+        # V9 destination pages: lazily generate the destination guide before
+        # the very first alert to this dest. Synchronous (~30-60s on cold
+        # path). Subsequent alerts to the same dest = no-op. If generation
+        # fails, the alert still goes out without the "📖 Le guide" link.
+        try:
+            from app.notifications.destination_articles import ensure_article_for_destination
+            has_guide = ensure_article_for_destination(grp_dest)
+        except Exception as e:
+            logger.warning(f"ensure_article_for_destination crashed for {grp_dest}: {e}")
+            has_guide = False
+        success = False
+        try:
+            success = await send_grouped_flight_alerts(
+                chat_id=chat_id,
+                origin_city=origin_city,
+                dest_city=dest_city,
+                destination_iata=grp_dest,
+                offers=offers,
+                tier=sub_tier,
+                user_id=uid or None,
+                alert_key=keys_to_store[0] if keys_to_store else None,
+                origin_iata=best_origin,
+                has_guide=has_guide,
+            )
+            if success:
+                logger.info(
+                    f"✅ V8.2 sent merged alert: {len(offers)} offers, "
+                    f"{len({o.get('origin') for o in offers})} origins → {grp_dest} "
+                    f"for user {uid}"
+                )
+                dispatched_this_run[(uid or "", grp_dest)] = bucket["best_price"]
+        except Exception as e:
+            logger.warning(f"V8.2 merged dispatch failed for {uid}/{grp_dest}: {e}")
+            success = False
+
+        if success and uid and keys_to_store:
+            # V9: tag the alert_key with the free-tier lane prefix when
+            # applicable so the next run's count queries can find it.
+            # Premium rows keep the bare hash key.
+            rows = []
+            for k in keys_to_store:
+                lane = free_lane_by_key.get(k)
+                stored_key = f"{lane}:{k}" if lane else k
+                rows.append({
+                    "user_id": uid,
+                    "chat_id": chat_id,
+                    "alert_key": stored_key,
+                    "destination": grp_dest,
+                    "alert_type": "flight",
+                })
+            try:
+                db.table("sent_alerts").upsert(
+                    rows, on_conflict="user_id,alert_key"
+                ).execute()
+            except Exception as e:
+                logger.warning(f"Failed to upsert sent_alerts: {e}")
 
 
 async def job_recalculate_baselines():
@@ -1083,13 +1290,637 @@ async def job_qualify_and_alert():
     await _analyze_new_flights(flights)
 
 
+async def job_scrape_oneway_flights():
+    """V5: scrape one-way flights for priority routes via Travelpayouts.
+
+    Two passes per route: outbound (home → destination) + inbound (destination → home).
+    Inserts into raw_flights with trip_type='one_way' and the matching direction.
+    Cadence: every 4h (offset 30min from round-trip job) — half the volume of the
+    round-trip job since one-way is opt-in and we lighten the API load."""
+    logger.info("Starting one-way flight scraping job (V5)")
+    started_at = datetime.now(timezone.utc)
+
+    if not db or not settings.TRAVELPAYOUTS_TOKEN:
+        logger.warning("DB or Travelpayouts token not configured — skipping one-way scrape")
+        return
+
+    destinations = get_priority_destinations(max_count=80, db=db)
+    inserted = 0
+    errors = 0
+
+    for origin in settings.MVP_AIRPORTS:
+        for dest in destinations:
+            if dest == origin:
+                continue
+            # No long-haul=CDG-only gate here. One-way is precisely where
+            # quirky routings (e.g. MRS→BOM via AUH on Etihad) can beat the
+            # direct CDG fare — exactly what split-ticket combos surface.
+            # Travelpayouts already returns non-direct multi-leg fares.
+
+            for direction in ("outbound", "inbound"):
+                api_origin = origin if direction == "outbound" else dest
+                api_destination = dest if direction == "outbound" else origin
+
+                try:
+                    api_entries = get_oneway_calendar(api_origin, api_destination)
+                except Exception as e:
+                    logger.warning(
+                        f"One-way fetch failed {api_origin}->{api_destination}: {e}"
+                    )
+                    errors += 1
+                    continue
+
+                for entry in api_entries:
+                    departure_at = entry.get("departure_at") or ""
+                    if not departure_at:
+                        continue
+                    try:
+                        # V9: build a one-way Aviasales deep link upfront so
+                        # raw_flights.source_url is populated. Without this
+                        # the V5 one-way alert footer rendered without a
+                        # "Voir le deal" line — the alert was dead-ended.
+                        from app.notifications.aviasales import build_aviasales_oneway_url
+                        ow_url = build_aviasales_oneway_url(
+                            api_origin,
+                            api_destination,
+                            departure_at[:10],
+                            marker=settings.TRAVELPAYOUTS_MARKER or None,
+                        )
+                        flight = normalize_flight(
+                            {
+                                "origin": api_origin,
+                                "destination": api_destination,
+                                "departureDate": departure_at[:10],
+                                "returnDate": None,
+                                "price": entry.get("price", 0),
+                                "currency": "EUR",
+                                "airline": entry.get("airline"),
+                                "stops": entry.get("transfers", 0),
+                                "tripType": "one_way",
+                                "direction": direction,
+                                "url": ow_url,
+                            },
+                            source="travelpayouts",
+                        )
+                        db.table("raw_flights").upsert(
+                            flight, on_conflict="hash"
+                        ).execute()
+                        inserted += 1
+                    except Exception as e:
+                        logger.warning(f"One-way insert failed: {e}")
+                        errors += 1
+
+            # Yield event loop after each route (both directions) so HTTP requests
+            # don't stall during the scrape pass.
+            await asyncio.sleep(0)
+
+    completed_at = datetime.now(timezone.utc)
+    duration_ms = int((completed_at - started_at).total_seconds() * 1000)
+    status = "success" if errors == 0 else ("partial" if inserted > 0 else "failed")
+
+    try:
+        db.table("scrape_logs").insert({
+            "actor_id": "flights_oneway",
+            "source": "travelpayouts",
+            "type": "flights",
+            "items_count": inserted,
+            "errors_count": errors,
+            "duration_ms": duration_ms,
+            "status": status,
+            "started_at": started_at.isoformat(),
+            "completed_at": completed_at.isoformat(),
+        }).execute()
+    except Exception as e:
+        logger.warning(f"Failed to write one-way scrape_log: {e}")
+
+    logger.info(
+        f"One-way scrape complete: {inserted} inserted, {errors} errors, {duration_ms}ms"
+    )
+
+    # V5+ P1: detect standalone one-way deals (option C — pre-baseline,
+    # discount vs 30-day median). Always run, even when inserted == 0:
+    # the upserts may be no-ops because the hash already existed, but
+    # the median/qualifier may still surface a standing deal we hadn't
+    # alerted yet. Skipping when inserted == 0 was leaving qualified
+    # one-way items un-dispatched (V9 audit: 17 qualified, 0 sent).
+    try:
+        await _detect_and_dispatch_oneway_alerts()
+    except Exception as e:
+        logger.warning(f"One-way detection failed: {e}")
+
+    try:
+        await _detect_and_dispatch_split_ticket_combos()
+    except Exception as e:
+        logger.warning(f"Split-ticket detection failed: {e}")
+
+
+async def _detect_and_dispatch_oneway_alerts() -> None:
+    """V5+ P1: scan recent one-way rows for standalone deals.
+
+    For each (origin, destination, direction) seen in the last 24h, fetch
+    the 30-day price history and run the qualifier. Qualified rows are
+    persisted to qualified_items (with qualification_method='oneway_discount')
+    and dispatched as Telegram alerts to users who opted in to one_way in
+    flight_trip_types.
+    """
+    if not db:
+        return
+
+    from app.analysis.oneway_qualifier import qualify_oneway
+    from app.notifications.telegram import send_oneway_deal_alert
+    from app.thresholds import (
+        ONEWAY_MEDIAN_LOOKBACK_DAYS,
+    )
+
+    now = datetime.now(timezone.utc)
+    fresh_cutoff = (now - timedelta(hours=24)).isoformat()
+    history_cutoff = (now - timedelta(days=ONEWAY_MEDIAN_LOOKBACK_DAYS)).isoformat()
+
+    # Fetch users who opted in to one_way alerts (single round-trip).
+    opt_in_subs: list[dict] = []
+    try:
+        prefs_resp = (
+            db.table("user_preferences")
+            .select("user_id,telegram_chat_id,airport_codes,flight_trip_types,blocked_destinations")
+            .eq("telegram_connected", True)
+            .execute()
+        )
+        for pref in (prefs_resp.data or []):
+            ftt = pref.get("flight_trip_types") or ["round_trip"]
+            if "one_way" in ftt and pref.get("telegram_chat_id"):
+                opt_in_subs.append(pref)
+    except Exception as e:
+        logger.warning(f"One-way: failed to load opt-in users: {e}")
+        return
+
+    if not opt_in_subs:
+        logger.info("One-way: no users opted in, skipping detection")
+        return
+
+    # Pull the freshest one-way candidates of the last 24h. We cap at 200 to
+    # avoid scanning the entire one-way table on each run.
+    try:
+        cand_resp = (
+            db.table("raw_flights")
+            .select("id,origin,destination,departure_date,direction,price,airline,source_url,scraped_at")
+            .eq("trip_type", "one_way")
+            .gte("scraped_at", fresh_cutoff)
+            .order("price")
+            .limit(200)
+            .execute()
+        )
+    except Exception as e:
+        logger.warning(f"One-way: candidate fetch failed: {e}")
+        return
+
+    candidates = cand_resp.data or []
+    if not candidates:
+        return
+
+    # Group candidates by (origin, destination, direction) and keep the
+    # cheapest one in each cell — that's the pertinent deal candidate.
+    cells: dict[tuple[str, str, str], dict] = {}
+    for c in candidates:
+        key = (c.get("origin", ""), c.get("destination", ""), c.get("direction", ""))
+        if not all(key):
+            continue
+        existing = cells.get(key)
+        if existing is None or (c.get("price") or 0) < (existing.get("price") or 0):
+            cells[key] = c
+
+    dispatched = 0
+    for (origin, destination, direction), candidate in cells.items():
+        # Pull the 30-day history for this exact (origin, destination, direction).
+        try:
+            hist_resp = (
+                db.table("raw_flights")
+                .select("price")
+                .eq("origin", origin)
+                .eq("destination", destination)
+                .eq("direction", direction)
+                .eq("trip_type", "one_way")
+                .gte("scraped_at", history_cutoff)
+                .execute()
+            )
+        except Exception as e:
+            logger.warning(f"One-way history fetch failed for {origin}->{destination}/{direction}: {e}")
+            continue
+
+        history = [float(r["price"]) for r in (hist_resp.data or []) if r.get("price")]
+        qualification = qualify_oneway(
+            price=float(candidate.get("price") or 0),
+            recent_prices=history,
+        )
+        if qualification is None:
+            continue
+
+        # Belt-and-braces 40% gate. qualify_oneway uses
+        # ONEWAY_DISCOUNT_PCT_FLOOR (currently 60), but anchoring the
+        # global product floor here protects users from accidental
+        # threshold drift in the qualifier.
+        from app.thresholds import GLOBAL_MIN_DISCOUNT_PCT as _MIN
+        if qualification.discount_pct < _MIN:
+            continue
+
+        # Persist as a qualified_item so the homepage and analytics can see it.
+        flight_id = candidate.get("id")
+        if not flight_id:
+            continue
+        score = compute_score(
+            discount_pct=qualification.discount_pct,
+            destination_code=destination,
+            date_flexibility=0,
+        )
+        # One-way deals never enter the round-trip premium tier (no A/R baseline).
+        # We treat ≥60% as "premium-grade" for masking, ≥40% as free.
+        tier = "premium" if qualification.discount_pct >= 60 else "free"
+        try:
+            db.table("qualified_items").upsert(
+                {
+                    "type": "flight",
+                    "item_id": flight_id,
+                    "price": qualification.price,
+                    "baseline_price": qualification.median,
+                    "discount_pct": qualification.discount_pct,
+                    "score": score,
+                    "tier": tier,
+                    "status": "active",
+                    "reverified_at": now.isoformat(),
+                    "qualification_method": "oneway_discount",
+                    "trip_type": "one_way",
+                    "direction": direction,
+                },
+                on_conflict="item_id",
+            ).execute()
+        except Exception as e:
+            logger.warning(f"One-way qualified_item upsert failed: {e}")
+            continue
+
+        # Dispatch Telegram alerts to opt-in users tracking this airport.
+        # For inbound, the user's home airport is the destination of the
+        # candidate (since we flipped origin/destination at scrape time).
+        user_airport_for_filter = origin if direction == "outbound" else destination
+        for sub in opt_in_subs:
+            airports = sub.get("airport_codes") or []
+            if user_airport_for_filter not in airports:
+                continue
+            blocked = set(sub.get("blocked_destinations") or [])
+            # Block check uses the actual destination city the user flies to.
+            travel_dest = destination if direction == "outbound" else origin
+            if travel_dest in blocked:
+                continue
+            chat_id = sub["telegram_chat_id"]
+            sub_user_id = sub.get("user_id")
+            # Per-user dedup + click-tracking key.
+            from app.notifications.dedup import compute_oneway_alert_key
+            alert_key = (
+                compute_oneway_alert_key(
+                    user_id=sub_user_id,
+                    origin=origin,
+                    destination=destination,
+                    direction=direction,
+                    departure_date=candidate.get("departure_date") or "",
+                    price=qualification.price,
+                )
+                if sub_user_id
+                else None
+            )
+            # V9: skip if we've already alerted this user on the same
+            # bucket within the inhibit window. Without this, every
+            # 4h scrape pass re-alerts the same one-way deal until
+            # the price moves out of the 50€ bucket.
+            if sub_user_id and alert_key:
+                try:
+                    from app.thresholds import ALERT_INHIBIT_HOURS
+                    inhibit_since = (
+                        datetime.now(timezone.utc) - timedelta(hours=ALERT_INHIBIT_HOURS)
+                    ).isoformat()
+                    dup = (
+                        db.table("sent_alerts")
+                        .select("id")
+                        .eq("user_id", sub_user_id)
+                        .eq("alert_key", alert_key)
+                        .gte("created_at", inhibit_since)
+                        .limit(1)
+                        .execute()
+                    )
+                    if dup.data:
+                        continue
+                except Exception as e:
+                    logger.warning(f"One-way dedup check failed: {e}")
+
+            # V9 destination pages: same lazy generation hook. The article
+            # is keyed by the actual travel destination (= `destination`
+            # for outbound, `origin` for inbound) — the airport the user
+            # is actually visiting, not their home airport.
+            article_dest = destination if direction == "outbound" else origin
+            try:
+                from app.notifications.destination_articles import ensure_article_for_destination
+                has_guide = ensure_article_for_destination(article_dest)
+            except Exception as e:
+                logger.warning(f"ensure_article_for_destination crashed for {article_dest}: {e}")
+                has_guide = False
+            sent_ok = False
+            try:
+                sent_ok = await send_oneway_deal_alert(
+                    chat_id=chat_id,
+                    flight={
+                        "origin": origin,
+                        "destination": destination,
+                        "departure_date": candidate.get("departure_date"),
+                        "price": qualification.price,
+                        "source_url": candidate.get("source_url"),
+                        "direction": direction,
+                        "airline": candidate.get("airline"),
+                    },
+                    discount_pct=qualification.discount_pct,
+                    baseline_price=qualification.median,
+                    user_id=sub_user_id,
+                    alert_key=alert_key,
+                    has_guide=has_guide,
+                )
+                if sent_ok:
+                    dispatched += 1
+            except Exception as e:
+                logger.warning(
+                    f"One-way alert send failed user={sub_user_id}: {e}"
+                )
+
+            # V9: persist a sent_alerts row when the Telegram send went
+            # through. Without this, the next 4h pass would alert the
+            # exact same deal again, AND the audit can't tell whether
+            # the dispatcher even ran.
+            if sent_ok and sub_user_id and alert_key:
+                try:
+                    db.table("sent_alerts").upsert(
+                        {
+                            "user_id": sub_user_id,
+                            "chat_id": chat_id,
+                            "alert_key": alert_key,
+                            "destination": destination,
+                            "alert_type": "one_way",
+                        },
+                        on_conflict="user_id,alert_key",
+                    ).execute()
+                except Exception as e:
+                    logger.warning(
+                        f"One-way sent_alerts upsert failed user={sub_user_id}: {e}"
+                    )
+
+        await asyncio.sleep(0)
+
+    logger.info(f"One-way detection complete: {dispatched} alerts dispatched")
+
+
+async def _detect_and_dispatch_split_ticket_combos() -> None:
+    """V5+: scan recent one-way rows for 'combo malin' opportunities.
+
+    For each (origin, destination) tracked in MVP_AIRPORTS × priority destinations,
+    pull recent one-way outbounds + inbounds, look up the round-trip baseline,
+    and run the matcher. Qualified combos are dispatched as Telegram alerts to
+    users who opted in to one_way in flight_trip_types.
+    """
+    if not db:
+        return
+
+    from app.analysis.split_ticket_matcher import find_split_ticket_combos
+    from app.notifications.telegram import send_split_ticket_alert
+
+    fresh_cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    destinations = get_priority_destinations(max_count=80, db=db)
+    combos_dispatched = 0
+
+    # Pre-fetch users who opted in to split-ticket combos.
+    # A combo is conceptually an A/R (just sold as 2 separate tickets), so
+    # we require:
+    #   - 'round_trip' in flight_trip_types (the user wants A/R-style deals)
+    #   - include_split_tickets = true (explicit consent for 2-booking format)
+    opt_in_subs: list[dict] = []
+    try:
+        prefs_resp = (
+            db.table("user_preferences")
+            .select("user_id,telegram_chat_id,airport_codes,flight_trip_types,blocked_destinations,include_split_tickets")
+            .eq("telegram_connected", True)
+            .execute()
+        )
+        for pref in (prefs_resp.data or []):
+            ftt = pref.get("flight_trip_types") or ["round_trip"]
+            if (
+                pref.get("include_split_tickets") is True
+                and "round_trip" in ftt
+                and pref.get("telegram_chat_id")
+            ):
+                opt_in_subs.append(pref)
+    except Exception as e:
+        logger.warning(f"Split-ticket: failed to load opt-in users: {e}")
+        return
+
+    if not opt_in_subs:
+        logger.info("Split-ticket: no users opted in to combo alerts, skipping")
+        return
+
+    for origin in settings.MVP_AIRPORTS:
+        for dest in destinations:
+            if dest == origin:
+                continue
+            # No long-haul=CDG-only gate. The whole point of split-ticket
+            # combos is to find quirky multi-airport routings — including
+            # cases where an MRS→BOM combo via two different inbound/outbound
+            # carriers beats the direct CDG round-trip.
+
+            # Pull recent one-way rows for both directions in two queries
+            try:
+                out_resp = (
+                    db.table("raw_flights")
+                    .select("origin,destination,departure_date,price,airline,source_url,trip_type,direction")
+                    .eq("origin", origin)
+                    .eq("destination", dest)
+                    .eq("trip_type", "one_way")
+                    .eq("direction", "outbound")
+                    .gte("scraped_at", fresh_cutoff)
+                    .order("price")
+                    .limit(20)
+                    .execute()
+                )
+                in_resp = (
+                    db.table("raw_flights")
+                    .select("origin,destination,departure_date,price,airline,source_url,trip_type,direction")
+                    .eq("origin", dest)
+                    .eq("destination", origin)
+                    .eq("trip_type", "one_way")
+                    .eq("direction", "inbound")
+                    .gte("scraped_at", fresh_cutoff)
+                    .order("price")
+                    .limit(20)
+                    .execute()
+                )
+            except Exception as e:
+                logger.warning(f"Split-ticket: query failed {origin}-{dest}: {e}")
+                continue
+
+            outbounds = out_resp.data or []
+            inbounds = in_resp.data or []
+            if not outbounds or not inbounds:
+                continue
+
+            # Round-trip baseline lookup. We use the "all-buckets" legacy key
+            # as a coarse reference because the combo matcher doesn't slice
+            # by stay duration here — keep it conservative and only qualify
+            # combos with a comfortable margin.
+            baseline_avg = _lookup_roundtrip_baseline_avg(origin, dest)
+            if baseline_avg is None or baseline_avg <= 0:
+                continue
+
+            combos = find_split_ticket_combos(
+                outbounds=outbounds,
+                inbounds=inbounds,
+                roundtrip_baseline=baseline_avg,
+            )
+            if not combos:
+                continue
+            combo = combos[0]
+
+            # Belt-and-braces 40% gate. The matcher already enforces this via
+            # SAVINGS_RATIO_FLOOR=0.40, but anchoring the same threshold here
+            # protects against future regressions in the matcher constants.
+            from app.thresholds import GLOBAL_MIN_DISCOUNT_PCT
+            combo_savings_pct = (
+                (combo.roundtrip_baseline - combo.total)
+                / combo.roundtrip_baseline
+                * 100.0
+            ) if combo.roundtrip_baseline > 0 else 0
+            if combo_savings_pct < GLOBAL_MIN_DISCOUNT_PCT:
+                logger.info(
+                    f"Split-ticket combo skipped (savings {combo_savings_pct:.1f}% "
+                    f"< {GLOBAL_MIN_DISCOUNT_PCT}%): {origin}-{dest}"
+                )
+                continue
+
+            from app.notifications.dedup import compute_split_ticket_alert_key
+
+            for sub in opt_in_subs:
+                if origin not in (sub.get("airport_codes") or []):
+                    continue
+                blocked = set(sub.get("blocked_destinations") or [])
+                if dest in blocked:
+                    continue
+                chat_id = sub["telegram_chat_id"]
+                sub_user_id = sub.get("user_id")
+                alert_key = (
+                    compute_split_ticket_alert_key(
+                        user_id=sub_user_id,
+                        origin=origin,
+                        destination=dest,
+                        outbound_date=combo.outbound.get("departure_date") or "",
+                        inbound_date=combo.inbound.get("departure_date") or "",
+                        total_price=combo.total,
+                    )
+                    if sub_user_id
+                    else None
+                )
+                # V9: dedup against sent_alerts inhibit window. Without
+                # this the same combo would re-fire every scrape pass.
+                if sub_user_id and alert_key:
+                    try:
+                        from app.thresholds import ALERT_INHIBIT_HOURS
+                        inhibit_since = (
+                            datetime.now(timezone.utc) - timedelta(hours=ALERT_INHIBIT_HOURS)
+                        ).isoformat()
+                        dup = (
+                            db.table("sent_alerts")
+                            .select("id")
+                            .eq("user_id", sub_user_id)
+                            .eq("alert_key", alert_key)
+                            .gte("created_at", inhibit_since)
+                            .limit(1)
+                            .execute()
+                        )
+                        if dup.data:
+                            continue
+                    except Exception as e:
+                        logger.warning(f"Combo dedup check failed: {e}")
+
+                # V9 destination pages: lazy generation for the combo's
+                # outbound destination (the city the user travels to).
+                combo_dest = combo.outbound.get("destination")
+                try:
+                    from app.notifications.destination_articles import ensure_article_for_destination
+                    has_guide = ensure_article_for_destination(combo_dest) if combo_dest else False
+                except Exception as e:
+                    logger.warning(f"ensure_article_for_destination crashed for combo dest {combo_dest}: {e}")
+                    has_guide = False
+                sent_ok = False
+                try:
+                    sent_ok = await send_split_ticket_alert(
+                        chat_id=chat_id,
+                        outbound=combo.outbound,
+                        inbound=combo.inbound,
+                        roundtrip_baseline=combo.roundtrip_baseline,
+                        user_id=sub_user_id,
+                        alert_key=alert_key,
+                        has_guide=has_guide,
+                    )
+                    if sent_ok:
+                        combos_dispatched += 1
+                except Exception as e:
+                    logger.warning(
+                        f"Split-ticket alert failed user={sub_user_id}: {e}"
+                    )
+
+                # V9: persist sent_alerts row to power dedup + audit.
+                if sent_ok and sub_user_id and alert_key:
+                    try:
+                        db.table("sent_alerts").upsert(
+                            {
+                                "user_id": sub_user_id,
+                                "chat_id": chat_id,
+                                "alert_key": alert_key,
+                                "destination": dest,
+                                "alert_type": "split_ticket",
+                            },
+                            on_conflict="user_id,alert_key",
+                        ).execute()
+                    except Exception as e:
+                        logger.warning(
+                            f"Combo sent_alerts upsert failed user={sub_user_id}: {e}"
+                        )
+
+            await asyncio.sleep(0)
+
+    logger.info(f"Split-ticket detection complete: {combos_dispatched} alerts dispatched")
+
+
+def _lookup_roundtrip_baseline_avg(origin: str, dest: str) -> float | None:
+    """Return the cheapest legacy bucket baseline for a route, or None."""
+    if not db:
+        return None
+    try:
+        resp = (
+            db.table("price_baselines")
+            .select("avg_price,sample_count")
+            .like("route_key", f"{origin}-{dest}-bucket_%")
+            .eq("type", "flight")
+            .order("avg_price")
+            .limit(1)
+            .execute()
+        )
+        rows = resp.data or []
+        if not rows:
+            return None
+        avg = rows[0].get("avg_price")
+        return float(avg) if avg else None
+    except Exception as e:
+        logger.warning(f"Baseline lookup failed {origin}-{dest}: {e}")
+        return None
+
+
 async def job_travelpayouts_enrichment():
     """Build per-bucket baselines for all MVP routes via Travelpayouts."""
     logger.info("Starting Travelpayouts bucket baseline enrichment")
     if not db or not settings.TRAVELPAYOUTS_TOKEN:
         return
 
-    destinations = get_priority_destinations(max_count=40, db=db)
+    destinations = get_priority_destinations(max_count=80, db=db)
     total_published = 0
 
     for origin in settings.MVP_AIRPORTS:
@@ -1148,11 +1979,31 @@ async def job_update_destinations():
     if not db:
         logger.warning("No DB connection — skipping destination update")
         return
+    started_at = datetime.now(timezone.utc)
+    count = 0
+    status = "failed"
     try:
         count = update_priority_destinations_in_db(db, max_count=40)
+        status = "success" if count > 0 else "partial"
         logger.info(f"Destination update complete: {count} destinations upserted")
     except Exception as e:
         logger.error(f"Destination update failed: {e}")
+
+    completed_at = datetime.now(timezone.utc)
+    try:
+        db.table("scrape_logs").insert({
+            "actor_id": "update_destinations",
+            "source": "destination_updater",
+            "type": "destinations",
+            "items_count": count,
+            "errors_count": 0 if status != "failed" else 1,
+            "duration_ms": int((completed_at - started_at).total_seconds() * 1000),
+            "status": status,
+            "started_at": started_at.isoformat(),
+            "completed_at": completed_at.isoformat(),
+        }).execute()
+    except Exception as e:
+        logger.warning(f"Failed to write update_destinations scrape_log: {e}")
 
 
 async def job_sync_stripe_subscriptions():
@@ -1236,6 +2087,121 @@ async def job_check_scraper_health():
         await run_scraper_health_check()
     except Exception as e:
         logger.error(f"Scraper health check failed: {e}")
+
+
+# ─── V8.3 — scraper watchdog ────────────────────────────────────────────
+# Anti-spam state: last admin-alert timestamp per scraper source. We keep
+# this in-process — the watchdog runs from a single APScheduler so we
+# don't need cross-process coordination.
+_watchdog_last_alert: dict[str, datetime] = {}
+_WATCHDOG_COOLDOWN_HOURS = 6
+
+
+async def job_scraper_watchdog():
+    """V8.3: ping the admin Telegram chat when a scraper logs runs but
+    persists zero rows for 24h — a clear sign that the scraper is broken
+    silently. Cooldown of 6h per source so we don't flood the admin
+    channel during a long outage.
+    """
+    if not db:
+        return
+    if not settings.TELEGRAM_ADMIN_CHAT_ID:
+        # No admin chat configured — nothing to do.
+        return
+
+    from app.notifications.telegram import send_admin_alert
+
+    since_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+
+    # Per-source check: rows in DB vs runs logged.
+    sources = {
+        "ryanair_direct": "tier1",
+        "vueling_direct": "tier1",
+        "travelpayouts": "flights",
+    }
+    issues: list[str] = []
+    for source, log_actor in sources.items():
+        try:
+            rows = (
+                db.table("raw_flights")
+                .select("id", count="exact", head=True)
+                .eq("source", source)
+                .gte("scraped_at", since_24h)
+                .execute()
+                .count
+                or 0
+            )
+            runs = (
+                db.table("scrape_logs")
+                .select("id", count="exact", head=True)
+                .eq("actor_id", log_actor)
+                .gte("started_at", since_24h)
+                .execute()
+                .count
+                or 0
+            )
+        except Exception as e:
+            logger.warning(f"watchdog: query failed for {source}: {e}")
+            continue
+
+        # Flag the scraper if it ran more than twice in the last 24h but
+        # hasn't landed a single row. Travelpayouts only runs ~12x/day,
+        # the LCC scrapers run ~72x/day — pick a low common bar.
+        if rows == 0 and runs >= 3:
+            issues.append(f"{source}: {runs} runs / 0 rows (24h)")
+
+    # One-way: separate trip_type filter
+    try:
+        ow_rows = (
+            db.table("raw_flights")
+            .select("id", count="exact", head=True)
+            .eq("trip_type", "one_way")
+            .gte("scraped_at", since_24h)
+            .execute()
+            .count
+            or 0
+        )
+        ow_runs = (
+            db.table("scrape_logs")
+            .select("id", count="exact", head=True)
+            .eq("actor_id", "flights_oneway")
+            .gte("started_at", since_24h)
+            .execute()
+            .count
+            or 0
+        )
+        if ow_rows == 0 and ow_runs >= 3:
+            issues.append(f"one_way: {ow_runs} runs / 0 rows (24h)")
+    except Exception as e:
+        logger.warning(f"watchdog: oneway query failed: {e}")
+
+    if not issues:
+        return
+
+    # Cooldown check per-source so we don't spam admin during a long outage.
+    now = datetime.now(timezone.utc)
+    fresh: list[str] = []
+    for issue in issues:
+        source = issue.split(":", 1)[0]
+        last = _watchdog_last_alert.get(source)
+        if last and (now - last) < timedelta(hours=_WATCHDOG_COOLDOWN_HOURS):
+            continue
+        _watchdog_last_alert[source] = now
+        fresh.append(issue)
+
+    if not fresh:
+        return
+
+    msg = (
+        "Scraper watchdog detected silent failures:\n\n"
+        + "\n".join(f"• {x}" for x in fresh)
+        + "\n\nCheck /api/admin/scrapers/health for details."
+    )
+    try:
+        await send_admin_alert(msg)
+        logger.warning(f"watchdog admin alert sent: {len(fresh)} issue(s)")
+    except Exception as e:
+        logger.error(f"watchdog: admin alert send failed: {e}")
 
 
 async def job_reverify_active_deals():

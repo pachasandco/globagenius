@@ -160,21 +160,30 @@ def get_cheapest_fares(
 def scrape_route(origin: str, destination: str) -> list[dict]:
     """Scrape one Ryanair Tier 1 route for the next 8 months.
 
-    Splits the 8-month window into 2-month chunks to keep responses
-    manageable and reduce timeout risk."""
+    Strategy: query overlapping 14-day departure windows. The Ryanair
+    /roundTripFares endpoint returns ONE cheapest fare per call, and that
+    fare tends to use the longest possible trip duration in the window
+    requested. To get short A/R (1-12 days), we MUST keep the window
+    narrow. With 14-day departure windows and a 14-day return window
+    that follows immediately, the API returns trips of ~7-13 days.
+
+    We sweep the next ~8 months in 14-day departure steps."""
     if is_demoted(origin, destination):
         return []
 
     today = datetime.now(timezone.utc).replace(tzinfo=None)
     all_flights = []
+    seen_keys: set[str] = set()
 
-    # 4 chunks of 2 months
-    for chunk in range(4):
-        dep_from = (today + timedelta(days=30 + chunk * 60)).strftime("%Y-%m-%d")
-        dep_to   = (today + timedelta(days=89 + chunk * 60)).strftime("%Y-%m-%d")
-        # Return window: same chunk + up to 12 days trip duration
-        ret_from = dep_from
-        ret_to   = (today + timedelta(days=101 + chunk * 60)).strftime("%Y-%m-%d")
+    # 16 windows of 14 days each = ~ 7.5 months ahead, starting at day +14.
+    consecutive_empty = 0
+    for chunk in range(16):
+        dep_from = (today + timedelta(days=14 + chunk * 14)).strftime("%Y-%m-%d")
+        dep_to   = (today + timedelta(days=27 + chunk * 14)).strftime("%Y-%m-%d")
+        # Return window: 4 days after dep_from to 14 days after dep_to,
+        # capping trip duration to about 1-12 days.
+        ret_from = (today + timedelta(days=18 + chunk * 14)).strftime("%Y-%m-%d")
+        ret_to   = (today + timedelta(days=39 + chunk * 14)).strftime("%Y-%m-%d")
 
         flights = get_cheapest_fares(
             origin=origin,
@@ -184,12 +193,24 @@ def scrape_route(origin: str, destination: str) -> list[dict]:
             inbound_date_from=ret_from,
             inbound_date_to=ret_to,
         )
-        all_flights.extend(flights)
 
-        if not flights:
-            break  # if no flights in this chunk, later chunks unlikely to have any
+        if flights:
+            consecutive_empty = 0
+            # Dedup across overlapping windows on (dep, ret, price)
+            for f in flights:
+                k = f"{f.get('departure_date')}|{f.get('return_date')}|{f.get('price')}"
+                if k in seen_keys:
+                    continue
+                seen_keys.add(k)
+                all_flights.append(f)
+        else:
+            consecutive_empty += 1
+            # Bail out after 3 consecutive empty windows — route likely
+            # has no service in that period or is fully booked.
+            if consecutive_empty >= 3:
+                break
 
     if all_flights:
-        logger.info(f"Ryanair Tier1 {origin}->{destination}: {len(all_flights)} fares")
+        logger.info(f"Ryanair Tier1 {origin}->{destination}: {len(all_flights)} fares (across windows)")
 
     return all_flights
