@@ -16,7 +16,7 @@ async function fetchArticleSlugs(): Promise<string[]> {
 
 async function fetchDestinationIatas(): Promise<string[]> {
   try {
-    const res = await fetch(`${API_URL}/api/destinations`, { next: { revalidate: 3600 } });
+    const res = await fetch(`${API_URL}/api/destinations?limit=200`, { next: { revalidate: 3600 } });
     if (!res.ok) return [];
     const data = await res.json();
     return (data.items || []).map((d: { iata: string }) => d.iata);
