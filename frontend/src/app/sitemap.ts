@@ -1,5 +1,10 @@
 import type { MetadataRoute } from "next";
 
+// Force dynamic generation: the sitemap depends on the live `articles`
+// table, and the previous ISR (revalidate: 3600) caused new destinations
+// to take up to an hour to appear after generation.
+export const dynamic = "force-dynamic";
+
 const BASE = "https://globegenius.app";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
