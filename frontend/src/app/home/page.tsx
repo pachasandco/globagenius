@@ -3,34 +3,27 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getFlightDeals, getPipelineStatus, getPreferences, clearSessionCookie, type FlightDeal, type FlightTripType, type PipelineStatus } from "@/lib/api";
+import { getPreferences, getTelegramStatus, clearSessionCookie, type FlightTripType } from "@/lib/api";
 import { initSession } from "@/lib/session";
-import { FlightDealCard } from "@/components/FlightDealCard";
 import { Wordmark } from "../_components/Wordmark";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const TELEGRAM_BOT_URL = "https://t.me/Globegenius_bot";
 
-interface Article {
-  slug: string;
+type Guide = {
+  iata: string;
   destination: string;
-  country: string;
   title: string;
-  subtitle: string;
   cover_photo: string;
-  tags: string[];
-}
+};
 
 export default function HomePage() {
-  const [allDeals, setAllDeals] = useState<FlightDeal[]>([]);
-  const [, setStatus] = useState<PipelineStatus | null>(null);
-  const [, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   // null = unknown (Stripe check not back yet). Avoids flashing the premium
   // upsell banner to users who turn out to be premium.
   const [isPremium, setIsPremium] = useState<boolean | null>(null);
-  const [showAllDeals, setShowAllDeals] = useState(false);
-  const [destFilter, setDestFilter] = useState<string>("all");
-  const [discoveryGuides, setDiscoveryGuides] = useState<Array<{ iata: string; destination: string; title: string; cover_photo: string }>>([]);
+  const [guides, setGuides] = useState<Guide[]>([]);
+  const [telegramConnected, setTelegramConnected] = useState<boolean | null>(null);
   const [flightTripTypes, setFlightTripTypes] = useState<FlightTripType[]>(["round_trip"]);
   const [onewayBannerDismissed, setOnewayBannerDismissed] = useState(true);
   const router = useRouter();
@@ -47,53 +40,39 @@ export default function HomePage() {
     const sessionCleanup = initSession();
 
     async function load() {
-      // Check premium status
-      try {
-        const token = localStorage.getItem("gg_token");
-        if (token) {
-          const premStatus = await fetch(`${API_URL}/api/stripe/status`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          const premData = await premStatus.json();
-          setIsPremium(premData.is_premium || false);
-        }
-      } catch { /* ignore */ }
+      // Premium status, Telegram link state and the destination guides are
+      // the only data the home page needs now that "Vos deals" is gone.
+      // Real-time deals live in Telegram — no point polling them here.
+      const token = localStorage.getItem("gg_token");
 
-      // Single fetch — backend returns all deals (≥50%) with server-side
-      // quota logic: free users get up to 3 unlocked, rest masked.
-      try {
-        const [dealsRes, statusRes] = await Promise.allSettled([
-          getFlightDeals("free", 50, 40, 40),
-          getPipelineStatus(),
-        ]);
-        if (dealsRes.status === "fulfilled") {
-          setAllDeals(dealsRes.value.items || []);
-        }
-        if (statusRes.status === "fulfilled") {
-          setStatus(statusRes.value as PipelineStatus);
-        }
-      } catch { /* ignore */ }
+      const [premiumRes, guidesRes, tgRes] = await Promise.allSettled([
+        token
+          ? fetch(`${API_URL}/api/stripe/status`, {
+              headers: { Authorization: `Bearer ${token}` },
+            }).then(r => r.json())
+          : Promise.resolve({ is_premium: false }),
+        // Pull a generous slice (server caps at 50). All published guides
+        // show up here, ordered by recency.
+        fetch(`${API_URL}/api/destinations?limit=50`).then(r => r.json()),
+        getTelegramStatus(userId!),
+      ]);
 
-      // Load articles
-      try {
-        const res = await fetch(`${API_URL}/api/articles`);
-        const data = await res.json();
-        setArticles(data.articles || []);
-      } catch { /* ignore */ }
-
-      // Load destination guides for the "Découvrir vos futures destinations" collapsible
-      try {
-        const res = await fetch(`${API_URL}/api/destinations?limit=50`);
-        const data = await res.json();
-        setDiscoveryGuides(data.items || []);
-      } catch { /* ignore */ }
+      if (premiumRes.status === "fulfilled") {
+        setIsPremium(premiumRes.value?.is_premium || false);
+      }
+      if (guidesRes.status === "fulfilled") {
+        setGuides(guidesRes.value?.items || []);
+      }
+      if (tgRes.status === "fulfilled") {
+        setTelegramConnected(Boolean(tgRes.value?.connected));
+      }
 
       setLoading(false);
     }
     load();
 
     // Load user preferences once for the one-way banner — they don't change
-    // every 60s, so keep them out of the polling loop.
+    // often, so keep them out of any polling loop.
     (async () => {
       try {
         const prefs = await getPreferences(userId!);
@@ -107,9 +86,7 @@ export default function HomePage() {
       } catch { /* ignore */ }
     })();
 
-    const interval = setInterval(load, 60000);
     return () => {
-      clearInterval(interval);
       if (sessionCleanup) sessionCleanup();
     };
   }, [router]);
@@ -144,28 +121,6 @@ export default function HomePage() {
     clearSessionCookie();
     router.push("/");
   }
-
-  // Show only deals detected in the last 6 hours so the page rotates with
-  // freshly-found anomalies. Older deals tend to expire (airlines correct
-  // mistake fares within hours), so leaving them on screen is misleading.
-  // Fallback: if nothing is fresh yet, show everything with a discreet
-  // notice so the page never goes empty.
-  const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
-  const sixHoursAgo = Date.now() - SIX_HOURS_MS;
-  const recentDeals = allDeals.filter(d => new Date(d.created_at).getTime() >= sixHoursAgo);
-  const usingFallback = recentDeals.length === 0 && allDeals.length > 0;
-  const dealsToShow = usingFallback ? allDeals : recentDeals;
-
-  const unlockedDeals = dealsToShow.filter(d => !d.locked);
-  const lockedDeals = dealsToShow.filter(d => d.locked);
-
-  const filteredUnlocked = destFilter === "all" ? unlockedDeals : unlockedDeals.filter(d => d.destination === destFilter);
-  const filteredLocked = destFilter === "all" ? lockedDeals : lockedDeals.filter(d => d.destination === destFilter);
-
-  const INITIAL_DEALS_COUNT = 10;
-  const visibleUnlocked = showAllDeals ? filteredUnlocked : filteredUnlocked.slice(0, INITIAL_DEALS_COUNT);
-  const hasMoreDeals = filteredUnlocked.length > INITIAL_DEALS_COUNT;
-  const availableDestinations = Array.from(new Set(dealsToShow.map(d => d.destination)));
 
   return (
     <div className="min-h-screen bg-[#FFF8F0]">
@@ -246,184 +201,128 @@ export default function HomePage() {
         )}
 
 
-        {/* Deals section */}
+        {/* Telegram status banner — the chat is where the product lives. */}
+        {!loading && (
+          telegramConnected ? (
+            <div className="mb-6 bg-[#0088cc]/5 border border-[#0088cc]/20 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <svg className="w-10 h-10 text-[#0088cc] shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+                </svg>
+                <div>
+                  <div className="font-semibold text-[#082B78] mb-0.5">Tes alertes sont actives sur Telegram</div>
+                  <p className="text-sm text-[#082B78]/70">
+                    Les nouveaux deals arrivent dans le chat. Tape <code className="text-[#0088cc] font-mono">/destinations</code> pour bloquer une ville,{" "}
+                    <code className="text-[#0088cc] font-mono">/pause</code> pour mettre tes alertes en pause.
+                  </p>
+                </div>
+              </div>
+              <a
+                href={TELEGRAM_BOT_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-[#0088cc] hover:bg-[#006daa] text-white font-semibold px-5 py-2.5 rounded-xl text-sm shrink-0 transition-colors whitespace-nowrap"
+              >
+                Ouvrir le chat →
+              </a>
+            </div>
+          ) : (
+            <div className="mb-6 bg-amber-50 border border-amber-200 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <div className="font-semibold text-[#082B78] mb-0.5">⚠️ Connecte ton Telegram pour recevoir les alertes</div>
+                <p className="text-sm text-[#082B78]/70">
+                  Sans Telegram, tu ne reçois aucune notification de deal. La connexion prend 30 secondes.
+                </p>
+              </div>
+              <Link
+                href="/profile"
+                className="bg-amber-500 hover:bg-amber-600 text-white font-semibold px-5 py-2.5 rounded-xl text-sm shrink-0 transition-colors whitespace-nowrap"
+              >
+                Connecter Telegram →
+              </Link>
+            </div>
+          )
+        )}
+
+        {/* Planificateur — promoted as a hero card now that the deals
+            section is gone. Free users see the same card; access gating
+            is handled inside the planner. */}
+        <div className="mb-8 bg-gradient-to-br from-[#FFFEF9] to-[#FFF1EC] border border-[#FF6B47]/30 rounded-2xl p-6 md:p-8">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
+            <div className="max-w-xl">
+              <div className="text-xs font-bold text-[#FF6B47] mb-2 tracking-wide">🗺️ PLANIFICATEUR DE VOYAGE</div>
+              <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl md:text-3xl text-[#082B78] mb-2">
+                Construis ton prochain voyage avec l&apos;IA
+              </h2>
+              <p className="text-sm md:text-base text-[#082B78]/70">
+                Itinéraire jour par jour, restaurants, activités, budget — l&apos;assistant prépare tout en quelques secondes.
+                {isPremium === false && (
+                  <span className="block mt-1 text-xs text-[#FF6B47] font-semibold">Exclusif aux abonnés Premium.</span>
+                )}
+              </p>
+            </div>
+            <Link
+              href="/planificateur"
+              className="bg-[#FF6B47] hover:bg-[#E55A38] text-white font-bold px-6 py-3 rounded-xl text-sm shrink-0 transition-all shadow-[0_8px_24px_rgba(255,107,71,0.25)]"
+            >
+              Ouvrir le planificateur →
+            </Link>
+          </div>
+        </div>
+
+        {/* Destination guides — every published guide, no collapsible. The
+            home page is now a "browse + plan + chat" hub, not a deal feed. */}
         <div className="mb-8">
-          <div className="mb-4">
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl">Vos deals</h2>
+          <div className="flex items-baseline justify-between mb-5">
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#082B78]">
+              Vos guides destination
+            </h2>
+            {guides.length > 0 && (
+              <span className="text-sm text-gray-400">{guides.length} disponible{guides.length > 1 ? "s" : ""}</span>
+            )}
           </div>
 
-          {loading && <div className="text-center py-12 text-gray-400">Chargement...</div>}
+          {loading && (
+            <div className="text-center py-12 text-gray-400">Chargement…</div>
+          )}
 
-          {!loading && allDeals.length === 0 && (
+          {!loading && guides.length === 0 && (
             <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center">
-              <div className="text-4xl mb-3">🔍</div>
-              <h3 className="font-semibold text-lg mb-2">Analyse en cours</h3>
-              <p className="text-sm text-gray-400 max-w-md mx-auto mb-4">
-                Notre pipeline scrape les prix 6 fois par jour depuis 8 aéroports français.
-                Les deals apparaîtront dès qu'une anomalie de prix sera détectée.
-              </p>
-              <p className="text-xs text-gray-300">
-                Vous serez alerté sur Telegram dès qu'un deal correspond à vos préférences.
+              <div className="text-4xl mb-3">📚</div>
+              <h3 className="font-semibold text-lg mb-2">Les guides arrivent</h3>
+              <p className="text-sm text-gray-400 max-w-md mx-auto">
+                On rédige un guide à chaque nouvelle destination détectée. Reviens dans quelques jours pour les premiers.
               </p>
             </div>
           )}
 
-          {!loading && allDeals.length > 0 && (<>
-            {/* Destination filter pills */}
-            {availableDestinations.length > 1 && (
-              <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-                <button
-                  onClick={() => { setDestFilter("all"); setShowAllDeals(false); }}
-                  className="shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all border-2"
-                  style={{
-                    borderColor: destFilter === "all" ? "#FF6B47" : "#F0E6D8",
-                    background: destFilter === "all" ? "#FF6B47" : "#FFFEF9",
-                    color: destFilter === "all" ? "#fff" : "#082B78",
-                  }}
+          {!loading && guides.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
+              {guides.map((g) => (
+                <Link
+                  key={g.iata}
+                  href={`/destination/${g.iata.toLowerCase()}`}
+                  className="group block overflow-hidden rounded-2xl border border-gray-100 bg-white hover:border-[#FF6B47] hover:shadow-[0_8px_24px_rgba(10,31,61,0.08)] transition-all"
                 >
-                  Toutes
-                </button>
-                {availableDestinations.map((code) => (
-                  <button
-                    key={code}
-                    onClick={() => { setDestFilter(code); setShowAllDeals(false); }}
-                    className="shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all border-2"
-                    style={{
-                      borderColor: destFilter === code ? "#FF6B47" : "#F0E6D8",
-                      background: destFilter === code ? "#FF6B47" : "#FFFEF9",
-                      color: destFilter === code ? "#fff" : "#082B78",
-                    }}
-                  >
-                    {code}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Fallback notice when no fresh deals (<6h) are available. */}
-            {usingFallback && (
-              <p className="text-xs text-[#082B78]/50 mb-3">
-                Pas de nouveau deal détecté depuis 6h — voici les plus récents en attendant.
-              </p>
-            )}
-
-            {/* Unlocked deals — dense mosaic so users see more at a glance */}
-            {visibleUnlocked.length > 0 && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
-                {visibleUnlocked.map((deal) => (
-                  <FlightDealCard key={deal.id} deal={deal} />
-                ))}
-              </div>
-            )}
-
-            {/* Show more / less */}
-            {!showAllDeals && hasMoreDeals && (
-              <div className="text-center mt-8">
-                <button
-                  onClick={() => setShowAllDeals(true)}
-                  className="px-8 py-3 rounded-full border-2 border-[#FF6B47] text-[#FF6B47] font-semibold text-sm hover:bg-[#FF6B47] hover:text-white transition-all"
-                >
-                  Voir plus de deals ({filteredUnlocked.length - INITIAL_DEALS_COUNT} restants)
-                </button>
-              </div>
-            )}
-            {showAllDeals && hasMoreDeals && (
-              <div className="text-center mt-8">
-                <button
-                  onClick={() => setShowAllDeals(false)}
-                  className="px-6 py-2 rounded-full text-sm text-[#082B78]/50 hover:text-[#082B78] transition-colors"
-                >
-                  Voir moins
-                </button>
-              </div>
-            )}
-
-            {/* Masked deals — quota atteinte ou >55% pour les free */}
-            {isPremium === false && filteredLocked.length > 0 && (
-              <div className="mt-10">
-                <div className="flex items-center gap-3 mb-4">
-                  <h3 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">
-                    {unlockedDeals.length === 0 ? "Deals de la semaine" : "Deals supplémentaires"}
-                  </h3>
-                  <span className="text-xs font-bold bg-[#FF6B47] text-white px-2.5 py-0.5 rounded-full">🔒 Premium</span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
-                  {filteredLocked.map((deal) => (
-                    <div key={deal.id} className="relative">
-                      <div className="blur-[3px] pointer-events-none select-none opacity-50">
-                        <FlightDealCard deal={deal} />
-                      </div>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="bg-white/95 border border-[#FF6B47]/40 rounded-2xl px-5 py-4 text-center shadow-lg max-w-[200px]">
-                          <div className="text-lg font-bold text-[#FF6B47] mb-0.5">-{Math.round(deal.discount_pct)}%</div>
-                          <div className="text-xs text-[#082B78]/70 mb-3 leading-snug">
-                            {unlockedDeals.length === 0
-                              ? "Limite hebdomadaire atteinte"
-                              : "Réservé aux membres Premium"}
-                          </div>
-                          <button
-                            onClick={handleCheckout}
-                            className="bg-[#FF6B47] hover:bg-[#E55A38] text-white text-xs font-semibold px-4 py-2 rounded-full transition-all"
-                          >
-                            Débloquer — 29€/an
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </>)}
-        </div>
-
-        {/* Découvrir vos futures destinations — collapsible */}
-        {discoveryGuides.length > 0 && (
-          <details className="mb-8 bg-white border border-gray-100 rounded-2xl">
-            <summary className="cursor-pointer px-5 py-4 font-semibold text-[#082B78] flex items-center justify-between">
-              <span>🌍 Découvrir vos futures destinations</span>
-              <span className="text-sm text-gray-400 font-normal">{discoveryGuides.length} destinations</span>
-            </summary>
-            <div className="px-5 pb-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {discoveryGuides.map((g) => (
-                <Link key={g.iata} href={`/destination/${g.iata.toLowerCase()}`}
-                      target="_blank" rel="noopener noreferrer"
-                      className="group block overflow-hidden rounded-xl border border-gray-100 hover:border-[#FF6B47] transition-colors">
                   {g.cover_photo && (
-                    <div className="relative aspect-video overflow-hidden">
+                    <div className="relative aspect-[4/3] overflow-hidden">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={g.cover_photo} alt={g.destination}
-                           className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform" />
+                      <img
+                        src={g.cover_photo}
+                        alt={g.destination}
+                        className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
                     </div>
                   )}
                   <div className="p-3">
-                    <div className="text-xs text-gray-400">{g.destination}</div>
-                    <div className="font-semibold text-sm text-[#082B78] line-clamp-2">{g.title}</div>
+                    <div className="text-[11px] text-gray-400 uppercase tracking-wider mb-0.5">{g.destination}</div>
+                    <div className="font-semibold text-sm text-[#082B78] line-clamp-2 leading-snug">{g.title}</div>
                   </div>
                 </Link>
               ))}
             </div>
-          </details>
-        )}
-
-
-        {/* CTA: Planificateur (full page lives at /planificateur). Visible to
-            free + premium users; gating happens on the destination page. */}
-        <div className="mb-8 bg-[#FFFEF9] border border-[#FF6B47]/30 rounded-2xl p-5 flex items-start justify-between gap-4">
-          <div>
-            <h3 className="font-semibold text-[#082B78] mb-1">🗺️ Planificateur de voyage</h3>
-            <p className="text-sm text-[#082B78]/70">
-              Créez des itinéraires personnalisés avec l&apos;IA. {isPremium === false ? "Exclusif aux abonnés Premium." : ""}
-            </p>
-          </div>
-          <Link
-            href="/planificateur"
-            className="bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold px-4 py-2 rounded-xl text-sm shrink-0 transition-all whitespace-nowrap"
-          >
-            Ouvrir →
-          </Link>
+          )}
         </div>
-
 
       </div>
 
