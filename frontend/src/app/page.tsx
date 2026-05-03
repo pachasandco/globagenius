@@ -115,15 +115,21 @@ export default async function Landing() {
               {recentGuides.map((g) => (
                 <Link key={g.iata} href={`/destination/${g.iata.toLowerCase()}`}
                       className="group block overflow-hidden rounded-2xl border border-[var(--color-sand)] bg-white hover:border-[var(--color-coral)] transition-colors">
-                  {g.cover_photo && (
-                    <div className="relative aspect-video overflow-hidden">
-                      {/* Using <img> here intentionally — <Image> with `fill` requires extra layout setup
-                          and these cards are below the fold. */}
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <div className="relative aspect-video overflow-hidden">
+                    {g.cover_photo ? (
+                      // Using <img> here intentionally — <Image> with `fill` requires extra layout setup
+                      // and these cards are below the fold.
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img src={g.cover_photo} alt={g.destination}
                            className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform" />
-                    </div>
-                  )}
+                    ) : (
+                      <div className="absolute inset-0 bg-gradient-to-br from-[var(--color-coral-50)] to-[var(--color-cream)] flex items-center justify-center">
+                        <span className="font-[family-name:var(--font-dm-serif)] text-3xl text-[var(--color-coral)]/40">
+                          {g.iata}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                   <div className="p-4">
                     <div className="text-xs text-gray-400">{g.destination}</div>
                     <div className="font-bold text-[var(--color-ink)]">{g.title}</div>

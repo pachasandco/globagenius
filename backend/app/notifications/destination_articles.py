@@ -68,21 +68,50 @@ def ensure_article_for_destination(iata: str) -> bool:
         logger.warning("Article generation returned None for %s", iata)
         return False
 
-    # Fetch cover photo. Best-effort — a missing photo doesn't block insertion.
-    photo_query = article.get("photo_query") or article.get("destination") or iata
-    photo = fetch_destination_photo(iata, query_hint=photo_query)
-    if photo:
-        article["cover_photo"] = photo["url"]
-        article["photo_id"] = photo["photo_id"]
-        article["photographer_name"] = photo["photographer_name"]
-        article["photographer_url"] = photo["photographer_url"]
-    else:
-        # Explicit empty values so the column exists and frontend can
-        # branch cleanly on falsy checks.
-        article["cover_photo"] = ""
-        article["photo_id"] = ""
-        article["photographer_name"] = ""
-        article["photographer_url"] = ""
+    # Fetch cover photo. We try a couple of progressively-broader queries
+    # because Unsplash sometimes returns 0 results for niche airport
+    # designators (e.g. "Londres Stansted", "Milan Bergame", "Alicante").
+    # If everything fails, we skip insertion entirely — a guide without a
+    # cover photo looks broken on the home page and the listing pages.
+    destination_name = article.get("destination") or ""
+    country_name = article.get("country") or ""
+    # Strip airport descriptors so "Londres Stansted" / "Milan Bergame"
+    # also try a search on the city alone, which Unsplash actually has
+    # photos for.
+    city_only = destination_name.split(" ")[0] if destination_name else ""
+    queries = [
+        article.get("photo_query") or destination_name or iata,
+        destination_name,
+        city_only if city_only != destination_name else "",
+        f"{destination_name} {country_name}".strip() if country_name else "",
+        f"{city_only} {country_name}".strip() if (city_only and country_name) else "",
+        country_name,
+        f"{city_only} skyline" if city_only else "",
+    ]
+    # Dedup while preserving order, drop empties.
+    seen: set[str] = set()
+    queries = [q for q in queries if q and not (q in seen or seen.add(q))]
+
+    photo = None
+    for q in queries:
+        photo = fetch_destination_photo(iata, query_hint=q)
+        if photo:
+            if q != queries[0]:
+                logger.info("Unsplash matched %s on fallback query %r", iata, q)
+            break
+
+    if not photo:
+        logger.warning(
+            "No Unsplash photo found for %s after %d query attempts — "
+            "skipping article insert to avoid an unillustrated guide",
+            iata, len(queries),
+        )
+        return False
+
+    article["cover_photo"] = photo["url"]
+    article["photo_id"] = photo["photo_id"]
+    article["photographer_name"] = photo["photographer_name"]
+    article["photographer_url"] = photo["photographer_url"]
 
     # Convert nested lists/dicts to JSON-friendly form. Supabase python
     # client serialises dict / list automatically into jsonb columns,

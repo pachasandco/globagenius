@@ -121,8 +121,11 @@ def test_returns_false_when_generation_fails():
     db_mock.table("articles").insert.assert_not_called()
 
 
-def test_inserts_article_even_if_unsplash_fails():
-    """A missing cover photo isn't a blocker — the article is the value."""
+def test_skips_insert_when_unsplash_returns_no_photo():
+    """A guide without a cover photo looks broken on every listing
+    page — better to skip insertion entirely than to ship an
+    unillustrated guide. Replaces the previous behaviour that inserted
+    with cover_photo='' anyway."""
     from app.notifications import destination_articles
 
     db_mock = _build_db_mock(existing_article=False, insert_succeeds=True)
@@ -135,6 +138,7 @@ def test_inserts_article_even_if_unsplash_fails():
         "generated_at": "2026-05-02T12:00:00+00:00", "word_count": 1500,
     }
     gen_mock = MagicMock(return_value=fake_article)
+    # All fallback queries return None → nothing to insert.
     photo_mock = MagicMock(return_value=None)
 
     with patch.object(destination_articles, "db", db_mock), \
@@ -142,9 +146,47 @@ def test_inserts_article_even_if_unsplash_fails():
          patch.object(destination_articles, "fetch_destination_photo", photo_mock):
         result = destination_articles.ensure_article_for_destination("XXX")
 
+    assert result is False
+    db_mock.table("articles").insert.assert_not_called()
+
+
+def test_uses_fallback_query_when_first_unsplash_search_fails():
+    """The writer tries city-only + country fallbacks before giving up,
+    so 'Londres Stansted' or 'Milan Bergame' (which Unsplash has zero
+    results for) still find a photo via 'Londres' / 'Milan'."""
+    from app.notifications import destination_articles
+
+    db_mock = _build_db_mock(existing_article=False, insert_succeeds=True)
+    fake_article = {
+        "iata": "STN", "destination": "Londres Stansted", "country": "Royaume-Uni",
+        "slug": "londres-stansted-guide", "title": "T", "h1": "H1",
+        "meta_description": "M", "lead": "L", "nut_graf": "N",
+        "top_picks": [], "itinerary": [], "infos_pratiques": {},
+        "faq": [], "sources": [], "tags": [], "photo_query": "Londres Stansted",
+        "generated_at": "2026-05-02T12:00:00+00:00", "word_count": 1500,
+    }
+    gen_mock = MagicMock(return_value=fake_article)
+    # First query ('Londres Stansted') misses, second ('Londres') finds.
+    photo_mock = MagicMock(side_effect=[
+        None,
+        {
+            "url": "https://example.com/photo.jpg",
+            "photo_id": "abc",
+            "photographer_name": "Test Photographer",
+            "photographer_url": "https://example.com/p",
+        },
+    ])
+
+    with patch.object(destination_articles, "db", db_mock), \
+         patch.object(destination_articles, "generate_destination_guide", gen_mock), \
+         patch.object(destination_articles, "fetch_destination_photo", photo_mock):
+        result = destination_articles.ensure_article_for_destination("STN")
+
     assert result is True
     insert_payload = db_mock.table("articles").insert.call_args.args[0]
-    assert insert_payload.get("cover_photo") in (None, "")
+    assert insert_payload["cover_photo"] == "https://example.com/photo.jpg"
+    # Fallback query was used — photographer attribution preserved.
+    assert insert_payload["photographer_name"] == "Test Photographer"
 
 
 def test_returns_false_when_db_unavailable():

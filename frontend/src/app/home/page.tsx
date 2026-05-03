@@ -304,16 +304,25 @@ export default function HomePage() {
                   href={`/destination/${g.iata.toLowerCase()}`}
                   className="group block overflow-hidden rounded-2xl border border-gray-100 bg-white hover:border-[#FF6B47] hover:shadow-[0_8px_24px_rgba(10,31,61,0.08)] transition-all"
                 >
-                  {g.cover_photo && (
-                    <div className="relative aspect-[4/3] overflow-hidden">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <div className="relative aspect-[4/3] overflow-hidden">
+                    {g.cover_photo ? (
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={g.cover_photo}
                         alt={g.destination}
                         className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
                       />
-                    </div>
-                  )}
+                    ) : (
+                      // Fallback when the writer didn't manage to fetch a
+                      // cover photo from Unsplash. Coral/cream gradient +
+                      // IATA code keeps the card recognisable.
+                      <div className="absolute inset-0 bg-gradient-to-br from-[var(--color-coral-50)] to-[var(--color-cream)] flex items-center justify-center">
+                        <span className="font-[family-name:var(--font-dm-serif)] text-3xl text-[var(--color-coral)]/40">
+                          {g.iata}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                   <div className="p-3">
                     <div className="text-[11px] text-gray-400 uppercase tracking-wider mb-0.5">{g.destination}</div>
                     <div className="font-semibold text-sm text-[#082B78] line-clamp-2 leading-snug">{g.title}</div>
