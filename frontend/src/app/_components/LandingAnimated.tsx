@@ -64,13 +64,13 @@ export function HeroContent() {
         <em className="not-italic text-[var(--color-coral)]">avant tout le monde</em>.
       </h1>
       <p className="text-white/75 text-lg leading-relaxed mb-8 max-w-lg">
-        On surveille tous les vols au départ de la France et on vous envoie les meilleures offres sur Telegram. Jusqu&apos;à -70% sur vos billets.
+        Une notification Telegram dès qu&apos;un vol chute de -40% à -70%. Tu lis, tu cliques, tu réserves — avant que le tarif ne disparaisse.
       </p>
       <Link
         href="/signup"
         className="inline-block bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-8 py-4 rounded-xl font-bold text-lg transition-colors shadow-[0_8px_24px_rgba(255,107,71,0.3)]"
       >
-        Essayer gratuitement
+        Activer mes alertes Telegram
       </Link>
       <p className="text-white/50 text-sm mt-3">Gratuit, sans carte bancaire</p>
     </motion.div>
