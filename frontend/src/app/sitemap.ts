@@ -10,7 +10,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 async function fetchArticleSlugs(): Promise<string[]> {
   try {
-    const res = await fetch(`${API_URL}/api/articles`, { next: { revalidate: 3600 } });
+    const res = await fetch(`${API_URL}/api/articles`, { cache: "no-store" });
     if (!res.ok) return [];
     const data = await res.json();
     return (data.articles || []).map((a: { slug: string }) => a.slug);
@@ -21,7 +21,7 @@ async function fetchArticleSlugs(): Promise<string[]> {
 
 async function fetchDestinationIatas(): Promise<string[]> {
   try {
-    const res = await fetch(`${API_URL}/api/destinations?limit=200`, { next: { revalidate: 3600 } });
+    const res = await fetch(`${API_URL}/api/destinations?limit=200`, { cache: "no-store" });
     if (!res.ok) return [];
     const data = await res.json();
     return (data.items || []).map((d: { iata: string }) => d.iata);
