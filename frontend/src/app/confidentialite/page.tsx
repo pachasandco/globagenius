@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { Wordmark } from "../_components/Wordmark";
 
 export const metadata: Metadata = {
   title: "Politique de confidentialité — Globe Genius",
@@ -12,19 +13,19 @@ export default function Confidentialite() {
   return (
     <div className="min-h-screen bg-[#FFF8F0]">
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
-        <div className="max-w-4xl mx-auto px-4 md:px-5 h-[64px] flex items-center">
+        <div className="max-w-4xl mx-auto px-4 md:px-5 h-[80px] flex items-center">
           <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-[19px] leading-none">
-            <span className="text-[#1E90FF]">Globe</span><span className="text-[#FF6B47]">Genius</span>
+            <Wordmark />
           </Link>
         </div>
       </nav>
 
       <div className="max-w-4xl mx-auto px-4 md:px-5 py-12">
-        <h1 className="font-[family-name:var(--font-dm-serif)] text-3xl md:text-4xl mb-8 text-[#0A1F3D]">Politique de confidentialité</h1>
+        <h1 className="font-[family-name:var(--font-dm-serif)] text-3xl md:text-4xl mb-8 text-[#082B78]">Politique de confidentialité</h1>
 
-        <div className="prose prose-gray max-w-none text-[#0A1F3D]/80 space-y-8">
+        <div className="prose prose-gray max-w-none text-[#082B78]/80 space-y-8">
           <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#0A1F3D]">Données collectées</h2>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Données collectées</h2>
             <p>Lors de votre utilisation de Globe Genius, nous collectons :</p>
             <ul className="list-disc pl-6 space-y-1">
               <li><strong>À l&apos;inscription :</strong> adresse email, mot de passe (hashé, jamais stocké en clair)</li>
@@ -35,7 +36,7 @@ export default function Confidentialite() {
           </section>
 
           <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#0A1F3D]">Utilisation des données</h2>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Utilisation des données</h2>
             <p>Vos données sont utilisées exclusivement pour :</p>
             <ul className="list-disc pl-6 space-y-1">
               <li>Vous envoyer des alertes personnalisées sur les vols à prix cassés correspondant à vos préférences</li>
@@ -46,7 +47,7 @@ export default function Confidentialite() {
           </section>
 
           <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#0A1F3D]">Stockage et sécurité</h2>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Stockage et sécurité</h2>
             <p>
               Les données sont stockées sur des serveurs sécurisés :<br />
               Base de données : Supabase (infrastructure AWS, chiffrement au repos et en transit)<br />
@@ -56,14 +57,14 @@ export default function Confidentialite() {
           </section>
 
           <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#0A1F3D]">Durée de conservation</h2>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Durée de conservation</h2>
             <p>
               Vos données sont conservées tant que votre compte est actif. En cas de suppression de votre compte, vos données personnelles sont supprimées sous 30 jours. Les données anonymisées à des fins statistiques peuvent être conservées plus longtemps.
             </p>
           </section>
 
           <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#0A1F3D]">Vos droits (RGPD)</h2>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Vos droits (RGPD)</h2>
             <p>Conformément au Règlement Général sur la Protection des Données (RGPD), vous disposez des droits suivants :</p>
             <ul className="list-disc pl-6 space-y-1">
               <li><strong>Droit d&apos;accès :</strong> obtenir une copie de vos données personnelles</li>
@@ -78,14 +79,14 @@ export default function Confidentialite() {
           </section>
 
           <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#0A1F3D]">Cookies</h2>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Cookies</h2>
             <p>
               Globe Genius utilise uniquement des cookies techniques nécessaires au fonctionnement du service (authentification, session utilisateur). Aucun cookie publicitaire, de tracking ou d&apos;analyse tiers n&apos;est utilisé.
             </p>
           </section>
 
           <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#0A1F3D]">Services tiers</h2>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Services tiers</h2>
             <ul className="list-disc pl-6 space-y-1">
               <li><strong>Stripe :</strong> traitement des paiements (soumis à la <a href="https://stripe.com/privacy" className="text-[#FF6B47] hover:underline" target="_blank" rel="noopener noreferrer">politique de confidentialité Stripe</a>)</li>
               <li><strong>Telegram :</strong> envoi des alertes (soumis à la <a href="https://telegram.org/privacy" className="text-[#FF6B47] hover:underline" target="_blank" rel="noopener noreferrer">politique de confidentialité Telegram</a>)</li>
@@ -95,14 +96,14 @@ export default function Confidentialite() {
           </section>
 
           <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#0A1F3D]">Contact</h2>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Contact</h2>
             <p>
               Pour toute question relative à la protection de vos données :<br />
               Email : <a href="mailto:contact@globegenius.app" className="text-[#FF6B47] hover:underline">contact@globegenius.app</a>
             </p>
           </section>
 
-          <p className="text-sm text-[#0A1F3D]/40 pt-4">Dernière mise à jour : avril 2026</p>
+          <p className="text-sm text-[#082B78]/40 pt-4">Dernière mise à jour : avril 2026</p>
         </div>
       </div>
 

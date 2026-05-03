@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { login } from "@/lib/api";
+import { Wordmark } from "../_components/Wordmark";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -34,7 +35,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-[#FFF8F0] flex items-start sm:items-center justify-center px-4 md:px-5 py-8 sm:py-0">
       <div className="w-full max-w-sm">
         <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-xl leading-none block text-center mb-10">
-          <span className="text-[#1E90FF]">Globe</span><span className="text-[#FF6B47]">Genius</span>
+          <Wordmark />
         </Link>
 
         <h1 className="font-[family-name:var(--font-dm-serif)] text-2xl text-center mb-2">

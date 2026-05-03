@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getPreferences, updatePreferences, generateTelegramLink, type FlightTripType } from "@/lib/api";
+import { Wordmark } from "../_components/Wordmark";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -121,7 +122,7 @@ export default function OnboardingPage() {
       <div className="w-full max-w-lg">
         {/* Logo */}
         <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-xl leading-none block text-center mb-8">
-          <span className="text-[#1E90FF]">Globe</span><span className="text-[#FF6B47]">Genius</span>
+          <Wordmark />
         </Link>
 
         {/* Progress — 3 steps: airports / alerts / telegram */}
@@ -198,7 +199,7 @@ export default function OnboardingPage() {
 
             {/* Flight trip types */}
             <div className="mb-6">
-              <p className="text-sm font-semibold text-[#0A1F3D] mb-2">Types de vols</p>
+              <p className="text-sm font-semibold text-[#082B78] mb-2">Types de vols</p>
               <div className="grid grid-cols-2 gap-3">
                 {[
                   { id: "round_trip" as FlightTripType, label: "Aller-retour", icon: "🔄" },
@@ -249,7 +250,7 @@ export default function OnboardingPage() {
                       className="mt-0.5 w-4 h-4 accent-cyan-500 cursor-pointer"
                     />
                     <div className="flex-1">
-                      <div className="text-sm font-medium text-[#0A1F3D] group-hover:text-cyan-700 transition-colors">
+                      <div className="text-sm font-medium text-[#082B78] group-hover:text-cyan-700 transition-colors">
                         💡 Inclure les combos malins (2 billets)
                       </div>
                       <div className="text-xs text-gray-500 mt-0.5">
@@ -261,7 +262,7 @@ export default function OnboardingPage() {
               )}
             </div>
 
-            <p className="text-sm font-semibold text-[#0A1F3D] mb-2">Niveau de deal</p>
+            <p className="text-sm font-semibold text-[#082B78] mb-2">Niveau de deal</p>
 
             <div className="mb-8 grid grid-cols-1 gap-3">
               {[
@@ -293,7 +294,7 @@ export default function OnboardingPage() {
                   }}
                 >
                   <div className="text-xl mb-1">{opt.icon}</div>
-                  <div className="font-semibold text-sm text-[#0A1F3D] flex items-center gap-2">
+                  <div className="font-semibold text-sm text-[#082B78] flex items-center gap-2">
                     {opt.label}
                     {opt.locked && <span className="text-xs font-normal text-[#FF6B47] bg-[#FFF1EC] px-2 py-0.5 rounded-full">Premium</span>}
                   </div>
@@ -310,7 +311,7 @@ export default function OnboardingPage() {
             </div>
 
             {!isPremium && (
-              <div className="mb-8 bg-[#FFF1EC] border border-[#FF6B47] rounded-xl p-4 text-sm text-[#0A1F3D]/70">
+              <div className="mb-8 bg-[#FFF1EC] border border-[#FF6B47] rounded-xl p-4 text-sm text-[#082B78]/70">
                 💎 Les deals exceptionnels (-50% et plus) sont réservés aux membres premium.{" "}
                 <button
                   onClick={async () => {

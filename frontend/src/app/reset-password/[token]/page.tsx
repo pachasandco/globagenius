@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 
 import { resetPassword } from "@/lib/api";
+import { Wordmark } from "../../_components/Wordmark";
 
 export default function ResetPasswordTokenPage() {
   const params = useParams<{ token: string }>();
@@ -59,7 +60,7 @@ export default function ResetPasswordTokenPage() {
           href="/"
           className="font-[family-name:var(--font-dm-serif)] text-xl leading-none block text-center mb-10"
         >
-          <span className="text-[#1E90FF]">Globe</span><span className="text-[#FF6B47]">Genius</span>
+          <Wordmark />
         </Link>
 
         <div className="bg-white rounded-2xl border border-gray-100 p-8 shadow-sm text-left">

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getFlightDeals, getPipelineStatus, type FlightDeal, type PipelineStatus } from "@/lib/api";
+import { Wordmark } from "../_components/Wordmark";
 
 function FlightDealCard({ deal, wishlisted }: { deal: FlightDeal; wishlisted?: boolean }) {
   const isOneWay = deal.trip_type === "one_way";
@@ -157,9 +158,9 @@ export default function Dashboard() {
     <div className="min-h-screen bg-[#FFF8F0]">
       {/* Nav */}
       <nav className="sticky top-0 z-50 bg-white border-b border-gray-100">
-        <div className="max-w-6xl mx-auto px-5 h-[64px] flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-5 h-[80px] flex items-center justify-between">
           <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-[19px] leading-none">
-            <span className="text-[#1E90FF]">Globe</span><span className="text-[#FF6B47]">Genius</span>
+            <Wordmark />
           </Link>
           <div className="flex items-center gap-4 text-sm">
             <span className="text-gray-400">Dashboard</span>
@@ -226,8 +227,8 @@ export default function Dashboard() {
         {activeTab === "premium" && (
           <div className="bg-[#FFFEF9] border border-[#FF6B47] rounded-xl p-4 mb-6 flex items-center justify-between">
             <div>
-              <div className="font-semibold text-sm text-[#0A1F3D]">Deals Premium — vols à -40% et plus</div>
-              <div className="text-xs text-[#0A1F3D]/70 mt-0.5">Les plus grosses anomalies de prix détectées. Réservation directe. 29€/an — remboursé dès le 1er voyage.</div>
+              <div className="font-semibold text-sm text-[#082B78]">Deals Premium — vols à -40% et plus</div>
+              <div className="text-xs text-[#082B78]/70 mt-0.5">Les plus grosses anomalies de prix détectées. Réservation directe. 29€/an — remboursé dès le 1er voyage.</div>
             </div>
             <span className="bg-amber-400 text-amber-900 text-xs font-bold px-3 py-1.5 rounded-full shrink-0">PREMIUM</span>
           </div>

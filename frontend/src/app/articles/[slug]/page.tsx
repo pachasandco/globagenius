@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Wordmark } from "../../_components/Wordmark";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -177,9 +178,9 @@ export default async function ArticlePage({
 
       {/* Nav */}
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
-        <div className="max-w-4xl mx-auto px-4 md:px-5 h-[64px] flex items-center justify-between">
+        <div className="max-w-4xl mx-auto px-4 md:px-5 h-[80px] flex items-center justify-between">
           <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-[19px] leading-none">
-            <span className="text-[#1E90FF]">Globe</span><span className="text-[#FF6B47]">Genius</span>
+            <Wordmark />
           </Link>
           <div className="flex items-center gap-2 md:gap-3">
             <Link

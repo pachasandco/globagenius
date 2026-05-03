@@ -3,6 +3,7 @@ import Link from "next/link";
 import RedirectIfLoggedIn from "./_components/RedirectIfLoggedIn";
 import LandingAnimated, { HeroContent } from "./_components/LandingAnimated";
 import { LandingNotificationHero } from "./_components/LandingNotificationHero";
+import { Wordmark } from "./_components/Wordmark";
 
 export const metadata: Metadata = {
   alternates: {
@@ -56,9 +57,9 @@ export default async function Landing() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />
 
       {/* ── NAVBAR ── */}
-      <nav aria-label="Navigation principale" className="sticky top-0 z-50 flex items-center justify-between px-6 sm:px-12 py-4 bg-[var(--color-cream)]/95 backdrop-blur-sm border-b border-[var(--color-sand)]">
+      <nav aria-label="Navigation principale" className="sticky top-0 z-50 flex items-center justify-between px-6 sm:px-12 h-[80px] bg-[var(--color-cream)]/95 backdrop-blur-sm border-b border-[var(--color-sand)]">
         <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-lg leading-none">
-          <span className="text-[var(--color-globe-blue)]">Globe</span><span className="text-[var(--color-coral)]">Genius</span>
+          <Wordmark />
         </Link>
         <div className="flex items-center gap-6 text-sm">
           <a href="#comment-ca-marche" className="hidden sm:inline text-[var(--color-ink)] hover:text-[var(--color-coral)] transition-colors">Comment ça marche</a>

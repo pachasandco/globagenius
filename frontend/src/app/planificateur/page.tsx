@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { clearSessionCookie } from "@/lib/api";
 import { initSession } from "@/lib/session";
 import ReactMarkdown from "react-markdown";
+import { Wordmark } from "../_components/Wordmark";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -170,7 +171,7 @@ function PlannerInline({
             </div>
 
             {/* Preview de sortie */}
-            <div className="bg-[#FFF8F0] border border-[#FF6B47]/20 rounded-xl px-4 py-3 text-xs text-[#0A1F3D]/60 flex flex-wrap gap-x-4 gap-y-1">
+            <div className="bg-[#FFF8F0] border border-[#FF6B47]/20 rounded-xl px-4 py-3 text-xs text-[#082B78]/60 flex flex-wrap gap-x-4 gap-y-1">
               <span>✈️ Vol optimal</span>
               <span>🏨 Quartiers recommandés</span>
               <span>📅 Itinéraire jour par jour</span>
@@ -415,9 +416,9 @@ export default function PlanificateurPage() {
     <div className="min-h-screen bg-[#FFF8F0]">
       {/* Nav */}
       <nav className="sticky top-0 z-50 bg-white border-b border-gray-100">
-        <div className="max-w-6xl mx-auto px-4 md:px-5 h-[64px] flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-4 md:px-5 h-[80px] flex items-center justify-between">
           <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-[19px] leading-none">
-            <span className="text-[#1E90FF]">Globe</span><span className="text-[#FF6B47]">Genius</span>
+            <Wordmark />
           </Link>
           <div className="flex items-center gap-2 md:gap-3">
             <span className="text-sm text-gray-400 hidden md:block">{isPremium === true ? "🌟 Premium" : isPremium === false ? "Free" : ""}</span>
@@ -443,7 +444,7 @@ export default function PlanificateurPage() {
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
               <div>
                 <h1 className="font-[family-name:var(--font-dm-serif)] text-2xl md:text-3xl mb-2">🗺️ Planificateur de voyage</h1>
-                <p className="text-sm md:text-base text-[#0A1F3D]/70 max-w-xl">
+                <p className="text-sm md:text-base text-[#082B78]/70 max-w-xl">
                   Créez des itinéraires personnalisés avec l&apos;IA — destination, durée, ambiance, jour par jour.
                   Exclusif aux abonnés Premium.
                 </p>

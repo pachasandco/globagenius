@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { getFlightDeals, getPipelineStatus, getPreferences, clearSessionCookie, type FlightDeal, type FlightTripType, type PipelineStatus } from "@/lib/api";
 import { initSession } from "@/lib/session";
 import { FlightDealCard } from "@/components/FlightDealCard";
+import { Wordmark } from "../_components/Wordmark";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -159,9 +160,9 @@ export default function HomePage() {
     <div className="min-h-screen bg-[#FFF8F0]">
       {/* Nav */}
       <nav className="sticky top-0 z-50 bg-white border-b border-gray-100">
-        <div className="max-w-6xl mx-auto px-4 md:px-5 h-[64px] flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-4 md:px-5 h-[80px] flex items-center justify-between">
           <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-[19px] leading-none">
-            <span className="text-[#1E90FF]">Globe</span><span className="text-[#FF6B47]">Genius</span>
+            <Wordmark />
           </Link>
           <div className="flex items-center gap-2 md:gap-3">
             <span className="text-sm text-gray-400 hidden md:block">{isPremium === true ? "🌟 Premium" : isPremium === false ? "Free" : ""}</span>
@@ -182,7 +183,7 @@ export default function HomePage() {
         {/* One-way migration banner — soft invitation for round-trip-only users */}
         {!onewayBannerDismissed && !flightTripTypes.includes("one_way") && (
           <div className="mb-6 bg-cyan-50 border border-cyan-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="text-sm text-[#0A1F3D]">
+            <div className="text-sm text-[#082B78]">
               <span className="font-semibold">🆕 Nouveaux deals « aller simple » disponibles.</span>{" "}
               Activez-les dans votre profil pour recevoir aussi les promos un sens et les combos malins « 2 billets » moins chers qu&apos;un A/R.
             </div>
@@ -218,9 +219,9 @@ export default function HomePage() {
                 <span className="text-xs font-bold bg-[#FF6B47] text-white px-2.5 py-0.5 rounded-full">🌸 Offre printemps -41%</span>
               </div>
               <h3 className="font-semibold mb-1">Un seul deal suffit à rembourser votre année</h3>
-              <p className="text-sm text-[#0A1F3D]/70">
+              <p className="text-sm text-[#082B78]/70">
                 Accès illimité à tous les deals ≥50%, sans quota hebdomadaire. Alertes Telegram instantanées.
-                <span className="font-semibold"> 29€/an</span> <span className="line-through text-[#0A1F3D]/40">59€</span> — soit 2,42€/mois.
+                <span className="font-semibold"> 29€/an</span> <span className="line-through text-[#082B78]/40">59€</span> — soit 2,42€/mois.
                 <span className="block mt-1 text-xs text-[#16A34A]">✅ Satisfait ou remboursé 30 jours</span>
               </p>
             </div>
@@ -266,7 +267,7 @@ export default function HomePage() {
                   style={{
                     borderColor: destFilter === "all" ? "#FF6B47" : "#F0E6D8",
                     background: destFilter === "all" ? "#FF6B47" : "#FFFEF9",
-                    color: destFilter === "all" ? "#fff" : "#0A1F3D",
+                    color: destFilter === "all" ? "#fff" : "#082B78",
                   }}
                 >
                   Toutes
@@ -279,7 +280,7 @@ export default function HomePage() {
                     style={{
                       borderColor: destFilter === code ? "#FF6B47" : "#F0E6D8",
                       background: destFilter === code ? "#FF6B47" : "#FFFEF9",
-                      color: destFilter === code ? "#fff" : "#0A1F3D",
+                      color: destFilter === code ? "#fff" : "#082B78",
                     }}
                   >
                     {code}
@@ -312,7 +313,7 @@ export default function HomePage() {
               <div className="text-center mt-8">
                 <button
                   onClick={() => setShowAllDeals(false)}
-                  className="px-6 py-2 rounded-full text-sm text-[#0A1F3D]/50 hover:text-[#0A1F3D] transition-colors"
+                  className="px-6 py-2 rounded-full text-sm text-[#082B78]/50 hover:text-[#082B78] transition-colors"
                 >
                   Voir moins
                 </button>
@@ -323,7 +324,7 @@ export default function HomePage() {
             {isPremium === false && filteredLocked.length > 0 && (
               <div className="mt-10">
                 <div className="flex items-center gap-3 mb-4">
-                  <h3 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#0A1F3D]">
+                  <h3 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">
                     {unlockedDeals.length === 0 ? "Deals de la semaine" : "Deals supplémentaires"}
                   </h3>
                   <span className="text-xs font-bold bg-[#FF6B47] text-white px-2.5 py-0.5 rounded-full">🔒 Premium</span>
@@ -337,7 +338,7 @@ export default function HomePage() {
                       <div className="absolute inset-0 flex items-center justify-center">
                         <div className="bg-white/95 border border-[#FF6B47]/40 rounded-2xl px-5 py-4 text-center shadow-lg max-w-[200px]">
                           <div className="text-lg font-bold text-[#FF6B47] mb-0.5">-{Math.round(deal.discount_pct)}%</div>
-                          <div className="text-xs text-[#0A1F3D]/70 mb-3 leading-snug">
+                          <div className="text-xs text-[#082B78]/70 mb-3 leading-snug">
                             {unlockedDeals.length === 0
                               ? "Limite hebdomadaire atteinte"
                               : "Réservé aux membres Premium"}
@@ -361,7 +362,7 @@ export default function HomePage() {
         {/* Découvrir vos futures destinations — collapsible */}
         {discoveryGuides.length > 0 && (
           <details className="mb-8 bg-white border border-gray-100 rounded-2xl">
-            <summary className="cursor-pointer px-5 py-4 font-semibold text-[#0A1F3D] flex items-center justify-between">
+            <summary className="cursor-pointer px-5 py-4 font-semibold text-[#082B78] flex items-center justify-between">
               <span>🌍 Découvrir vos futures destinations</span>
               <span className="text-sm text-gray-400 font-normal">{discoveryGuides.length} destinations</span>
             </summary>
@@ -379,7 +380,7 @@ export default function HomePage() {
                   )}
                   <div className="p-3">
                     <div className="text-xs text-gray-400">{g.destination}</div>
-                    <div className="font-semibold text-sm text-[#0A1F3D] line-clamp-2">{g.title}</div>
+                    <div className="font-semibold text-sm text-[#082B78] line-clamp-2">{g.title}</div>
                   </div>
                 </Link>
               ))}
@@ -392,8 +393,8 @@ export default function HomePage() {
             free + premium users; gating happens on the destination page. */}
         <div className="mb-8 bg-[#FFFEF9] border border-[#FF6B47]/30 rounded-2xl p-5 flex items-start justify-between gap-4">
           <div>
-            <h3 className="font-semibold text-[#0A1F3D] mb-1">🗺️ Planificateur de voyage</h3>
-            <p className="text-sm text-[#0A1F3D]/70">
+            <h3 className="font-semibold text-[#082B78] mb-1">🗺️ Planificateur de voyage</h3>
+            <p className="text-sm text-[#082B78]/70">
               Créez des itinéraires personnalisés avec l&apos;IA. {isPremium === false ? "Exclusif aux abonnés Premium." : ""}
             </p>
           </div>

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getPreferences, updatePreferences, changePassword, clearSessionCookie, getTelegramStatus, generateTelegramLink, cancelSubscription, type FlightTripType } from "@/lib/api";
+import { Wordmark } from "../_components/Wordmark";
 
 const AIRPORTS = [
   { code: "CDG", label: "Paris Charles de Gaulle" },
@@ -472,7 +473,7 @@ export default function ProfilePage() {
       <div className="bg-white border-b">
         <div className="max-w-2xl mx-auto px-4 md:px-5 py-4 flex items-center justify-between">
           <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-xl leading-none">
-            <span className="text-[#1E90FF]">Globe</span><span className="text-[#FF6B47]">Genius</span>
+            <Wordmark />
           </Link>
           <div className="flex items-center gap-3">
             <Link href="/home" className="text-gray-400 text-sm hover:text-gray-600">
@@ -516,7 +517,7 @@ export default function ProfilePage() {
                 ✈️
               </div>
               <div className="flex-1">
-                <h2 className="text-lg font-semibold text-[#0A1F3D] mb-1">
+                <h2 className="text-lg font-semibold text-[#082B78] mb-1">
                   Connectez Telegram pour recevoir vos alertes
                 </h2>
                 <p className="text-sm text-gray-600 mb-4">
@@ -566,7 +567,7 @@ export default function ProfilePage() {
 
           {!showEmailForm ? (
             <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-200">
-              <span className="text-gray-900">{email}</span>
+              <span className="text-[var(--color-ink)]">{email}</span>
               <button
                 onClick={() => setShowEmailForm(true)}
                 className="text-sm text-[#FF6B47] hover:text-[#E55A38] font-semibold transition-colors"
@@ -792,7 +793,7 @@ export default function ProfilePage() {
                   className="mt-0.5 w-4 h-4 accent-cyan-500 cursor-pointer"
                 />
                 <div className="flex-1">
-                  <div className="text-sm font-medium text-[#0A1F3D] group-hover:text-cyan-700 transition-colors">
+                  <div className="text-sm font-medium text-[#082B78] group-hover:text-cyan-700 transition-colors">
                     💡 Inclure les combos malins (2 billets)
                   </div>
                   <div className="text-xs text-gray-500 mt-0.5">

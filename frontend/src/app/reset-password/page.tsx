@@ -4,6 +4,7 @@ import { useState, FormEvent } from "react";
 import Link from "next/link";
 
 import { forgotPassword } from "@/lib/api";
+import { Wordmark } from "../_components/Wordmark";
 
 export default function ResetPasswordPage() {
   const [email, setEmail] = useState("");
@@ -31,7 +32,7 @@ export default function ResetPasswordPage() {
           href="/"
           className="font-[family-name:var(--font-dm-serif)] text-xl leading-none block text-center mb-10"
         >
-          <span className="text-[#1E90FF]">Globe</span><span className="text-[#FF6B47]">Genius</span>
+          <Wordmark />
         </Link>
 
         <div className="bg-white rounded-2xl border border-gray-100 p-8 shadow-sm text-left">

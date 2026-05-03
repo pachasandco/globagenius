@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
+import { Wordmark } from "./Wordmark";
 
 /**
  * Hero notification mockup.
@@ -83,7 +84,7 @@ export function LandingNotificationHero() {
         aria-hidden="true"
       />
       {/* Editorial scrim */}
-      <div className="absolute inset-0 bg-gradient-to-br from-[#0A1F3D]/85 via-[#0A1F3D]/55 to-[#0A1F3D]/30" />
+      <div className="absolute inset-0 bg-gradient-to-br from-[#082B78]/85 via-[#082B78]/55 to-[#082B78]/30" />
 
       {/* Notification card — positioned right of HeroContent on desktop */}
       <div className="absolute inset-0 flex items-center justify-end pointer-events-none">
@@ -129,11 +130,11 @@ function NotificationCard({ notif }: { notif: NotifSample }) {
           {/* Header row: app id + time */}
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-md bg-[#0A1F3D] flex items-center justify-center text-white text-[11px] font-bold">
+              <div className="w-6 h-6 rounded-md bg-[#082B78] flex items-center justify-center text-white text-[11px] font-bold">
                 ✈
               </div>
-              <span className="text-[12px] font-semibold text-[#0A1F3D] tracking-tight">
-                <span className="text-[#1E90FF]">Globe</span><span className="text-[#FF6B47]">Genius</span>
+              <span className="text-[12px] font-semibold text-[#082B78] tracking-tight">
+                <Wordmark />
               </span>
               <NotifLiveDot />
             </div>
@@ -149,14 +150,14 @@ function NotificationCard({ notif }: { notif: NotifSample }) {
 
           {/* Headline */}
           <div
-            className="text-[15px] font-bold text-[#0A1F3D] leading-snug mb-1"
+            className="text-[15px] font-bold text-[#082B78] leading-snug mb-1"
             style={{ fontFamily: "var(--font-dm-serif), serif" }}
           >
             {notif.headline}
           </div>
 
           {/* Body line */}
-          <div className="text-[12.5px] text-[#0A1F3D]/80 leading-snug mb-2">
+          <div className="text-[12.5px] text-[#082B78]/80 leading-snug mb-2">
             {notif.body}
           </div>
 
