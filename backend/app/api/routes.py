@@ -1105,10 +1105,23 @@ def telegram_status(user_id: str, user: dict = Depends(get_current_user)):
 
 @router.get("/api/articles")
 def list_articles():
-    """List all generated destination articles."""
+    """List legacy generated articles only (those without an IATA code).
+
+    V9 destination guides live under /destination/{iata} and are listed
+    via /api/destinations. Excluding them from this endpoint avoids the
+    sitemap surfacing duplicate URLs (/articles/{slug} and
+    /destination/{iata}) for the same content, which Google flags as
+    duplicate content.
+    """
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
-    resp = db.table("articles").select("*").order("created_at", desc=True).execute()
+    resp = (
+        db.table("articles")
+        .select("*")
+        .is_("iata", "null")
+        .order("created_at", desc=True)
+        .execute()
+    )
     return {"articles": resp.data or []}
 
 
