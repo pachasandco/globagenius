@@ -145,16 +145,27 @@ export default function HomePage() {
     router.push("/");
   }
 
-  const unlockedDeals = allDeals.filter(d => !d.locked);
-  const lockedDeals = allDeals.filter(d => d.locked);
+  // Show only deals detected in the last 6 hours so the page rotates with
+  // freshly-found anomalies. Older deals tend to expire (airlines correct
+  // mistake fares within hours), so leaving them on screen is misleading.
+  // Fallback: if nothing is fresh yet, show everything with a discreet
+  // notice so the page never goes empty.
+  const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+  const sixHoursAgo = Date.now() - SIX_HOURS_MS;
+  const recentDeals = allDeals.filter(d => new Date(d.created_at).getTime() >= sixHoursAgo);
+  const usingFallback = recentDeals.length === 0 && allDeals.length > 0;
+  const dealsToShow = usingFallback ? allDeals : recentDeals;
+
+  const unlockedDeals = dealsToShow.filter(d => !d.locked);
+  const lockedDeals = dealsToShow.filter(d => d.locked);
 
   const filteredUnlocked = destFilter === "all" ? unlockedDeals : unlockedDeals.filter(d => d.destination === destFilter);
   const filteredLocked = destFilter === "all" ? lockedDeals : lockedDeals.filter(d => d.destination === destFilter);
 
-  const INITIAL_DEALS_COUNT = 6;
+  const INITIAL_DEALS_COUNT = 10;
   const visibleUnlocked = showAllDeals ? filteredUnlocked : filteredUnlocked.slice(0, INITIAL_DEALS_COUNT);
   const hasMoreDeals = filteredUnlocked.length > INITIAL_DEALS_COUNT;
-  const availableDestinations = Array.from(new Set(allDeals.map(d => d.destination)));
+  const availableDestinations = Array.from(new Set(dealsToShow.map(d => d.destination)));
 
   return (
     <div className="min-h-screen bg-[#FFF8F0]">
@@ -289,9 +300,16 @@ export default function HomePage() {
               </div>
             )}
 
-            {/* Unlocked deals */}
+            {/* Fallback notice when no fresh deals (<6h) are available. */}
+            {usingFallback && (
+              <p className="text-xs text-[#082B78]/50 mb-3">
+                Pas de nouveau deal détecté depuis 6h — voici les plus récents en attendant.
+              </p>
+            )}
+
+            {/* Unlocked deals — dense mosaic so users see more at a glance */}
             {visibleUnlocked.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
                 {visibleUnlocked.map((deal) => (
                   <FlightDealCard key={deal.id} deal={deal} />
                 ))}
@@ -329,7 +347,7 @@ export default function HomePage() {
                   </h3>
                   <span className="text-xs font-bold bg-[#FF6B47] text-white px-2.5 py-0.5 rounded-full">🔒 Premium</span>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
                   {filteredLocked.map((deal) => (
                     <div key={deal.id} className="relative">
                       <div className="blur-[3px] pointer-events-none select-none opacity-50">
