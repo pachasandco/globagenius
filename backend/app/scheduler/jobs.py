@@ -492,14 +492,14 @@ async def _dispatch_grouped_flight_alerts(
     try:
         prefs_resp = (
             db.table("user_preferences")
-            .select("user_id,telegram_chat_id,telegram_connected,airport_codes,alerts_paused_until,deal_tier,blocked_destinations,flight_trip_types")
+            .select("user_id,telegram_chat_id,telegram_connected,airport_codes,alerts_paused_until,deal_tier,blocked_destinations,flight_trip_types,min_discount")
             .eq("telegram_connected", True)
             .execute()
         )
         all_prefs = prefs_resp.data or []
     except Exception as e:
         err_msg = str(e)
-        if any(col in err_msg for col in ("alerts_paused_until", "deal_tier", "blocked_destinations", "flight_trip_types")):
+        if any(col in err_msg for col in ("alerts_paused_until", "deal_tier", "blocked_destinations", "flight_trip_types", "min_discount")):
             logger.warning("Migration not yet applied — fetching prefs without optional columns")
             try:
                 prefs_resp = (
