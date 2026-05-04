@@ -3,7 +3,7 @@
 Single source of truth for what's planned, what's deferred, and what's been
 killed. **Append-only** for the "Done" section, **mutable** for the rest.
 
-Last updated: 2026-04-29 (V5 / V5+ P1 shipped on branch `v5`).
+Last updated: 2026-05-04 (V9 / V10 shipped on branch `v9`).
 
 ---
 
@@ -61,108 +61,181 @@ When an item ships, **move it to "Done"** with the commit SHA. Never delete.
 (V7 introduces no new migration — uses existing `sent_alerts` table with a
 new `alert_type='teaser_premium'` value.)
 
+### V9 / V10 — Telegram-first product, perf hardening, churn signal (May 2026)
+
+**Branch:** `v9` (V10 squashed in via PR #5).
+
+**Performance & infra**
+- `38a88db` — login `async` + bcrypt/DB in `run_in_executor` so /api
+  routes stop blocking on auth. Signup welcome email now via
+  BackgroundTasks (was up to 10 s sync). Email validator: 1 h LRU
+  cache + 1 s timeout (was 3 s, no cache).
+- `48d2f21` — Railway split into 2 services. `globagenius` (web,
+  RUN_SCHEDULER=0, WEB_CONCURRENCY=2) serves API only. `globagenius-
+  worker` (RUN_SCHEDULER=1) runs APScheduler + scrapers. /health
+  dropped from 5–15 s to 80 ms after the split.
+- `2e54c67` — `BACKEND_URL` no longer hardcoded to a stale Railway
+  domain in `config.py`; both Railway services have it set as env var
+  so `setup-webhook` can't silently re-publish a dead URL again.
+- `f1a1e12` — `WEB_CONCURRENCY` and `RUN_SCHEDULER` env vars wired up
+  with safe defaults.
+
+**Telegram bot — full in-chat control**
+- `c230918` — Per-alert `🚫 Masquer <destination>` button (one-tap
+  blocking). Pause now opens a sub-menu (7 d / 30 d / indefinite).
+  `/destinations` command lists blocked destinations + free-text
+  search by city name (accent-insensitive). `/pause` slash-command
+  mirrors the inline button. `setMyCommands` published so the
+  hamburger menu surfaces /destinations, /pause, /status, /help.
+  IATA ↔ name mapping pulled from `articles` table (single source of
+  truth, cached 15 min).
+
+**Front rebuild**
+- `5dffcf0` / `12fabc3` — Brand wordmark moved to image
+  (logo2.png 67 KB, transparent). `--color-globe-blue: #1E90FF` and
+  navy text colour `#082B78`. Nav h-[80px] with h-16 logo. Favicon
+  swapped from default Vercel to GG logo.
+- `09909ca` — Landing copy fully Telegram-centric: hero subline +
+  CTA "Activer mes alertes Telegram", stats bar shows "<5 s alerte
+  sur Telegram", new "Pourquoi Telegram, et pas un email ?" section
+  before pricing (3 cards), final CTA fused with the orphan Telegram
+  banner into a 2-card "Tu as déjà Telegram / Pas encore Telegram ?"
+  block.
+- `2ebf000` — `/home` rewrite: deals feed dropped (real-time alerts
+  live in Telegram only). New Telegram-status banner (deep-link to
+  the bot, mentions /destinations and /pause), planificateur
+  promoted to a hero card, every published destination guide shown
+  in a dense mosaic. -236 net lines.
+- `22dc769` — Planificateur refactor with shadcn/ui (Radix Nova): bot
+  avatars in chat, day-by-day Card grid with Sunrise/Sun/Moon icons,
+  tone-tinted onboarding pills.
+- `f857a0e` / `f38a314` — Favicon swap and home deals filter (now
+  obsolete: deals feed removed entirely).
+
+**Stripe / pricing**
+- `6c82e29` — `stripe_subscription_period_end` helper reads
+  `subscription.items.data[0].current_period_end` (Stripe API change
+  2025-03-31), used in webhook + sync job. Without this, every paid
+  signup since the API rev got a null `premium_expires_at` and the
+  daily sync job marked them expired overnight.
+
+**Churn signal**
+- `ca5a6e7` — Cancellation survey on /profile (mandatory radio with
+  8 reasons + 500-char free-text feedback). Inserted into new
+  `cancellation_reasons` table (migration 035). Best-effort insert:
+  if the table write fails, the cancellation still goes through.
+
+**Min-discount filter — finally honoured**
+- `a71eaa7` — Widened `sent_alerts.alert_type` CHECK to allow
+  `one_way` and `split_ticket` so dispatchers stop crashing on insert.
+- `bda4409` — `_user_passes_discount_floor` helper applied to
+  one-way and split-ticket dispatchers (previously: only round-trip
+  was filtered, premium 60 %-floor users still got 40 % one-way
+  alerts).
+- `2357a8b` — Removed admin override of `min_discount` (the table on
+  `/admin/users` had a select that wrote 20-60 %; user-set 60 %
+  could be silently overwritten to 30 % from there). `reset_prefs`
+  also no longer touches `min_discount`.
+- `fdf745f` — The actual smoking gun: round-trip dispatcher's SELECT
+  on `user_preferences` didn't include `min_discount`, so every
+  premium user was being treated as if their floor was 40 %. One
+  added column to the SELECT.
+
+**Vueling Tier 1 fake-deal catastrophe**
+- `40d91df` — Vueling calendar endpoint exposes ONE-WAY leadprices.
+  Scraper used to ship them as round-trip rows verbatim (30 € ORY-
+  IBZ), discount vs A/R baseline → -78 %, "Erreur de prix" alert,
+  user clicks → 100 € real A/R. Fix: multiply by 2.0× on persist,
+  Travelpayouts cross-check in reverify, and `_deal_badge` no longer
+  stamps "Erreur de prix" when sources are leadprice-only. 178 stale
+  qualified items invalidated in DB.
+- `ac12788` — Bumped multiplier to 2.2× (return leg from southern
+  destinations is asymmetrically more expensive). `_reverify_via_
+  travelpayouts` now returns `(verdict, cheapest_match)`; when TP
+  confirms a higher real A/R within 50 % tolerance, we adopt the TP
+  price so the user sees in Telegram exactly what Aviasales will
+  show on click. Anomaly recomputed after reverify; deals dropping
+  below 15 % / z=1.5 after price adjustment are dropped instead of
+  dispatched with a fake big discount.
+
+**Destination universe expansion**
+- `3985447` — Long-haul coverage roughly doubled to align with
+  French traveller habits (school holidays, DOM-TOM, Cuba, Vietnam,
+  Madagascar, Tahiti, Vancouver, etc.). 28 → 59 long-haul guaranteed
+  destinations. `LONG_HAUL_DESTINATIONS`, `LONG_HAUL_GUARANTEED`,
+  `SEASONAL_DESTINATIONS`, `HIGH_FARE_MISTAKE_ROUTES` re-aligned.
+  Removed PMI duplicate.
+
+**Guides — never ship without a cover photo**
+- `a6df3a2` — Writer skips insert when no Unsplash photo found
+  (was creating empty-cover guides). Added a fallback chain
+  (city-only / city + country / "city skyline") so destinations
+  with airport-name labels like "Londres Stansted" or "Milan
+  Bergame" no longer get rejected silently. 7 existing guides
+  back-filled in DB via one-shot script.
+
+**Telegram alert UX**
+- `e975160` — Removed the per-offer "🏨 Voir les hôtels" CTA from
+  grouped flight alerts. Cluttered the message; the Booking
+  affiliation revenue was negligible.
+
+**Migrations applied to Supabase prod since V7:**
+030_password_reset_tokens · 031_stripe_columns · 032_articles_iata_
+destination · 033_articles_country_nullable · 034_sent_alerts_
+subtypes · 035_cancellation_reasons.
+
 ---
 
 ## 🔥 Now (P0) — Open items
 
-### UI/UX out of sync with V5/P0/P1 backend changes
+Most of the V5 / V5+ / V7 P0 backlog landed in V8 / V9 / V10 (see Done).
+Remaining real items, ordered by risk:
 
-The pipeline has evolved (one-way deals, split-ticket combos, scorer
-60/25/15, navbar cleanup, airport-scoped homepage) but parts of the UI
-still tell the pre-V5 story. Audit done 2026-04-29.
+### `/dashboard` orphan page (low risk, low effort)
 
-**External / marketing layer (highest leak):**
-- `app/layout.tsx` lines 21, 27, 39, 57, 103, 124 — six occurrences
-  of "vols aller-retour" in metadata, og:image alt, schema.org. Google
-  + social shares advertise an outdated product promise.
-- `app/page.tsx` FAQ doesn't mention one-way alerts or split-ticket
-  combos. A user who receives a "Combo malin" Telegram alert and
-  searches the FAQ finds nothing.
-- `app/page.tsx` pricing grid doesn't position the new offer types as
-  features (acceptable as they're not premium-gated, but the story
-  isn't told).
-- `app/_components/LandingAnimated.tsx:113` — every example deal card
-  hard-codes "A/R" and never shows a one-way or combo card.
+`app/dashboard/page.tsx` exists but no navigation links to it (verified
+2026-05-04: `grep -rn 'href="/dashboard"' frontend/src` returns 0).
+Carries its own legacy `<FlightDealCard>` rendering and free/premium
+tabs that no longer exist on `/home` after the V10 home rewrite.
 
-**Authenticated app layer (mid leak):**
-- `app/profile/page.tsx:21` and `app/onboarding/page.tsx:23` — the
-  legacy "Vols à prix cassés" offer-type card still describes itself as
-  "Billets d'avion **aller-retour** en promo". It's also a ghost UI:
-  it gates the whole flight pipeline but uncoking it has no real
-  alternative since `package` and `accommodation` were dropped.
-  Either reword + remove the alternatives, or remove the picker.
-- `app/home/page.tsx:521` one-way migration banner — the
-  `gg_oneway_banner_dismissed` flag in localStorage isn't cleared when
-  the user actively unchecks `one_way` in their profile. They get
-  re-prompted to enable an option they just opted out of. Subtle but
-  user-hostile.
-- `app/profile/page.tsx` `includeSplitTickets` state stays `true` in
-  memory after the user unchecks "Aller-retour", so re-checking
-  surfaces a sub-option they may not have intentionally re-validated.
-
-**Dead code / zombie pages:**
-- `app/dashboard/page.tsx` — orphaned. No navigation links to it. Has
-  its own local `<FlightDealCard>` (different from the shared V5 one),
-  free/premium tabs that no longer exist on `/home`, and a "Deals" nav
-  link we just removed. Either delete the page or expose it. Today's
-  state forces us to maintain it (we already had to fix
-  `return_date: null` typing in it).
-- `app/articles/[slug]/page.tsx:179` — same nav as `/home` but slightly
-  different. Worth extracting a shared `<AppNav>` component.
-
-**Compliance / transparency:**
-- `app/mentions-legales/page.tsx` and `app/confidentialite/page.tsx`
-  document the `/r/:token` redirect tokens but not the UTM tagging
-  added in P1. Minor, but RGPD transparency benefits from being
-  exhaustive.
-
-**Recommended split:**
-
-P0a — quick fixes that affect existing users (~2h total):
-1. Reset `gg_oneway_banner_dismissed` when user unchecks `one_way`.
-2. Reset `includeSplitTickets` to `false` when user unchecks
-   `round_trip` in profile (state mirrors save behaviour).
-3. Decide on `/dashboard`: delete OR un-orphan with a real entry point.
-
-P0b — landing rewrite (~1.5 days):
-1. Update metadata in `app/layout.tsx` to drop the "aller-retour" lock-in.
-2. Add 2 example deal cards in `LandingAnimated` (one-way + combo) with
-   the corresponding badges.
-3. Add 2 FAQ entries: "Qu'est-ce qu'un combo malin ?" + "Recevez-vous
-   aussi des aller simples ?"
-4. Reword (or remove) the "Vols à prix cassés" picker in profile +
-   onboarding so it doesn't say "aller-retour" anymore.
-5. Update `og:image` if it still says "aller-retour".
-6. Add UTM tagging to legal docs.
+**Action:** either delete the route entirely, or wire it back into
+the nav with a clear purpose. Today's state silently doubles
+maintenance cost without delivering value. ~15 min.
 
 ### Velocity drops bypass `qualified_items`
 
-The Tier-1 velocity detector dispatches Telegram alerts directly without
-inserting into `qualified_items`. Consequence: those deals don't show up
-on the homepage, don't count in CTR analytics, don't surface in admin
-debug. Identified during V5 P0 cleanup but deferred to keep the diff small.
+The Tier-1 velocity detector dispatches Telegram alerts directly via
+the synthetic `QualifiedItem` it builds in `_dispatch_velocity_alerts`,
+but doesn't insert a row into `qualified_items`. Consequence: those
+deals don't show up on the homepage, don't count in CTR analytics,
+don't surface in admin debug. Confirmed 2026-05-04 still the case.
 
 **Action:** add a qualified_items insert in `_dispatch_velocity_alerts`
 with `qualification_method='velocity_drop'`. Reuse existing tier logic
 (velocity = always premium today). ~1 hour.
 
-### Verify migration 028 in production
-
-Supabase prod must have `qualification_method` before P1 (one-way
-qualifier) can persist new rows successfully. Without it, every one-way
-qualified insert raises and is silently dropped via `except`.
-
-**Action:** confirm `\d qualified_items` shows the column. If not, apply
-migration 028.
-
 ### Magic discount thresholds in `_deal_label()`
 
-`jobs.py:440-443` still hard-codes `>= 60`, `>= 40`, `>= 20` for the
-emoji badge mapping. Not in `app/thresholds.py`. Low-risk but inconsistent
-with the rest of the cleanup.
+`jobs.py:458-465` still hard-codes `>= 60`, `>= 40` for the legacy
+`_deal_label` helper. The function is currently unused (the live badge
+logic is in `telegram._deal_badge`, source-aware after V10), but the
+constants are duplicated, which is exactly the inconsistency we cleaned
+up elsewhere.
 
-**Action:** move to `app/thresholds.py` as `BADGE_FARE_MISTAKE_PCT`,
-`BADGE_FLASH_PROMO_PCT`, `BADGE_GOOD_DEAL_PCT`. ~30 min.
+**Action:** either delete `_deal_label` (looks unused) or move the
+constants to `app/thresholds.py`. ~15 min.
+
+### Profile / onboarding "Vols à prix cassés" picker
+
+`app/profile/page.tsx` and `app/onboarding/page.tsx` still expose a
+single-item offer-type picker labelled "Vols à prix cassés / Billets
+d'avion aller-retour en promo". It's a ghost UI: there's only one
+choice, the description is partly stale (one-way + combos shipped),
+and the user can't actually choose anything else since `package` and
+`accommodation` were dropped.
+
+**Action:** remove the picker entirely (cleaner) or reword and keep
+it as info-only. ~30 min.
 
 ---
 

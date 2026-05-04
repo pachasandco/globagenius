@@ -21,13 +21,16 @@ const plusJakarta = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: "Globe Genius — Vols à Prix Cassés | Alertes Telegram temps réel",
   description:
-    "Globe Genius détecte les vols aller-retour à prix anormalement bas sur 9 aéroports français. Chaque deal est statistiquement vérifié et reconfirmé en temps réel avant l'alerte Telegram.",
+    "Globe Genius détecte les vols à prix anormalement bas sur 9 aéroports français : aller-retour, aller simple et combos malins (2 billets séparés moins chers qu'un A/R). Chaque deal est statistiquement vérifié et reconfirmé en temps réel avant l'alerte Telegram.",
   verification: {
     google: "gf0vDAPS9U-Eb_qc6b9U7wDyKs04Ptlk8u3Z5WZmL2c",
   },
   keywords: [
     "vol pas cher alerte",
+    "alerte vol Telegram",
     "deal vol aller-retour",
+    "deal vol aller simple",
+    "combo malin vols",
     "erreur de prix vol",
     "alerte voyage telegram",
     "bons plans voyage",
@@ -39,7 +42,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Globe Genius — Vols à Prix Cassés | Alertes Telegram temps réel",
     description:
-      "Détection des vols aller-retour à prix anormalement bas sur 9 aéroports français. Alertes Telegram dès qu'un deal est confirmé.",
+      "Détection en temps réel des vols à prix anormalement bas (aller-retour, aller simple, combos 2 billets) depuis 9 aéroports français. Alertes Telegram dès qu'un deal est confirmé.",
     url: "https://globegenius.app",
     siteName: "Globe Genius",
     images: [
@@ -57,7 +60,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Globe Genius — Vols à Prix Cassés",
     description:
-      "Détection de vols aller-retour à prix anormalement bas. Alertes Telegram temps réel. 9 aéroports français.",
+      "Détection des vols à prix cassés (A/R, aller simple, combos malins). Alertes Telegram temps réel. 9 aéroports français.",
     images: ["https://globegenius.app/opengraph-image"],
     creator: "@globegenius",
   },
@@ -103,7 +106,7 @@ export default function RootLayout({
                 height: 512,
               },
               description:
-                "Globe Genius détecte les vols aller-retour à prix anormalement bas sur les 9 aéroports français. Alertes Telegram dès qu\u2019une anomalie est confirmée.",
+                "Globe Genius détecte les vols à prix anormalement bas (aller-retour, aller simple, combos 2 billets) sur les 9 aéroports français. Alertes Telegram dès qu\u2019une anomalie est confirmée.",
               sameAs: ["https://t.me/Globegenius_bot"],
               contactPoint: {
                 "@type": "ContactPoint",
@@ -124,7 +127,7 @@ export default function RootLayout({
               name: "Globe Genius",
               url: "https://globegenius.app",
               description:
-                "Deals vols à prix cassés. Vols aller-retour avec anomalies de prix confirmées, alertes Telegram.",
+                "Deals vols à prix cassés (aller-retour, aller simple, combos 2 billets) avec anomalies de prix confirmées, alertes Telegram.",
               inLanguage: "fr-FR",
               publisher: { "@id": "https://globegenius.app/#organization" },
             }),
