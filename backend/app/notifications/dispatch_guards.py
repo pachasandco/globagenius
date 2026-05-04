@@ -20,6 +20,15 @@ Two leviers, applied in order at the per-user × per-destination level
 Deals filtered out by either levier are NOT discarded — they remain in
 qualified_items and surface on /home so the user can browse them on
 demand. Only the Telegram push is suppressed.
+
+Both guards fail open on legacy rows that lack price/discount_pct
+(pre-migration 037). Rationale: those columns were added the same day
+as the guards, and at deploy time every existing sent_alerts row was
+NULL on both. Failing closed would silently block all alerts for any
+active user with recent history — exactly the regression we observed
+on the first run after deploy. Failing open means the guards become
+progressively effective as new (populated) rows accumulate, with full
+coverage after 24h (Levier 2) and 7 days (Levier 1).
 """
 from __future__ import annotations
 
@@ -77,10 +86,11 @@ def levier_1_destination_cooldown_blocks(
 
     previous_price = rows[0].get("price")
     if previous_price is None:
-        # Legacy row from before migration 037 — we don't know the prior
-        # price, so we can't evaluate the drop. Be conservative and block
-        # (otherwise legacy users would get spammed during the rollout).
-        return True
+        # Legacy row from before migration 037 — no prior price to compare
+        # against. Fail open: the guard simply doesn't apply to that row.
+        # Worst case the user gets one duplicate alert; once new rows land
+        # with price populated, the guard becomes effective naturally.
+        return False
 
     if new_price < float(previous_price) * SIGNIFICANT_DROP_RATIO:
         return False  # significant drop → push allowed
@@ -137,21 +147,16 @@ def levier_2_daily_cap_blocks(
         return False  # fail open
 
     sent = resp.data or []
-    if len(sent) < DAILY_ALERT_CAP:
-        return False  # under cap → allow
+    # Only count rows we can actually compare against (have discount_pct).
+    # Legacy rows pre-migration 037 are ignored: the guard simply doesn't
+    # see them, which means it's progressively effective as new rows land.
+    countable = [r for r in sent if r.get("discount_pct") is not None]
+    if len(countable) < DAILY_ALERT_CAP:
+        return False  # under cap (counting only comparable rows) → allow
 
     # At cap or over. Check the exceptional-deal exception:
     # is the new discount ≥10 points above the worst already sent?
-    discounts = [
-        float(r["discount_pct"])
-        for r in sent
-        if r.get("discount_pct") is not None
-    ]
-    if not discounts:
-        # All historical rows lack discount_pct (pre-migration 037).
-        # Fail closed once we hit the cap with no comparison data —
-        # otherwise the cap is meaningless during the rollout window.
-        return True
+    discounts = [float(r["discount_pct"]) for r in countable]
     min_sent = min(discounts)
     if new_discount_pct >= min_sent + EXCEPTIONAL_DISCOUNT_GAP:
         return False  # exceptional improvement → allow
