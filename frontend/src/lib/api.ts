@@ -118,7 +118,19 @@ export function updatePreferences(userId: string, prefs: {
   });
 }
 
-export async function cancelSubscription(): Promise<{
+export type CancellationReason =
+  | "too_expensive"
+  | "too_few_alerts"
+  | "too_many_alerts"
+  | "travelling_less"
+  | "found_better"
+  | "bugs"
+  | "other"
+  | "no_answer";
+
+export async function cancelSubscription(
+  survey?: { reason: CancellationReason; feedback?: string }
+): Promise<{
   ok: boolean;
   had_subscription: boolean;
   cancelled: boolean;
@@ -130,6 +142,7 @@ export async function cancelSubscription(): Promise<{
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
+    body: survey ? JSON.stringify(survey) : undefined,
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

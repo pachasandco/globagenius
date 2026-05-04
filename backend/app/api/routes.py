@@ -2239,8 +2239,52 @@ def _cancel_stripe_subscription_for_user(user_id: str) -> dict:
     return result
 
 
+_VALID_CANCEL_REASONS = {
+    "too_expensive",
+    "too_few_alerts",
+    "too_many_alerts",
+    "travelling_less",
+    "found_better",
+    "bugs",
+    "other",
+    "no_answer",
+}
+
+
+class CancelSubscriptionRequest(BaseModel):
+    """Optional reason + free-form feedback collected from the cancellation
+    survey. Both fields are optional so an empty body still cancels — we
+    don't want to block users who refuse to answer."""
+
+    reason: str | None = None
+    feedback: str | None = None
+
+    @field_validator("reason")
+    @classmethod
+    def _check_reason(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if v not in _VALID_CANCEL_REASONS:
+            raise ValueError(f"reason must be one of {sorted(_VALID_CANCEL_REASONS)}")
+        return v
+
+    @field_validator("feedback")
+    @classmethod
+    def _trim_feedback(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        # Cap at 500 chars to match the textarea limit on the frontend.
+        return v[:500]
+
+
 @router.post("/api/users/me/cancel-subscription", status_code=200)
-def cancel_subscription_self(current_user: dict = Depends(get_current_user)):
+def cancel_subscription_self(
+    body: CancelSubscriptionRequest | None = None,
+    current_user: dict = Depends(get_current_user),
+):
     """User-initiated subscription cancellation.
 
     Reuses _cancel_stripe_subscription_for_user(). The user's account
@@ -2249,6 +2293,12 @@ def cancel_subscription_self(current_user: dict = Depends(get_current_user)):
     webhook turns into is_premium=False — so the user keeps premium
     until the end of their paid period (Stripe behaviour) but no new
     invoice is generated.
+
+    The optional body captures the cancellation survey answers (reason,
+    free-form feedback). They're persisted to cancellation_reasons even
+    when Stripe says had_subscription=False — losing the feedback
+    because Stripe is in a weird state would be worse than the small
+    risk of a duplicate row.
 
     Idempotent: calling it on a free user returns 200 with
     had_subscription=False. A Stripe error returns 502 so the frontend
@@ -2259,6 +2309,24 @@ def cancel_subscription_self(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=401, detail="auth missing")
 
     result = _cancel_stripe_subscription_for_user(user_id)
+
+    # Persist the survey answer regardless of the Stripe outcome. We
+    # care about the signal even if the Stripe call later fails, and we
+    # certainly don't want to throw away the feedback because of a
+    # network blip on Stripe's side.
+    if body and body.reason and db:
+        try:
+            db.table("cancellation_reasons").insert({
+                "user_id": user_id,
+                "reason": body.reason,
+                "feedback": body.feedback,
+                "was_premium": result["had_subscription"],
+                "subscription_id": result.get("subscription_id"),
+            }).execute()
+        except Exception as e:
+            # Non-blocking: we don't want a survey insert failure to
+            # prevent the user from cancelling.
+            logger.warning(f"Failed to persist cancellation reason for {user_id}: {e}")
 
     if result["had_subscription"] and not result["cancelled"]:
         # Stripe is supposed to have cancelled the sub but didn't.
