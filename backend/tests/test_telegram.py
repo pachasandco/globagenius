@@ -486,3 +486,123 @@ def test_format_grouped_flight_two_origins_only_still_shows_per_offer_origin():
     assert "2 aéroports" in msg
     assert "via CDG" in msg
     assert "via ORY" in msg
+
+
+# ── 2026-05 credibility safeguard tests ────────────────────────────────────
+
+
+def test_grouped_alert_shows_aviasales_confirmed_when_tp_cross_check_passed():
+    """When every offer carries `price_confidence='confirmed_tp'`, the
+    alert prints "✅ Prix Aviasales confirmé" — the strongest claim the
+    pipeline can support."""
+    from app.notifications.telegram import format_grouped_flight_alerts
+    offers = [{
+        "departure_date": "2026-09-01", "return_date": "2026-09-10",
+        "price": 120, "discount_pct": 35,
+        "price_confidence": "confirmed_tp",
+        "baseline_sample_count": 40,
+    }]
+    msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers,
+                                       tier="premium")
+    assert "Prix Aviasales confirmé" in msg
+    assert "Prix indicatif" not in msg
+
+
+def test_grouped_alert_shows_indicatif_when_only_single_source():
+    """When any offer comes from a single-source confirmation (TP had no
+    data for the route/dates), the alert hedges with "🔍 Prix indicatif"
+    instead of promising a price we can't fully back."""
+    from app.notifications.telegram import format_grouped_flight_alerts
+    offers = [{
+        "departure_date": "2026-09-01", "return_date": "2026-09-10",
+        "price": 120, "discount_pct": 35,
+        "price_confidence": "single_source",
+        "baseline_sample_count": 40,
+    }]
+    msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers,
+                                       tier="premium")
+    assert "Prix indicatif" in msg
+    assert "Prix Aviasales confirmé" not in msg
+
+
+def test_grouped_alert_falls_back_to_vol_verifie_when_no_confidence_metadata():
+    """Legacy callers that don't plumb price_confidence through still get
+    the previous "✅ Vol vérifié" copy — backward compatibility for any
+    code path or test that hasn't been updated."""
+    from app.notifications.telegram import format_grouped_flight_alerts
+    offers = [{
+        "departure_date": "2026-09-01", "return_date": "2026-09-10",
+        "price": 120, "discount_pct": 35,
+    }]
+    msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers,
+                                       tier="premium")
+    assert "Vol vérifié" in msg
+
+
+def test_grouped_alert_caps_badge_when_baseline_is_young():
+    """A 65% discount based on a baseline with only 6 observations is a
+    statistical artefact more than a real bargain. The badge caps at
+    "Promo flash" so the alert doesn't promise -65% on thin evidence."""
+    from app.notifications.telegram import format_grouped_flight_alerts
+    offers = [{
+        "departure_date": "2026-09-01", "return_date": "2026-09-10",
+        "price": 50, "discount_pct": 65,
+        "price_confidence": "confirmed_tp",
+        "baseline_sample_count": 6,  # young baseline
+    }]
+    msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers,
+                                       tier="premium")
+    assert "🟡" in msg            # Promo flash badge
+    assert "🔴" not in msg         # Erreur de prix suppressed
+    assert "Erreur de prix" not in msg
+
+
+def test_grouped_alert_drops_discount_pct_when_baseline_is_young():
+    """The "-XX %" claim requires a defensible baseline. With <15
+    observations we keep the absolute price prominent but drop the
+    savings-percentage advertisement."""
+    from app.notifications.telegram import format_grouped_flight_alerts
+    offers = [{
+        "departure_date": "2026-09-01", "return_date": "2026-09-10",
+        "price": 50, "discount_pct": 65,
+        "price_confidence": "confirmed_tp",
+        "baseline_sample_count": 6,
+    }]
+    msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers,
+                                       tier="premium")
+    assert "50 € A/R" in msg
+    assert "-65 %" not in msg
+
+
+def test_grouped_alert_uses_softer_baseline_label_when_young():
+    """"Prix habituel" implies stable history. With young baselines we
+    say "Prix observé récemment" — accurate (we did see the price) but
+    no longer claiming a habitual market reference."""
+    from app.notifications.telegram import format_grouped_flight_alerts
+    offers = [{
+        "departure_date": "2026-09-01", "return_date": "2026-09-10",
+        "price": 50, "discount_pct": 35,
+        "baseline_price": 100,
+        "price_confidence": "confirmed_tp",
+        "baseline_sample_count": 7,
+    }]
+    msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers,
+                                       tier="premium")
+    assert "Prix observé récemment" in msg
+    assert "Prix habituel" not in msg
+
+
+def test_grouped_alert_keeps_full_badge_with_mature_baseline():
+    """Mature baseline (>= 15 observations) keeps the full badge ladder:
+    a 65% discount stays "🔴 Erreur de prix"."""
+    from app.notifications.telegram import format_grouped_flight_alerts
+    offers = [{
+        "departure_date": "2026-09-01", "return_date": "2026-09-10",
+        "price": 50, "discount_pct": 65,
+        "price_confidence": "confirmed_tp",
+        "baseline_sample_count": 30,
+    }]
+    msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers,
+                                       tier="premium")
+    assert "🔴" in msg
+    assert "Erreur de prix" in msg

@@ -44,18 +44,41 @@ def test_reverify_returns_true_when_price_decreased():
         assert asyncio.run(reverify_flight_price(flight)) is True
 
 
-def test_reverify_returns_true_within_5_pct_tolerance():
+def test_reverify_returns_true_within_3_pct_tolerance():
+    """Tightened from 5% to 3% (2026-05) so the Telegram alert never
+    promises a price the user can't see: a 5% gap on a 100€ fare
+    means a 5€ surprise on click; 3% caps it at ~3€."""
     flight = _flight(price=100.0)
     with patch("app.scraper.reverify.get_prices_for_dates",
-               return_value=[_api_entry(105)]):
+               return_value=[_api_entry(103)]):
         assert asyncio.run(reverify_flight_price(flight)) is True
 
 
-def test_reverify_returns_false_above_5_pct_tolerance():
+def test_reverify_returns_false_above_3_pct_tolerance():
     flight = _flight(price=100.0)
     with patch("app.scraper.reverify.get_prices_for_dates",
-               return_value=[_api_entry(106)]):
+               return_value=[_api_entry(104)]):
         assert asyncio.run(reverify_flight_price(flight)) is False
+
+
+def test_reverify_sets_confirmed_tp_confidence_on_tp_match():
+    """When TP confirms the price, the flight dict is annotated with
+    `_price_confidence='confirmed_tp'` so the Telegram formatter can
+    surface "✅ Prix Aviasales confirmé"."""
+    flight = _flight(price=100.0)
+    with patch("app.scraper.reverify.get_prices_for_dates",
+               return_value=[_api_entry(100)]):
+        assert asyncio.run(reverify_flight_price(flight)) is True
+    assert flight.get("_price_confidence") == "confirmed_tp"
+
+
+def test_reverify_no_confidence_flag_when_rejected():
+    """A rejected reverify never sets a confidence flag (the flight
+    won't be dispatched, so the formatter never reads it)."""
+    flight = _flight(price=100.0)
+    with patch("app.scraper.reverify.get_prices_for_dates", return_value=[]):
+        assert asyncio.run(reverify_flight_price(flight)) is False
+    assert "_price_confidence" not in flight
 
 
 def test_reverify_returns_false_when_flight_disappeared():

@@ -422,6 +422,14 @@ async def _analyze_new_flights(flights: list[dict]):
             # Propagate qualification_method for downstream click-tracking
             # analytics (CTR breakdown by qualification path).
             flight["_qualification_method"] = qualification_method or "unknown"
+            # 2026-05 credibility safeguard: the dispatcher needs to know
+            # how mature the baseline behind this deal is, so the
+            # Telegram formatter can soften the "Prix habituel" framing
+            # and the badge ladder when the discount % is supported by
+            # very few observations. `_price_confidence` is set by
+            # reverify_flight_price() and tells us whether a second
+            # source confirmed the price the user will see on click.
+            flight["_baseline_sample_count"] = int(baseline.get("sample_count") or 0)
             qualified_flights.append((flight, anomaly, tier))
 
     logger.info(f"Analyze pipeline counters: {counters}")
@@ -956,6 +964,14 @@ async def _dispatch_grouped_flight_alerts(
                         # downgrade the badge for leadprice-only sources
                         # (vueling_direct / ryanair_direct).
                         "source": flight.get("source", ""),
+                        # 2026-05 credibility safeguard: the formatter
+                        # uses these to choose between "✅ Prix Aviasales
+                        # confirmé" (high confidence, two sources agree)
+                        # and "🔍 Prix indicatif" (single source). It
+                        # also softens the "Prix habituel" framing when
+                        # the baseline is too young to claim it.
+                        "price_confidence": flight.get("_price_confidence", "single_source"),
+                        "baseline_sample_count": flight.get("_baseline_sample_count", 0),
                         "booking_url": build_aviasales_url(
                             flight["origin"],
                             flight["destination"],
