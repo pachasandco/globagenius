@@ -318,10 +318,31 @@ async def _analyze_new_flights(flights: list[dict]):
             counters["rejected_low_discount_or_z"] += 1
             continue
 
-        # Real-time re-verification — reject silently if the deal is gone
+        # Real-time re-verification — reject silently if the deal is gone.
+        # Reverify may also mutate flight["price"] upwards when a Vueling
+        # leadprice estimate is below what Travelpayouts actually quotes
+        # for the same A/R; recompute the anomaly so the qualified_item
+        # row stores the accurate price (and so a borderline 65% deal
+        # doesn't get filed as 75%).
+        price_before_reverify = flight["price"]
         if not await reverify_flight_price(flight):
             counters["rejected_reverify"] += 1
             continue
+        if flight["price"] != price_before_reverify:
+            avg = baseline.get("avg_price") or 0
+            std = baseline.get("std_dev") or 0
+            new_price = float(flight["price"])
+            new_discount = (avg - new_price) / avg * 100 if avg > 0 else 0
+            new_z = (avg - new_price) / std if std > 0 else anomaly.z_score
+            anomaly.price = round(new_price, 2)
+            anomaly.discount_pct = round(new_discount, 2)
+            anomaly.z_score = round(new_z, 2)
+            # If the upward adjustment dropped the deal under our
+            # qualification floor, drop it. Otherwise keep it but with
+            # the corrected numbers.
+            if anomaly.discount_pct < 15 and anomaly.z_score < 1.5:
+                counters["rejected_reverify"] += 1
+                continue
 
         counters["qualified"] += 1
 

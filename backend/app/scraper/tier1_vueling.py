@@ -148,19 +148,21 @@ def get_calendar_fares(
             continue
 
         # Calendar endpoint returns ONE-WAY fares per day. Treat them as
-        # such by approximating the round-trip price as 2× the one-way
-        # leg. This is intentionally a lower bound — the actual return
-        # leg can be more expensive than the outbound, but it's almost
-        # never cheaper at Vueling's lowest-fare-of-day band. Without
-        # this, we used to ship the one-way price as a fake A/R and
-        # mislead users into thinking 30€ Paris-Ibiza A/R existed when
-        # the real A/R was closer to 100€. Reverify still reconciles
-        # against Travelpayouts so any remaining over-estimate is
-        # caught at qualification time, not in the alert.
+        # such by approximating the round-trip price.
+        #
+        # Multiplier observation (May 2026): Vueling's lowest fare class
+        # is asymmetric — the return leg from southern destinations to
+        # Paris is on average ~10–20% more expensive than the outbound,
+        # because Paris-bound demand is steadier. A flat 2.0× tended to
+        # underprice round-trips (e.g. 76€ in Telegram vs 94€ Ryanair on
+        # Aviasales for the same dates). 2.2× brings the estimate in
+        # line with what users actually see at booking time, while still
+        # being conservative enough that we don't suppress real deals.
+        # Refine later by airline pair if we get more data.
         ret_dt = dep_dt + timedelta(days=7)
         ret_date = ret_dt.strftime("%Y-%m-%d")
         trip_duration_days = 7
-        round_trip_price = round(price * 2.0, 2)
+        round_trip_price = round(price * 2.2, 2)
 
         raw = {
             "price": round_trip_price,

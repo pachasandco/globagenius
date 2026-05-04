@@ -117,23 +117,30 @@ def _reverify_via_vueling(
 def _reverify_via_travelpayouts(
     origin: str, destination: str, departure_date: str, return_date: str | None,
     initial_price: float, tolerance_pct: float = PRICE_TOLERANCE_PCT,
-) -> bool | None:
+) -> tuple[bool | None, float | None]:
     """Cross-check the live A/R price via Travelpayouts.
 
-    Returns True if TP confirms a fare close to `initial_price` for the
-    same dates, False if TP returns prices that are too high (>
-    tolerance), None if TP returned nothing for that route. Used as a
-    sanity gate behind the calendar-based Tier 1 endpoints, which
-    expose ONE-WAY prices and can mislead the pipeline if their A/R
-    extrapolation is off.
+    Returns a tuple `(verdict, cheapest_match)`:
+      - verdict True if TP confirms a fare close to `initial_price`,
+        False if TP returns prices that are too high (> tolerance),
+        None if TP returned nothing for that route.
+      - cheapest_match: the cheapest TP fare matching the dates, or
+        None when no match was found.
+
+    Used as a sanity gate behind the calendar-based Tier 1 endpoints,
+    which expose ONE-WAY prices and can mislead the pipeline if their
+    A/R extrapolation is off. The cheapest_match is exposed so the
+    caller can adopt the more accurate TP price when it's higher than
+    our Tier 1 estimate (still within tolerance) — that way the
+    Telegram alert quotes the price the user actually sees on click.
     """
     try:
         results = get_prices_for_dates(origin, destination)
     except Exception as e:
         logger.warning(f"TP cross-check {origin}->{destination}: {e}")
-        return None
+        return None, None
     if not results:
-        return None
+        return None, None
     max_acceptable = initial_price * (1.0 + tolerance_pct / 100.0)
     cheapest_match: float | None = None
     for entry in results:
@@ -147,8 +154,8 @@ def _reverify_via_travelpayouts(
         if cheapest_match is None or live_price < cheapest_match:
             cheapest_match = live_price
     if cheapest_match is None:
-        return None
-    return cheapest_match <= max_acceptable
+        return None, None
+    return cheapest_match <= max_acceptable, cheapest_match
 
 
 async def reverify_flight_price(flight: dict) -> bool:
@@ -204,17 +211,38 @@ async def reverify_flight_price(flight: dict) -> bool:
                 # Cross-check against Travelpayouts to confirm the live
                 # A/R matches what the user will see on Aviasales.
                 if result and source == "vueling_direct" and tag == "Vueling":
-                    tp_check = _reverify_via_travelpayouts(
+                    # Wider tolerance for the cross-check: we don't want
+                    # to reject a deal just because TP quotes 18% higher
+                    # than our Vueling 2.2× estimate — we want to keep
+                    # the deal but adopt the more accurate TP price.
+                    # Reject only if TP says it's 50%+ more expensive,
+                    # which means our estimate was way off and the user
+                    # would feel cheated.
+                    _, tp_cheapest = _reverify_via_travelpayouts(
                         origin, destination, departure_date, return_date, initial_price,
+                        tolerance_pct=50.0,
                     )
-                    if tp_check is False:
+                    if tp_cheapest is not None and tp_cheapest > initial_price * 1.5:
                         logger.info(
                             f"Reverify Vueling {origin}->{destination} {departure_date}: "
-                            f"OK at source but REJECTED by Travelpayouts cross-check "
-                            f"(initial={initial_price}€)"
+                            f"OK at source but REJECTED — TP quotes {tp_cheapest}€ vs "
+                            f"our {initial_price}€ estimate (>+50%)"
                         )
                         return False
-                    # tp_check is True (TP confirms) or None (TP can't say) — keep the OK.
+                    # If TP returns a higher (but plausible) price than
+                    # our 2.2× estimate, adopt it. The user will see the
+                    # exact price we promise. We only bump up, never
+                    # down, so we don't turn a real bargain into a
+                    # non-deal because TP happens to surface a stale
+                    # cheaper fare.
+                    if tp_cheapest is not None and tp_cheapest > initial_price:
+                        flight["price"] = round(tp_cheapest, 2)
+                        flight["_price_source"] = "tp_cross_check"
+                        logger.info(
+                            f"Reverify Vueling {origin}->{destination} {departure_date}: "
+                            f"price adjusted from {initial_price}€ to {tp_cheapest}€ "
+                            f"per Travelpayouts cross-check"
+                        )
                 if result:
                     logger.info(f"Reverify {tag} {origin}->{destination} {departure_date}: OK")
                 else:
