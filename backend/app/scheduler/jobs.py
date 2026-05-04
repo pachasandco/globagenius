@@ -209,6 +209,7 @@ async def _analyze_new_flights(flights: list[dict]):
     # Temporary instrumentation: count rejections at each filter step
     counters = {
         "total": len(flights),
+        "rejected_vueling_source": 0,
         "rejected_no_bucket": 0,
         "rejected_stops": 0,
         "rejected_no_baseline": 0,
@@ -228,6 +229,18 @@ async def _analyze_new_flights(flights: list[dict]):
         # don't stall during big analyze passes.
         if idx % 10 == 9:
             await asyncio.sleep(0)
+
+        # 2026-05-04: Vueling's calendar API exposes ghost fares — prices
+        # for itineraries that don't exist on their own booking site. We
+        # already excluded Vueling from baselines; here we also stop using
+        # their rows as deal candidates. Verified failure: ORY-ALC 19-26
+        # Aug at 87€ (Vueling API) → 286-322$ (Ryanair/Transavia/Vueling
+        # on Aviasales) → "resource not found" on Vueling's own site.
+        # Rows still get scraped + stored for future audit; only the
+        # qualification path skips them.
+        if flight.get("source") == "vueling_direct":
+            counters["rejected_vueling_source"] += 1
+            continue
 
         # Bucket lookup based on trip duration
         days = flight.get("trip_duration_days") or 0
@@ -428,6 +441,10 @@ async def _dispatch_velocity_alerts(flights: list[dict]):
     Uses the same grouped dispatch and dedup logic as the normal pipeline."""
     if not db or not flights:
         return
+
+    # Skip Vueling — see _analyze_new_flights for the rationale (ghost
+    # fares on their calendar API).
+    flights = [f for f in flights if f.get("source") != "vueling_direct"]
 
     # Re-verify each flight before dispatching
     verified: list[tuple[dict, object, str]] = []
