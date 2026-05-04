@@ -1122,6 +1122,13 @@ async def job_recalculate_baselines():
     # (inserted before the trip_duration_days migration) have NULL and are
     # useless for bucket baselines, so we filter them out at the source.
     # We also page through up to 10k rows to cover the full 30-day window.
+    #
+    # Vueling rows are excluded from the baseline corpus: their prices on
+    # the same route/dates oscillate massively intra-day (we saw a single
+    # CDG→MAD 18-25 May go 434→869→956→289→421 within hours), poisoning
+    # the median and producing fake "high" baselines that turn ordinary
+    # fares into apparent -56% deals. Vueling fares still get scraped for
+    # the deal-detection pipeline, but they no longer set the reference.
     flights_data: list[dict] = []
     page_size = 1000
     for offset in range(0, 10000, page_size):
@@ -1130,6 +1137,7 @@ async def job_recalculate_baselines():
             .select("origin, destination, price, scraped_at, trip_duration_days, stops, duration_minutes, departure_date")
             .gte("scraped_at", thirty_days_ago)
             .not_.is_("trip_duration_days", "null")
+            .neq("source", "vueling_direct")
             .order("scraped_at", desc=True)
             .range(offset, offset + page_size - 1)
             .execute()

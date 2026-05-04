@@ -211,13 +211,19 @@ async def reverify_flight_price(flight: dict) -> bool:
                 # Cross-check against Travelpayouts to confirm the live
                 # A/R matches what the user will see on Aviasales.
                 if result and source == "vueling_direct" and tag == "Vueling":
-                    # Wider tolerance for the cross-check: we don't want
-                    # to reject a deal just because TP quotes 18% higher
-                    # than our Vueling 2.2× estimate — we want to keep
-                    # the deal but adopt the more accurate TP price.
-                    # Reject only if TP says it's 50%+ more expensive,
-                    # which means our estimate was way off and the user
-                    # would feel cheated.
+                    # Cross-check against Travelpayouts. Two-sided gate:
+                    # - if TP is materially HIGHER than our estimate
+                    #   (>+50%), our 2.2× extrapolation was way off →
+                    #   reject; the user would land on a price they'd
+                    #   feel was misleading.
+                    # - if TP is materially LOWER than our estimate
+                    #   (-30% or more), we'd be advertising a deal that
+                    #   isn't actually a deal — the user clicks and
+                    #   immediately sees a much cheaper fare on
+                    #   Aviasales. Reject too. This caught a real
+                    #   incident on 2026-05-04: alert dispatched at
+                    #   422€ when TP showed 294€ for the same route/
+                    #   dates, with Wizz at 122€ on Aviasales.
                     _, tp_cheapest = _reverify_via_travelpayouts(
                         origin, destination, departure_date, return_date, initial_price,
                         tolerance_pct=50.0,
@@ -229,12 +235,20 @@ async def reverify_flight_price(flight: dict) -> bool:
                             f"our {initial_price}€ estimate (>+50%)"
                         )
                         return False
+                    if tp_cheapest is not None and tp_cheapest < initial_price * 0.70:
+                        logger.info(
+                            f"Reverify Vueling {origin}->{destination} {departure_date}: "
+                            f"OK at source but REJECTED — TP cheaper at {tp_cheapest}€ vs "
+                            f"our {initial_price}€ (-{round((1 - tp_cheapest/initial_price)*100)}%); "
+                            f"user would land on a much cheaper fare"
+                        )
+                        return False
                     # If TP returns a higher (but plausible) price than
                     # our 2.2× estimate, adopt it. The user will see the
                     # exact price we promise. We only bump up, never
                     # down, so we don't turn a real bargain into a
-                    # non-deal because TP happens to surface a stale
-                    # cheaper fare.
+                    # non-deal because TP happens to surface a slightly
+                    # cheaper fare (the under-30% gap kept above).
                     if tp_cheapest is not None and tp_cheapest > initial_price:
                         flight["price"] = round(tp_cheapest, 2)
                         flight["_price_source"] = "tp_cross_check"
