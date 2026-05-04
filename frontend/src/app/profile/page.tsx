@@ -828,14 +828,14 @@ export default function ProfilePage() {
           <div className="mb-12">
             <h2 className="text-xl font-semibold mb-1">Niveau de promo</h2>
             <p className="text-gray-400 text-sm mb-6">
-              À partir de quel niveau de réduction souhaitez-vous être alerté&nbsp;? Plus vous montez, moins vous recevez d&apos;alertes — mais celles que vous recevez sont exceptionnelles.
+              À partir de quel niveau de réduction souhaitez-vous être alerté&nbsp;? Plus vous montez, moins vous recevez d&apos;alertes — mais celles que vous recevez sont exceptionnelles. Dans tous les cas, on plafonne à 3 alertes par jour pour ne pas saturer votre Telegram (les long-courriers ne comptent pas dans ce plafond).
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {[
-                { value: 40 as const, label: "À partir de -40%", desc: "Tous les bons plans détectés (cadence normale).", icon: "📊" },
-                { value: 50 as const, label: "À partir de -50%", desc: "Seulement les très bonnes affaires.", icon: "🔥" },
-                { value: 60 as const, label: "À partir de -60%", desc: "Uniquement les perles rares (erreurs de prix).", icon: "💎" },
+                { value: 40 as const, label: "À partir de -40%", desc: "~2-3 alertes/jour. Tous les bons plans détectés.", icon: "📊" },
+                { value: 50 as const, label: "À partir de -50%", desc: "~1-2 alertes/jour. Sélectif, on garde les très bonnes affaires.", icon: "🔥" },
+                { value: 60 as const, label: "À partir de -60%", desc: "0-1 alerte/jour. Que les vraies pépites (erreurs de prix).", icon: "💎" },
               ].map((opt) => {
                 const selected = minDiscount === opt.value;
                 return (
