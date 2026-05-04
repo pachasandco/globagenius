@@ -626,6 +626,15 @@ async def _dispatch_grouped_flight_alerts(
     #   }
     pending_by_user_dest: dict[tuple[str, str], dict] = {}
 
+    # V10 — in-run cap tracker for Levier 2. The DB-backed sent_alerts
+    # query inside levier_2_daily_cap_blocks() can't see alerts we're
+    # about to upsert later in the same flush loop, so on the first run
+    # after deploy we sent 3 alerts (MAD/FAO/BCN) to the same user
+    # simultaneously: each one independently saw "0 in last 24h". This
+    # dict stays in memory for the duration of the dispatch and feeds
+    # the guard so it counts pending in-run alerts as already-sent.
+    dispatched_discounts_in_run_by_user: dict[str, list[float]] = {}
+
     # V9 in-memory free-lane counters: (user_id) -> {"daily": int, "weekly": int}
     # Initialised from DB at sub-time, decremented as we accept candidates so
     # the cap holds across multiple subs (origins) for the same user in one
@@ -1040,6 +1049,7 @@ async def _dispatch_grouped_flight_alerts(
         if uid and levier_2_daily_cap_blocks(
             db=db, user_id=uid, destination=grp_dest,
             new_discount_pct=best_discount,
+            pending_in_run_discounts=dispatched_discounts_in_run_by_user.get(uid),
         ):
             logger.info(
                 f"V10 dispatch blocked (L2 24h cap): "
@@ -1078,6 +1088,8 @@ async def _dispatch_grouped_flight_alerts(
                     f"for user {uid}"
                 )
                 dispatched_this_run[(uid or "", grp_dest)] = bucket["best_price"]
+                if uid:
+                    dispatched_discounts_in_run_by_user.setdefault(uid, []).append(best_discount)
         except Exception as e:
             logger.warning(f"V8.2 merged dispatch failed for {uid}/{grp_dest}: {e}")
             success = False
@@ -1535,6 +1547,13 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
     fresh_cutoff = (now - timedelta(hours=24)).isoformat()
     history_cutoff = (now - timedelta(days=ONEWAY_MEDIAN_LOOKBACK_DAYS)).isoformat()
 
+    # V10 — in-run cap tracker for Levier 2. The DB-backed sent_alerts
+    # query inside levier_2_daily_cap_blocks() can't see alerts we're
+    # about to upsert later in the same loop. Without this, three
+    # qualified one-way candidates for the same user would each
+    # independently see "0 in last 24h" and all three would go through.
+    dispatched_discounts_in_run_by_user: dict[str, list[float]] = {}
+
     # Fetch users who opted in to one_way alerts (single round-trip).
     opt_in_subs: list[dict] = []
     try:
@@ -1690,6 +1709,7 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
             if sub_user_id and levier_2_daily_cap_blocks(
                 db=db, user_id=sub_user_id, destination=travel_dest,
                 new_discount_pct=float(qualification.discount_pct or 0),
+                pending_in_run_discounts=dispatched_discounts_in_run_by_user.get(sub_user_id),
             ):
                 continue
 
@@ -1763,6 +1783,10 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                 )
                 if sent_ok:
                     dispatched += 1
+                    if sub_user_id:
+                        dispatched_discounts_in_run_by_user.setdefault(sub_user_id, []).append(
+                            float(qualification.discount_pct or 0)
+                        )
             except Exception as e:
                 logger.warning(
                     f"One-way alert send failed user={sub_user_id}: {e}"
@@ -1816,6 +1840,10 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
     fresh_cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     destinations = get_priority_destinations(max_count=80, db=db)
     combos_dispatched = 0
+
+    # V10 — in-run cap tracker for Levier 2 (split-ticket variant).
+    # See _detect_and_dispatch_oneway_alerts for the rationale.
+    dispatched_discounts_in_run_by_user: dict[str, list[float]] = {}
 
     # Pre-fetch users who opted in to split-ticket combos.
     # A combo is conceptually an A/R (just sold as 2 separate tickets), so
@@ -1952,6 +1980,7 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                 if sub_user_id and levier_2_daily_cap_blocks(
                     db=db, user_id=sub_user_id, destination=dest,
                     new_discount_pct=float(combo_savings_pct or 0),
+                    pending_in_run_discounts=dispatched_discounts_in_run_by_user.get(sub_user_id),
                 ):
                     continue
 
@@ -2011,6 +2040,10 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                     )
                     if sent_ok:
                         combos_dispatched += 1
+                        if sub_user_id:
+                            dispatched_discounts_in_run_by_user.setdefault(sub_user_id, []).append(
+                                float(combo_savings_pct or 0)
+                            )
                 except Exception as e:
                     logger.warning(
                         f"Split-ticket alert failed user={sub_user_id}: {e}"

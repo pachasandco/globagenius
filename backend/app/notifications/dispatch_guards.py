@@ -110,6 +110,7 @@ def levier_2_daily_cap_blocks(
     user_id: str,
     destination: str,
     new_discount_pct: float,
+    pending_in_run_discounts: list[float] | None = None,
     now: datetime | None = None,
 ) -> bool:
     """Return True if levier 2 says this alert should NOT be pushed.
@@ -122,6 +123,14 @@ def levier_2_daily_cap_blocks(
 
     Notification-only filter: counted alerts include only flight rows
     (no teasers, no system messages — see allowed_alert_types below).
+
+    pending_in_run_discounts: discount_pct values for alerts already
+    dispatched to *this user* earlier in the current dispatch run.
+    Required because sent_alerts is read at the top of the function and
+    won't yet reflect rows we're about to upsert in the same loop. On
+    2026-05-04 the guard let through 3 simultaneous alerts for the same
+    user (MAD/FAO/BCN) because all three saw "0 in the last 24h" — the
+    in-run counter closes that hole.
     """
     if not db:
         return False
@@ -150,14 +159,22 @@ def levier_2_daily_cap_blocks(
     # Only count rows we can actually compare against (have discount_pct).
     # Legacy rows pre-migration 037 are ignored: the guard simply doesn't
     # see them, which means it's progressively effective as new rows land.
-    countable = [r for r in sent if r.get("discount_pct") is not None]
-    if len(countable) < DAILY_ALERT_CAP:
+    countable_discounts = [
+        float(r["discount_pct"]) for r in sent
+        if r.get("discount_pct") is not None
+    ]
+    # Add the in-run pending discounts (alerts dispatched to this user
+    # earlier in the current loop). They count against the cap exactly
+    # like persisted rows.
+    if pending_in_run_discounts:
+        countable_discounts.extend(float(d) for d in pending_in_run_discounts)
+
+    if len(countable_discounts) < DAILY_ALERT_CAP:
         return False  # under cap (counting only comparable rows) → allow
 
     # At cap or over. Check the exceptional-deal exception:
     # is the new discount ≥10 points above the worst already sent?
-    discounts = [float(r["discount_pct"]) for r in countable]
-    min_sent = min(discounts)
+    min_sent = min(countable_discounts)
     if new_discount_pct >= min_sent + EXCEPTIONAL_DISCOUNT_GAP:
         return False  # exceptional improvement → allow
     return True  # cap reached, not exceptional → block
