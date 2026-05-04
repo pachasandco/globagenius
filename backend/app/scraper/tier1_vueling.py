@@ -147,15 +147,23 @@ def get_calendar_fares(
         except ValueError:
             continue
 
-        # Calendar endpoint is one-way per day. Approximate return at +7d
-        # so the row fits the round-trip pipeline schema. Real return is
-        # reconciled later via Travelpayouts when both legs match.
+        # Calendar endpoint returns ONE-WAY fares per day. Treat them as
+        # such by approximating the round-trip price as 2× the one-way
+        # leg. This is intentionally a lower bound — the actual return
+        # leg can be more expensive than the outbound, but it's almost
+        # never cheaper at Vueling's lowest-fare-of-day band. Without
+        # this, we used to ship the one-way price as a fake A/R and
+        # mislead users into thinking 30€ Paris-Ibiza A/R existed when
+        # the real A/R was closer to 100€. Reverify still reconciles
+        # against Travelpayouts so any remaining over-estimate is
+        # caught at qualification time, not in the alert.
         ret_dt = dep_dt + timedelta(days=7)
         ret_date = ret_dt.strftime("%Y-%m-%d")
         trip_duration_days = 7
+        round_trip_price = round(price * 2.0, 2)
 
         raw = {
-            "price": price,
+            "price": round_trip_price,
             "currency": "EUR",
             "origin": origin,
             "destination": destination,

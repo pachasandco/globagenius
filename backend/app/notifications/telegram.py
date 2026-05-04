@@ -163,10 +163,24 @@ def format_admin_report(stats: dict) -> str:
     return "\n".join(lines)
 
 
-def _deal_badge(discount_pct: float) -> str:
-    if discount_pct >= 60:
+def _deal_badge(discount_pct: float, sources: set[str] | None = None) -> str:
+    """Return the deal-tier badge shown at the top of an alert.
+
+    `sources` is the set of raw_flights.source values backing the offer.
+    When all backing rows come from a single Tier 1 leadprice source
+    (`vueling_direct`, `ryanair_direct`), we cap the badge at "Deal rare"
+    even past the 60% threshold — those endpoints expose one-way
+    leadprices, and their A/R extrapolation is approximate. The
+    "Erreur de prix" label is reserved for deals confirmed by at least
+    two independent sources (Travelpayouts + at least one direct
+    endpoint), or by Travelpayouts alone (which scrapes real A/R).
+    """
+    leadprice_only_sources = {"vueling_direct", "ryanair_direct"}
+    is_leadprice_only = bool(sources) and sources.issubset(leadprice_only_sources)
+
+    if discount_pct >= 60 and not is_leadprice_only:
         return "🔴 Erreur de prix"
-    if discount_pct >= 45:
+    if discount_pct >= 45 or (discount_pct >= 60 and is_leadprice_only):
         return "🟠 Deal rare"
     if discount_pct >= 30:
         return "🟡 Promo flash"
@@ -568,7 +582,11 @@ def format_grouped_flight_alerts(
     remaining = total - len(shown)
 
     max_discount = max(o.get("discount_pct", 0) for o in shown)
-    badge = _deal_badge(max_discount)
+    # Pass the underlying sources so leadprice-only Tier 1 deals don't
+    # get the "Erreur de prix" label (they're one-way prices doubled,
+    # which can diverge from the real A/R Aviasales shows on click).
+    sources_in_offer = {o.get("source", "") for o in shown if o.get("source")}
+    badge = _deal_badge(max_discount, sources=sources_in_offer)
 
     from app.config import iata_label
 

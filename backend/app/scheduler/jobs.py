@@ -905,6 +905,10 @@ async def _dispatch_grouped_flight_alerts(
                         # Propagate the qualification path so click tracking
                         # can break CTR down by zscore_* vs fallback_discount.
                         "qualification_method": flight.get("_qualification_method"),
+                        # Propagate source so the Telegram formatter can
+                        # downgrade the badge for leadprice-only sources
+                        # (vueling_direct / ryanair_direct).
+                        "source": flight.get("source", ""),
                         "booking_url": build_aviasales_url(
                             flight["origin"],
                             flight["destination"],

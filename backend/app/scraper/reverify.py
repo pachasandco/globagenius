@@ -114,6 +114,43 @@ def _reverify_via_vueling(
         return None
 
 
+def _reverify_via_travelpayouts(
+    origin: str, destination: str, departure_date: str, return_date: str | None,
+    initial_price: float, tolerance_pct: float = PRICE_TOLERANCE_PCT,
+) -> bool | None:
+    """Cross-check the live A/R price via Travelpayouts.
+
+    Returns True if TP confirms a fare close to `initial_price` for the
+    same dates, False if TP returns prices that are too high (>
+    tolerance), None if TP returned nothing for that route. Used as a
+    sanity gate behind the calendar-based Tier 1 endpoints, which
+    expose ONE-WAY prices and can mislead the pipeline if their A/R
+    extrapolation is off.
+    """
+    try:
+        results = get_prices_for_dates(origin, destination)
+    except Exception as e:
+        logger.warning(f"TP cross-check {origin}->{destination}: {e}")
+        return None
+    if not results:
+        return None
+    max_acceptable = initial_price * (1.0 + tolerance_pct / 100.0)
+    cheapest_match: float | None = None
+    for entry in results:
+        if entry.get("departure_at", "")[:10] != departure_date:
+            continue
+        if return_date and entry.get("return_at", "")[:10] != return_date:
+            continue
+        live_price = float(entry.get("price") or 0)
+        if live_price <= 0:
+            continue
+        if cheapest_match is None or live_price < cheapest_match:
+            cheapest_match = live_price
+    if cheapest_match is None:
+        return None
+    return cheapest_match <= max_acceptable
+
+
 async def reverify_flight_price(flight: dict) -> bool:
     """Return True if the deal is still valid, False otherwise.
 
@@ -121,6 +158,13 @@ async def reverify_flight_price(flight: dict) -> bool:
     then falls back to Travelpayouts if both return None (not covered).
 
     For Tier 2 routes: uses Travelpayouts only (unchanged behaviour).
+
+    For Vueling Tier 1 in particular, the calendar endpoint exposes
+    one-way leadprices that we double to estimate an A/R. To catch
+    cases where the estimate diverges from the real Aviasales market
+    price (which is what the user lands on after clicking), we add a
+    second-source cross-check against Travelpayouts. A mismatch >
+    PRICE_TOLERANCE_PCT against the live TP A/R rejects the deal.
 
     Any unrecoverable API error returns False."""
     origin = flight["origin"]
@@ -155,6 +199,22 @@ async def reverify_flight_price(flight: dict) -> bool:
             else:
                 continue
             if result is not None:
+                # For Vueling fares, do NOT trust the same-source calendar
+                # alone — it confirms the leadprice we already saw.
+                # Cross-check against Travelpayouts to confirm the live
+                # A/R matches what the user will see on Aviasales.
+                if result and source == "vueling_direct" and tag == "Vueling":
+                    tp_check = _reverify_via_travelpayouts(
+                        origin, destination, departure_date, return_date, initial_price,
+                    )
+                    if tp_check is False:
+                        logger.info(
+                            f"Reverify Vueling {origin}->{destination} {departure_date}: "
+                            f"OK at source but REJECTED by Travelpayouts cross-check "
+                            f"(initial={initial_price}€)"
+                        )
+                        return False
+                    # tp_check is True (TP confirms) or None (TP can't say) — keep the OK.
                 if result:
                     logger.info(f"Reverify {tag} {origin}->{destination} {departure_date}: OK")
                 else:
