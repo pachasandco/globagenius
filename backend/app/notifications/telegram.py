@@ -561,7 +561,7 @@ def format_grouped_flight_alerts(
     - Destination + count at top (scannable)
     - Price isolated and prominent in each offer line
     - Deal qualification tags (EXCELLENT/BON/CLASSIQUE)
-    - Simplified CTAs (Voir le vol, Voir les hôtels)
+    - Single CTA per offer (Voir le deal)
     - Urgency signals (scarcity, frequency)
 
     offers: list of dicts with keys:
@@ -574,7 +574,6 @@ def format_grouped_flight_alerts(
       - booking_url (optional, default empty string → no CTA line)
     """
     from app.config import settings
-    from app.notifications.booking import build_booking_url
 
     total = len(offers)
     sorted_by_discount = sorted(offers, key=lambda o: o.get("discount_pct", 0), reverse=True)
@@ -666,16 +665,9 @@ def format_grouped_flight_alerts(
                     tracked = _add_utms(booking_url, origin_iata or "", destination_iata)
                 lines.append(f"   👉 [Voir le deal]({tracked})")
 
-            # Hotel CTA for high-value deals
-            if disc >= 40:
-                hotel_url = build_booking_url(
-                    dest_city,
-                    o["departure_date"],
-                    o["return_date"],
-                    marker=settings.TRAVELPAYOUTS_MARKER or None,
-                )
-                hotel_tracked = _add_utms(hotel_url, origin_iata or "", destination_iata)
-                lines.append(f"   🏨 [Voir les hôtels]({hotel_tracked})")
+            # Hotel CTA removed: it cluttered alerts and the Booking
+            # affiliation revenue was negligible vs the noise it added
+            # to the message.
 
             lines.append("")
 
