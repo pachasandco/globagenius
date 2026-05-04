@@ -83,7 +83,6 @@ DESTINATION_UNIVERSE = [
     ("VNO", "Vilnius", "europe"),
     # ── Îles Atlantique / Canaries ──
     ("TFS", "Tenerife", "iles"),
-    ("PMI", "Majorque", "iles"),
     ("LPA", "Las Palmas (Grande Canarie)", "iles"),
     ("FUE", "Fuerteventura", "iles"),
     ("ACE", "Lanzarote", "iles"),
@@ -92,6 +91,7 @@ DESTINATION_UNIVERSE = [
     # ── Maghreb / Méditerranée Sud ──
     ("RAK", "Marrakech", "maghreb"),
     ("CMN", "Casablanca", "maghreb"),
+    ("AGA", "Agadir", "maghreb"),
     ("TUN", "Tunis", "maghreb"),
     ("CAI", "Le Caire", "maghreb"),
     ("SSH", "Charm el-Cheikh", "maghreb"),
@@ -118,6 +118,10 @@ DESTINATION_UNIVERSE = [
     ("PTP", "Pointe-à-Pitre (Guadeloupe)", "caraibes"),
     ("FDF", "Fort-de-France (Martinique)", "caraibes"),
     ("SJU", "San Juan (Porto Rico)", "caraibes"),
+    ("HAV", "La Havane (Cuba)", "caraibes"),
+    ("VRA", "Varadero (Cuba)", "caraibes"),
+    ("SDQ", "Saint-Domingue", "caraibes"),
+    ("POP", "Puerto Plata", "caraibes"),
     # ── Amérique du Sud ──
     ("GIG", "Rio de Janeiro", "amerique_sud"),
     ("GRU", "São Paulo", "amerique_sud"),
@@ -138,10 +142,17 @@ DESTINATION_UNIVERSE = [
     ("DPS", "Bali", "asie"),
     ("DEL", "New Delhi", "asie"),
     ("BOM", "Mumbai", "asie"),
-    # ── Océanie ──
+    ("SGN", "Hô Chi Minh-Ville (Vietnam)", "asie"),
+    ("HAN", "Hanoï (Vietnam)", "asie"),
+    ("CGK", "Jakarta", "asie"),
+    ("MNL", "Manille", "asie"),
+    ("CMB", "Colombo (Sri Lanka)", "asie"),
+    # ── Océanie + Pacifique ──
     ("SYD", "Sydney", "oceanie"),
     ("MEL", "Melbourne", "oceanie"),
     ("AKL", "Auckland", "oceanie"),
+    ("PPT", "Tahiti (Papeete)", "oceanie"),
+    ("NOU", "Nouméa", "oceanie"),
     # ── Océan Indien ──
     ("MLE", "Maldives", "ocean_indien"),
     ("MRU", "Maurice", "ocean_indien"),
@@ -154,6 +165,9 @@ DESTINATION_UNIVERSE = [
     ("NBO", "Nairobi", "afrique"),
     ("DKR", "Dakar", "afrique"),
     ("ABJ", "Abidjan", "afrique"),
+    ("TNR", "Antananarivo (Madagascar)", "afrique"),
+    # ── Guyane ──
+    ("CAY", "Cayenne (Guyane)", "dom_tom"),
 ]
 
 # IATA → label mapping for quick lookups
@@ -236,21 +250,24 @@ def _score_destination(
 # even though they're exactly the routes premium users want most.
 LONG_HAUL_GUARANTEED = [
     # Amérique du Nord
-    "JFK", "EWR", "MIA", "LAX", "SFO", "YUL", "YYZ", "MEX", "CUN",
-    # Caraïbes
-    "PUJ", "PTP", "FDF",
+    "JFK", "EWR", "MIA", "LAX", "SFO", "YUL", "YYZ", "YVR", "MEX", "CUN",
+    # Caraïbes (les français y vont surtout en hiver / vacances scolaires)
+    "PUJ", "PTP", "FDF", "HAV", "VRA", "SDQ", "POP", "SXM",
     # Amérique du Sud
     "GIG", "GRU", "EZE", "SCL", "BOG", "LIM",
     # Asie
-    "BKK", "NRT", "HND", "ICN", "HKG", "SIN", "KUL", "DEL", "BOM", "DPS",
-    # Océanie
-    "SYD",
+    "BKK", "HKT", "NRT", "HND", "KIX", "ICN", "HKG", "SIN", "KUL",
+    "DEL", "BOM", "DPS", "SGN", "HAN", "CGK", "MNL", "CMB",
+    # Océanie + Pacifique
+    "SYD", "MEL", "AKL", "PPT", "NOU",
     # Océan Indien
     "MLE", "MRU", "RUN", "ZNZ", "SEZ",
     # Afrique
-    "JNB", "CPT", "NBO",
+    "JNB", "CPT", "NBO", "TNR",
     # Moyen-Orient
-    "DXB", "DOH",
+    "DXB", "DOH", "AUH",
+    # Guyane (DOM)
+    "CAY",
 ]
 
 
