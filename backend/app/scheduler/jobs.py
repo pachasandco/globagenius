@@ -1012,6 +1012,41 @@ async def _dispatch_grouped_flight_alerts(
         origin_city = iata_label(best_origin)
         dest_city = iata_label(grp_dest)
 
+        # ── V10 dispatch guards (alert fatigue mitigation) ──────────────
+        # Levier 1: same-destination cooldown (7d) with significant-drop
+        # override (<70% of last alerted price). Levier 2: rolling 24h cap
+        # of 3 push notifications per user, with long-haul bypass and an
+        # exceptional-discount exception (+10pts above the min in window).
+        # When a guard blocks, the deal stays in qualified_items (visible
+        # on /home) but no Telegram push is sent.
+        from app.notifications.dispatch_guards import (
+            levier_1_destination_cooldown_blocks,
+            levier_2_daily_cap_blocks,
+        )
+
+        best_offer = offers[0]  # already sorted: best discount first
+        best_price = float(best_offer.get("price") or 0)
+        best_discount = float(best_offer.get("discount_pct") or 0)
+
+        if uid and levier_1_destination_cooldown_blocks(
+            db=db, user_id=uid, destination=grp_dest, new_price=best_price,
+        ):
+            logger.info(
+                f"V10 dispatch blocked (L1 dest cooldown): "
+                f"user={uid} dest={grp_dest} price={best_price}€"
+            )
+            continue
+
+        if uid and levier_2_daily_cap_blocks(
+            db=db, user_id=uid, destination=grp_dest,
+            new_discount_pct=best_discount,
+        ):
+            logger.info(
+                f"V10 dispatch blocked (L2 24h cap): "
+                f"user={uid} dest={grp_dest} discount={best_discount}%"
+            )
+            continue
+
         # V9 destination pages: lazily generate the destination guide before
         # the very first alert to this dest. Synchronous (~30-60s on cold
         # path). Subsequent alerts to the same dest = no-op. If generation
@@ -1051,6 +1086,9 @@ async def _dispatch_grouped_flight_alerts(
             # V9: tag the alert_key with the free-tier lane prefix when
             # applicable so the next run's count queries can find it.
             # Premium rows keep the bare hash key.
+            # V10: persist price + discount_pct so the dispatch guards
+            # (Levier 1 / Levier 2) on the next run can read history
+            # without joining qualified_items.
             rows = []
             for k in keys_to_store:
                 lane = free_lane_by_key.get(k)
@@ -1061,6 +1099,8 @@ async def _dispatch_grouped_flight_alerts(
                     "alert_key": stored_key,
                     "destination": grp_dest,
                     "alert_type": "flight",
+                    "price": best_price,
+                    "discount_pct": best_discount,
                 })
             try:
                 db.table("sent_alerts").upsert(
@@ -1627,6 +1667,24 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                 continue
             chat_id = sub["telegram_chat_id"]
             sub_user_id = sub.get("user_id")
+
+            # V10 dispatch guards (alert fatigue): same destination cooldown
+            # + 24h cap. travel_dest is what the user actually flies to.
+            from app.notifications.dispatch_guards import (
+                levier_1_destination_cooldown_blocks,
+                levier_2_daily_cap_blocks,
+            )
+            if sub_user_id and levier_1_destination_cooldown_blocks(
+                db=db, user_id=sub_user_id, destination=travel_dest,
+                new_price=float(qualification.price or 0),
+            ):
+                continue
+            if sub_user_id and levier_2_daily_cap_blocks(
+                db=db, user_id=sub_user_id, destination=travel_dest,
+                new_discount_pct=float(qualification.discount_pct or 0),
+            ):
+                continue
+
             # Per-user dedup + click-tracking key.
             from app.notifications.dedup import compute_oneway_alert_key
             alert_key = (
@@ -1713,8 +1771,13 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                             "user_id": sub_user_id,
                             "chat_id": chat_id,
                             "alert_key": alert_key,
-                            "destination": destination,
+                            # Use travel_dest (where the user actually goes)
+                            # so the L1 cooldown groups one-way alerts on the
+                            # same city as round-trip alerts.
+                            "destination": travel_dest,
                             "alert_type": "one_way",
+                            "price": float(qualification.price or 0),
+                            "discount_pct": float(qualification.discount_pct or 0),
                         },
                         on_conflict="user_id,alert_key",
                     ).execute()
@@ -1866,6 +1929,24 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                     continue
                 chat_id = sub["telegram_chat_id"]
                 sub_user_id = sub.get("user_id")
+
+                # V10 dispatch guards (alert fatigue): same destination
+                # cooldown + 24h cap.
+                from app.notifications.dispatch_guards import (
+                    levier_1_destination_cooldown_blocks,
+                    levier_2_daily_cap_blocks,
+                )
+                if sub_user_id and levier_1_destination_cooldown_blocks(
+                    db=db, user_id=sub_user_id, destination=dest,
+                    new_price=float(combo.total or 0),
+                ):
+                    continue
+                if sub_user_id and levier_2_daily_cap_blocks(
+                    db=db, user_id=sub_user_id, destination=dest,
+                    new_discount_pct=float(combo_savings_pct or 0),
+                ):
+                    continue
+
                 alert_key = (
                     compute_split_ticket_alert_key(
                         user_id=sub_user_id,
@@ -1928,6 +2009,8 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                     )
 
                 # V9: persist sent_alerts row to power dedup + audit.
+                # V10: also persist price + discount_pct so the dispatch
+                # guards on the next run can read history for L1 / L2.
                 if sent_ok and sub_user_id and alert_key:
                     try:
                         db.table("sent_alerts").upsert(
@@ -1937,6 +2020,8 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                                 "alert_key": alert_key,
                                 "destination": dest,
                                 "alert_type": "split_ticket",
+                                "price": float(combo.total or 0),
+                                "discount_pct": float(combo_savings_pct or 0),
                             },
                             on_conflict="user_id,alert_key",
                         ).execute()
