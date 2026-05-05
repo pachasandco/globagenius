@@ -101,7 +101,16 @@ def levier_1_destination_cooldown_blocks(
 
 DAILY_ALERT_CAP = 3
 DAILY_CAP_WINDOW_HOURS = 24
-EXCEPTIONAL_DISCOUNT_GAP = 10.0  # +10 points above current min in window
+# A 4th alert is allowed past the cap when its discount beats the BEST
+# (highest) discount already alerted in the window by this many points.
+# Comparing against the MAX (not the MIN) keeps the bar genuinely high:
+# once a great alert has fired, every subsequent exception must beat it.
+EXCEPTIONAL_DISCOUNT_GAP = 10.0
+# Hard ceiling on exceptional bypasses per rolling 24h. Without this,
+# even a "must beat the max" rule would let an arbitrarily long sequence
+# of monotonically increasing discounts slip through. With ceiling=1,
+# the worst case is DAILY_ALERT_CAP + 1 = 4 alerts per user per 24h.
+EXCEPTIONAL_BYPASS_CEILING = 1
 
 
 def levier_2_daily_cap_blocks(
@@ -115,11 +124,14 @@ def levier_2_daily_cap_blocks(
 ) -> bool:
     """Return True if levier 2 says this alert should NOT be pushed.
 
-    The cap is 3 alerts per rolling 24h. Two bypasses:
-      - long-haul destinations always pass (rare, high-value deals)
-      - a 4th+ alert is also allowed when its discount is ≥10 points
-        above the *minimum* discount of the alerts already counted in
-        the window (exceptional deal that interrupts even past the cap)
+    The cap is `DAILY_ALERT_CAP` alerts per rolling 24h. Two bypasses:
+      - long-haul destinations always pass (rare, high-value deals).
+      - past the cap, a single "exceptional" alert is allowed when its
+        discount exceeds the BEST already-sent discount in the window
+        by at least `EXCEPTIONAL_DISCOUNT_GAP` points. The bypass is
+        capped by `EXCEPTIONAL_BYPASS_CEILING`, so worst case the user
+        receives `DAILY_ALERT_CAP + EXCEPTIONAL_BYPASS_CEILING` alerts
+        in any 24h window.
 
     Notification-only filter: counted alerts include only flight rows
     (no teasers, no system messages — see allowed_alert_types below).
@@ -131,6 +143,14 @@ def levier_2_daily_cap_blocks(
     2026-05-04 the guard let through 3 simultaneous alerts for the same
     user (MAD/FAO/BCN) because all three saw "0 in the last 24h" — the
     in-run counter closes that hole.
+
+    Bug history (2026-05-05): the previous version compared the new
+    discount against `min(countable_discounts) + EXCEPTIONAL_DISCOUNT_GAP`.
+    Once one ≥40% alert had fired, the threshold stayed anchored to the
+    lowest discount in the window (e.g. 30%), making "min+10 = 40%" the
+    permanent floor — every subsequent ≥40% alert slipped through with
+    no upper bound. Switching to `max(...)` plus the hard ceiling closes
+    that leak.
     """
     if not db:
         return False
@@ -172,9 +192,19 @@ def levier_2_daily_cap_blocks(
     if len(countable_discounts) < DAILY_ALERT_CAP:
         return False  # under cap (counting only comparable rows) → allow
 
-    # At cap or over. Check the exceptional-deal exception:
-    # is the new discount ≥10 points above the worst already sent?
-    min_sent = min(countable_discounts)
-    if new_discount_pct >= min_sent + EXCEPTIONAL_DISCOUNT_GAP:
-        return False  # exceptional improvement → allow
+    # At cap or over. Hard ceiling first: if we're already past
+    # DAILY_ALERT_CAP + EXCEPTIONAL_BYPASS_CEILING, block unconditionally.
+    # This guarantees a deterministic worst case regardless of how
+    # discounts are distributed in the window.
+    if len(countable_discounts) >= DAILY_ALERT_CAP + EXCEPTIONAL_BYPASS_CEILING:
+        return True
+
+    # Otherwise check the exceptional-deal exception: the new discount
+    # must beat the BEST already-sent discount by EXCEPTIONAL_DISCOUNT_GAP
+    # points. Comparing against the MAX (not the MIN) keeps the bar
+    # high — once one outstanding deal lands, only a strictly better
+    # one can interrupt the user past the cap.
+    max_sent = max(countable_discounts)
+    if new_discount_pct >= max_sent + EXCEPTIONAL_DISCOUNT_GAP:
+        return False  # exceptional improvement over the best → allow
     return True  # cap reached, not exceptional → block
