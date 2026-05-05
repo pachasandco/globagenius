@@ -122,6 +122,45 @@ EXCEPTIONAL_DISCOUNT_GAP = 10.0
 # ceiling=1, the worst case is DAILY_ALERT_CAP + 1 = 4 short-haul alerts
 # per user per 24h. Long-haul has no exception path at all.
 EXCEPTIONAL_BYPASS_CEILING = 1
+# Granularity (minutes) for collapsing sent_alerts rows that belong to the
+# same Telegram message. The dispatcher writes ONE row per offer-key for
+# the 168h dedup, but a grouped alert containing N offers is still ONE
+# notification event. Counting rows would let a single 3-offer message
+# saturate the cap by itself, which is exactly the "radio silence" bug
+# we observed on 2026-05-05. 5 min is wide enough to absorb a slow
+# dispatch run, narrow enough that two genuinely distinct messages
+# don't collapse.
+MESSAGE_BUCKET_MINUTES = 5
+
+
+def _message_bucket_key(row: dict, minutes: int = MESSAGE_BUCKET_MINUTES) -> tuple[str, str] | None:
+    """Group sent_alerts rows that belong to the same Telegram message.
+
+    A grouped flight alert flushes N offers per (user, destination)
+    bucket and writes N sent_alerts rows — one per offer's alert_key
+    so the 168h dedup query can find each future re-emission. From
+    L2's perspective those N rows represent ONE notification event.
+    Two rows share a "message" when they share `destination` and fall
+    in the same `minutes`-wide window of `created_at`.
+
+    Returns None when the row lacks `created_at` or `destination`. The
+    caller treats those rows as their own bucket (legacy fail-open
+    contract: never silently swallow rows we can't classify).
+    """
+    dest = row.get("destination") or ""
+    created = row.get("created_at")
+    if not created or not dest:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(created).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    bucketed = dt.replace(
+        minute=(dt.minute // minutes) * minutes,
+        second=0,
+        microsecond=0,
+    )
+    return (dest, bucketed.isoformat())
 
 
 def levier_2_daily_cap_blocks(
@@ -157,28 +196,34 @@ def levier_2_daily_cap_blocks(
     Notification-only filter: counted alerts include only flight rows
     (no teasers, no system messages — see allowed_alert_types below).
 
+    Multi-row dedup: a grouped alert containing N offers writes N rows
+    to `sent_alerts` (one per offer key). Without dedup, a single
+    3-offer message saturates DAILY_ALERT_CAP by itself, producing
+    radio silence for 24h. We collapse rows sharing
+    `(destination, created_at-rounded-to-MESSAGE_BUCKET_MINUTES)`
+    before binning, so every grouped alert counts as exactly one
+    notification event.
+
     pending_in_run_alerts: list of `{"discount_pct": float,
     "destination": str}` dicts for alerts already dispatched to *this*
-    user earlier in the current dispatch run. Required because
-    sent_alerts is read at the top of the function and won't yet
-    reflect rows we're about to upsert in the same loop. On 2026-05-04
-    the guard let through 3 simultaneous alerts for the same user
-    (MAD/FAO/BCN) because all three saw "0 in the last 24h" — the
-    in-run counter closes that hole.
+    user earlier in the current dispatch run. Each successful
+    Telegram send appends ONE entry, so this list is already
+    one-per-message — no dedup needed on this side.
 
     Bug history
     -----------
-    - 2026-05-05: the previous version compared the new discount
-      against `min(countable_discounts) + EXCEPTIONAL_DISCOUNT_GAP`.
+    - 2026-05-05 (cap leak): the previous version compared the new
+      discount against `min(countable_discounts) + EXCEPTIONAL_GAP`.
       Once one ≥40% alert had fired, the threshold stayed anchored to
-      the lowest discount in the window (e.g. 30%), making "min+10 =
-      40%" the permanent floor — every subsequent ≥40% alert slipped
-      through with no upper bound. Switching to `max(...)` plus the
-      hard ceiling closed that leak.
-    - 2026-05-05: long-haul previously bypassed the cap entirely
-      (`if is_long_haul(destination): return False`). Replaced by a
-      dedicated `LONG_HAUL_DAILY_CAP` to honour the user-set "max 2
-      long-haul / 24h" preference.
+      the lowest discount in the window, letting subsequent ≥40%
+      alerts slip through with no upper bound. Fixed by comparing
+      against MAX and adding the hard ceiling.
+    - 2026-05-05 (long-haul bypass): long-haul previously bypassed
+      the cap entirely. Replaced by `LONG_HAUL_DAILY_CAP`.
+    - 2026-05-05 (multi-row inflation): each grouped alert wrote N
+      rows for N offers, and L2 counted rows. A single 3-offer
+      message could saturate the cap. Fixed by collapsing rows on
+      `(destination, MESSAGE_BUCKET_MINUTES bucket)` before binning.
     """
     if not db:
         return False
@@ -192,7 +237,7 @@ def levier_2_daily_cap_blocks(
     try:
         resp = (
             db.table("sent_alerts")
-            .select("discount_pct,destination")
+            .select("discount_pct,destination,created_at")
             .eq("user_id", user_id)
             .in_("alert_type", allowed_alert_types)
             .gte("created_at", cutoff)
@@ -202,14 +247,33 @@ def levier_2_daily_cap_blocks(
         return False  # fail open
 
     sent = resp.data or []
-    # Bin existing rows by destination class. Rows missing discount_pct
-    # are pre-migration 037 — they fail open (don't count), so the guard
-    # becomes progressively effective as fresh rows land.
-    short_haul_discounts: list[float] = []
-    long_haul_discounts: list[float] = []
+
+    # Collapse rows belonging to the same Telegram message into one
+    # entry. A grouped alert with 3 offers writes 3 rows, but L2
+    # counts notification events, not rows. Rows missing created_at
+    # or destination keep their own bucket (fail-open).
+    seen_buckets: set[tuple[str, str]] = set()
+    unique_messages: list[dict] = []
     for r in sent:
         if r.get("discount_pct") is None:
+            # Pre-migration 037 row, can't compare. Drop entirely so
+            # the guard becomes progressively effective as fresh rows
+            # land. (Pre-existing fail-open contract.)
             continue
+        bucket = _message_bucket_key(r)
+        if bucket is None:
+            # No usable created_at/destination → count this row alone.
+            unique_messages.append(r)
+            continue
+        if bucket in seen_buckets:
+            continue
+        seen_buckets.add(bucket)
+        unique_messages.append(r)
+
+    # Bin existing rows by destination class.
+    short_haul_discounts: list[float] = []
+    long_haul_discounts: list[float] = []
+    for r in unique_messages:
         d = float(r["discount_pct"])
         dest = r.get("destination") or ""
         if is_long_haul(dest):
@@ -218,8 +282,8 @@ def levier_2_daily_cap_blocks(
             short_haul_discounts.append(d)
 
     # Add the in-run pending alerts (dispatched to this user earlier in
-    # the current loop). They count against the cap exactly like
-    # persisted rows.
+    # the current loop). Already one-per-message — each successful send
+    # appends exactly one entry.
     if pending_in_run_alerts:
         for entry in pending_in_run_alerts:
             d = entry.get("discount_pct")
