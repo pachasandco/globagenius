@@ -27,9 +27,11 @@ from app.notifications.telegram import (
     send_digest,
     send_admin_report,
     send_admin_alert,
+    send_admin_markdown,
 )
 from app.api.routes import _get_user_tier
 from app.scraper.scraper_health_agent import run_scraper_health_check
+from app.analysis.baseline_maturity import compute_report as compute_maturity_report, format_for_telegram as format_maturity_for_telegram
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +98,18 @@ def get_scheduler_jobs() -> list[dict]:
             "func": job_daily_admin_report,
             "trigger": "cron",
             "hour": 9,
+        },
+        # ── BASELINE MATURITY : tous les lundis à 9h05 ──
+        # Score 0–100 + ETA chiffré pour savoir quand la baseline statistique
+        # est "production-ready" et que le tuning manuel cesse d'apporter de
+        # la valeur. Envoyé au chat admin Telegram.
+        {
+            "id": "weekly_baseline_maturity",
+            "func": job_weekly_baseline_maturity,
+            "trigger": "cron",
+            "day_of_week": "mon",
+            "hour": 9,
+            "minute": 5,
         },
         # ── TIER 1 : toutes les 20 min (CDG + ORY via endpoints directs LCC) ──
         # Ryanair + Transavia directs → données quasi temps-réel pour les routes chaudes.
@@ -1298,6 +1312,16 @@ async def job_daily_admin_report():
 
     if qual_rate < 5 and total_scraped > 0:
         await send_admin_alert(f"Taux qualification bas : {qual_rate}%")
+
+
+async def job_weekly_baseline_maturity():
+    report = compute_maturity_report()
+    if not report:
+        logger.warning("baseline maturity: no data")
+        return
+    msg = format_maturity_for_telegram(report)
+    await send_admin_markdown(msg)
+    logger.info(f"baseline maturity score: {report.score}/100 — ETA {report.eta_date}")
 
 
 async def job_scrape_tier1():

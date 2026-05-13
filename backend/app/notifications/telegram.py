@@ -922,3 +922,19 @@ async def send_admin_alert(message: str) -> bool:
     except Exception as e:
         logger.error(f"Failed to send admin alert: {e}")
         return False
+
+
+async def send_admin_markdown(message: str) -> bool:
+    bot = _get_bot()
+    if not bot or not settings.TELEGRAM_ADMIN_CHAT_ID:
+        return False
+    try:
+        await bot.send_message(
+            chat_id=int(settings.TELEGRAM_ADMIN_CHAT_ID),
+            text=message,
+            parse_mode="Markdown",
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send admin markdown: {e}")
+        return False
