@@ -209,6 +209,7 @@ async def _analyze_new_flights(flights: list[dict]):
     # Temporary instrumentation: count rejections at each filter step
     counters = {
         "total": len(flights),
+        "rejected_vueling_source": 0,
         "rejected_no_bucket": 0,
         "rejected_stops": 0,
         "rejected_no_baseline": 0,
@@ -228,6 +229,18 @@ async def _analyze_new_flights(flights: list[dict]):
         # don't stall during big analyze passes.
         if idx % 10 == 9:
             await asyncio.sleep(0)
+
+        # 2026-05-04: Vueling's calendar API exposes ghost fares — prices
+        # for itineraries that don't exist on their own booking site. We
+        # already excluded Vueling from baselines; here we also stop using
+        # their rows as deal candidates. Verified failure: ORY-ALC 19-26
+        # Aug at 87€ (Vueling API) → 286-322$ (Ryanair/Transavia/Vueling
+        # on Aviasales) → "resource not found" on Vueling's own site.
+        # Rows still get scraped + stored for future audit; only the
+        # qualification path skips them.
+        if flight.get("source") == "vueling_direct":
+            counters["rejected_vueling_source"] += 1
+            continue
 
         # Bucket lookup based on trip duration
         days = flight.get("trip_duration_days") or 0
@@ -318,10 +331,31 @@ async def _analyze_new_flights(flights: list[dict]):
             counters["rejected_low_discount_or_z"] += 1
             continue
 
-        # Real-time re-verification — reject silently if the deal is gone
+        # Real-time re-verification — reject silently if the deal is gone.
+        # Reverify may also mutate flight["price"] upwards when a Vueling
+        # leadprice estimate is below what Travelpayouts actually quotes
+        # for the same A/R; recompute the anomaly so the qualified_item
+        # row stores the accurate price (and so a borderline 65% deal
+        # doesn't get filed as 75%).
+        price_before_reverify = flight["price"]
         if not await reverify_flight_price(flight):
             counters["rejected_reverify"] += 1
             continue
+        if flight["price"] != price_before_reverify:
+            avg = baseline.get("avg_price") or 0
+            std = baseline.get("std_dev") or 0
+            new_price = float(flight["price"])
+            new_discount = (avg - new_price) / avg * 100 if avg > 0 else 0
+            new_z = (avg - new_price) / std if std > 0 else anomaly.z_score
+            anomaly.price = round(new_price, 2)
+            anomaly.discount_pct = round(new_discount, 2)
+            anomaly.z_score = round(new_z, 2)
+            # If the upward adjustment dropped the deal under our
+            # qualification floor, drop it. Otherwise keep it but with
+            # the corrected numbers.
+            if anomaly.discount_pct < 15 and anomaly.z_score < 1.5:
+                counters["rejected_reverify"] += 1
+                continue
 
         counters["qualified"] += 1
 
@@ -388,6 +422,14 @@ async def _analyze_new_flights(flights: list[dict]):
             # Propagate qualification_method for downstream click-tracking
             # analytics (CTR breakdown by qualification path).
             flight["_qualification_method"] = qualification_method or "unknown"
+            # 2026-05 credibility safeguard: the dispatcher needs to know
+            # how mature the baseline behind this deal is, so the
+            # Telegram formatter can soften the "Prix habituel" framing
+            # and the badge ladder when the discount % is supported by
+            # very few observations. `_price_confidence` is set by
+            # reverify_flight_price() and tells us whether a second
+            # source confirmed the price the user will see on click.
+            flight["_baseline_sample_count"] = int(baseline.get("sample_count") or 0)
             qualified_flights.append((flight, anomaly, tier))
 
     logger.info(f"Analyze pipeline counters: {counters}")
@@ -407,6 +449,10 @@ async def _dispatch_velocity_alerts(flights: list[dict]):
     Uses the same grouped dispatch and dedup logic as the normal pipeline."""
     if not db or not flights:
         return
+
+    # Skip Vueling — see _analyze_new_flights for the rationale (ghost
+    # fares on their calendar API).
+    flights = [f for f in flights if f.get("source") != "vueling_direct"]
 
     # Re-verify each flight before dispatching
     verified: list[tuple[dict, object, str]] = []
@@ -492,14 +538,14 @@ async def _dispatch_grouped_flight_alerts(
     try:
         prefs_resp = (
             db.table("user_preferences")
-            .select("user_id,telegram_chat_id,telegram_connected,airport_codes,alerts_paused_until,deal_tier,blocked_destinations,flight_trip_types")
+            .select("user_id,telegram_chat_id,telegram_connected,airport_codes,alerts_paused_until,deal_tier,blocked_destinations,flight_trip_types,min_discount")
             .eq("telegram_connected", True)
             .execute()
         )
         all_prefs = prefs_resp.data or []
     except Exception as e:
         err_msg = str(e)
-        if any(col in err_msg for col in ("alerts_paused_until", "deal_tier", "blocked_destinations", "flight_trip_types")):
+        if any(col in err_msg for col in ("alerts_paused_until", "deal_tier", "blocked_destinations", "flight_trip_types", "min_discount")):
             logger.warning("Migration not yet applied — fetching prefs without optional columns")
             try:
                 prefs_resp = (
@@ -604,6 +650,18 @@ async def _dispatch_grouped_flight_alerts(
     #     "best_origin": str,  # the origin of the cheapest offer (header reference)
     #   }
     pending_by_user_dest: dict[tuple[str, str], dict] = {}
+
+    # V10 — in-run cap tracker for Levier 2. The DB-backed sent_alerts
+    # query inside levier_2_daily_cap_blocks() can't see alerts we're
+    # about to upsert later in the same flush loop, so on the first run
+    # after deploy we sent 3 alerts (MAD/FAO/BCN) to the same user
+    # simultaneously: each one independently saw "0 in last 24h". This
+    # dict stays in memory for the duration of the dispatch and feeds
+    # the guard so it counts pending in-run alerts as already-sent.
+    # 2026-05-05: stores `{discount_pct, destination}` instead of just
+    # the discount, so the guard can bin in-run alerts into short-haul
+    # vs long-haul lanes (each has its own cap).
+    dispatched_alerts_in_run_by_user: dict[str, list[dict]] = {}
 
     # V9 in-memory free-lane counters: (user_id) -> {"daily": int, "weekly": int}
     # Initialised from DB at sub-time, decremented as we accept candidates so
@@ -905,6 +963,18 @@ async def _dispatch_grouped_flight_alerts(
                         # Propagate the qualification path so click tracking
                         # can break CTR down by zscore_* vs fallback_discount.
                         "qualification_method": flight.get("_qualification_method"),
+                        # Propagate source so the Telegram formatter can
+                        # downgrade the badge for leadprice-only sources
+                        # (vueling_direct / ryanair_direct).
+                        "source": flight.get("source", ""),
+                        # 2026-05 credibility safeguard: the formatter
+                        # uses these to choose between "✅ Prix Aviasales
+                        # confirmé" (high confidence, two sources agree)
+                        # and "🔍 Prix indicatif" (single source). It
+                        # also softens the "Prix habituel" framing when
+                        # the baseline is too young to claim it.
+                        "price_confidence": flight.get("_price_confidence", "single_source"),
+                        "baseline_sample_count": flight.get("_baseline_sample_count", 0),
                         "booking_url": build_aviasales_url(
                             flight["origin"],
                             flight["destination"],
@@ -987,6 +1057,42 @@ async def _dispatch_grouped_flight_alerts(
         origin_city = iata_label(best_origin)
         dest_city = iata_label(grp_dest)
 
+        # ── V10 dispatch guards (alert fatigue mitigation) ──────────────
+        # Levier 1: same-destination cooldown (7d) with significant-drop
+        # override (<70% of last alerted price). Levier 2: rolling 24h cap
+        # of 3 push notifications per user, with long-haul bypass and an
+        # exceptional-discount exception (+10pts above the min in window).
+        # When a guard blocks, the deal stays in qualified_items (visible
+        # on /home) but no Telegram push is sent.
+        from app.notifications.dispatch_guards import (
+            levier_1_destination_cooldown_blocks,
+            levier_2_daily_cap_blocks,
+        )
+
+        best_offer = offers[0]  # already sorted: best discount first
+        best_price = float(best_offer.get("price") or 0)
+        best_discount = float(best_offer.get("discount_pct") or 0)
+
+        if uid and levier_1_destination_cooldown_blocks(
+            db=db, user_id=uid, destination=grp_dest, new_price=best_price,
+        ):
+            logger.info(
+                f"V10 dispatch blocked (L1 dest cooldown): "
+                f"user={uid} dest={grp_dest} price={best_price}€"
+            )
+            continue
+
+        if uid and levier_2_daily_cap_blocks(
+            db=db, user_id=uid, destination=grp_dest,
+            new_discount_pct=best_discount,
+            pending_in_run_alerts=dispatched_alerts_in_run_by_user.get(uid),
+        ):
+            logger.info(
+                f"V10 dispatch blocked (L2 24h cap): "
+                f"user={uid} dest={grp_dest} discount={best_discount}%"
+            )
+            continue
+
         # V9 destination pages: lazily generate the destination guide before
         # the very first alert to this dest. Synchronous (~30-60s on cold
         # path). Subsequent alerts to the same dest = no-op. If generation
@@ -1018,6 +1124,10 @@ async def _dispatch_grouped_flight_alerts(
                     f"for user {uid}"
                 )
                 dispatched_this_run[(uid or "", grp_dest)] = bucket["best_price"]
+                if uid:
+                    dispatched_alerts_in_run_by_user.setdefault(uid, []).append(
+                        {"discount_pct": best_discount, "destination": grp_dest}
+                    )
         except Exception as e:
             logger.warning(f"V8.2 merged dispatch failed for {uid}/{grp_dest}: {e}")
             success = False
@@ -1026,6 +1136,9 @@ async def _dispatch_grouped_flight_alerts(
             # V9: tag the alert_key with the free-tier lane prefix when
             # applicable so the next run's count queries can find it.
             # Premium rows keep the bare hash key.
+            # V10: persist price + discount_pct so the dispatch guards
+            # (Levier 1 / Levier 2) on the next run can read history
+            # without joining qualified_items.
             rows = []
             for k in keys_to_store:
                 lane = free_lane_by_key.get(k)
@@ -1036,6 +1149,8 @@ async def _dispatch_grouped_flight_alerts(
                     "alert_key": stored_key,
                     "destination": grp_dest,
                     "alert_type": "flight",
+                    "price": best_price,
+                    "discount_pct": best_discount,
                 })
             try:
                 db.table("sent_alerts").upsert(
@@ -1057,6 +1172,13 @@ async def job_recalculate_baselines():
     # (inserted before the trip_duration_days migration) have NULL and are
     # useless for bucket baselines, so we filter them out at the source.
     # We also page through up to 10k rows to cover the full 30-day window.
+    #
+    # Vueling rows are excluded from the baseline corpus: their prices on
+    # the same route/dates oscillate massively intra-day (we saw a single
+    # CDG→MAD 18-25 May go 434→869→956→289→421 within hours), poisoning
+    # the median and producing fake "high" baselines that turn ordinary
+    # fares into apparent -56% deals. Vueling fares still get scraped for
+    # the deal-detection pipeline, but they no longer set the reference.
     flights_data: list[dict] = []
     page_size = 1000
     for offset in range(0, 10000, page_size):
@@ -1065,6 +1187,7 @@ async def job_recalculate_baselines():
             .select("origin, destination, price, scraped_at, trip_duration_days, stops, duration_minutes, departure_date")
             .gte("scraped_at", thirty_days_ago)
             .not_.is_("trip_duration_days", "null")
+            .neq("source", "vueling_direct")
             .order("scraped_at", desc=True)
             .range(offset, offset + page_size - 1)
             .execute()
@@ -1414,6 +1537,32 @@ async def job_scrape_oneway_flights():
         logger.warning(f"Split-ticket detection failed: {e}")
 
 
+def _user_passes_discount_floor(sub: dict, deal_discount_pct: float) -> bool:
+    """Return True if this user's premium min_discount allows this deal.
+
+    Free users have a fixed band policy and aren't subject to a per-user
+    floor — they get filtered earlier in the pipeline. Premium users
+    pick a floor (40 / 50 / 60); deals below that floor are dropped.
+
+    Used by both the one-way and split-ticket dispatchers so the
+    user-controlled threshold is enforced consistently across all
+    alert types (was previously only applied to round-trip flights —
+    that's how a user with min_discount=60 ended up receiving 45%
+    one-way alerts).
+    """
+    from app.thresholds import (
+        PREMIUM_DEFAULT_MIN_DISCOUNT,
+        PREMIUM_MIN_DISCOUNT_CHOICES,
+    )
+
+    raw = sub.get("min_discount")
+    if raw in PREMIUM_MIN_DISCOUNT_CHOICES:
+        floor = raw
+    else:
+        floor = PREMIUM_DEFAULT_MIN_DISCOUNT
+    return deal_discount_pct >= floor
+
+
 async def _detect_and_dispatch_oneway_alerts() -> None:
     """V5+ P1: scan recent one-way rows for standalone deals.
 
@@ -1436,12 +1585,21 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
     fresh_cutoff = (now - timedelta(hours=24)).isoformat()
     history_cutoff = (now - timedelta(days=ONEWAY_MEDIAN_LOOKBACK_DAYS)).isoformat()
 
+    # V10 — in-run cap tracker for Levier 2. The DB-backed sent_alerts
+    # query inside levier_2_daily_cap_blocks() can't see alerts we're
+    # about to upsert later in the same loop. Without this, three
+    # qualified one-way candidates for the same user would each
+    # independently see "0 in last 24h" and all three would go through.
+    # 2026-05-05: stores destinations alongside discounts so the guard
+    # can apply the short-haul vs long-haul caps independently.
+    dispatched_alerts_in_run_by_user: dict[str, list[dict]] = {}
+
     # Fetch users who opted in to one_way alerts (single round-trip).
     opt_in_subs: list[dict] = []
     try:
         prefs_resp = (
             db.table("user_preferences")
-            .select("user_id,telegram_chat_id,airport_codes,flight_trip_types,blocked_destinations")
+            .select("user_id,telegram_chat_id,airport_codes,flight_trip_types,blocked_destinations,min_discount")
             .eq("telegram_connected", True)
             .execute()
         )
@@ -1569,8 +1727,32 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
             travel_dest = destination if direction == "outbound" else origin
             if travel_dest in blocked:
                 continue
+            # Honour the per-user discount floor (40 / 50 / 60). Without
+            # this gate, premium users with min_discount=60 still receive
+            # 40% / 50% one-way deals.
+            if not _user_passes_discount_floor(sub, qualification.discount_pct):
+                continue
             chat_id = sub["telegram_chat_id"]
             sub_user_id = sub.get("user_id")
+
+            # V10 dispatch guards (alert fatigue): same destination cooldown
+            # + 24h cap. travel_dest is what the user actually flies to.
+            from app.notifications.dispatch_guards import (
+                levier_1_destination_cooldown_blocks,
+                levier_2_daily_cap_blocks,
+            )
+            if sub_user_id and levier_1_destination_cooldown_blocks(
+                db=db, user_id=sub_user_id, destination=travel_dest,
+                new_price=float(qualification.price or 0),
+            ):
+                continue
+            if sub_user_id and levier_2_daily_cap_blocks(
+                db=db, user_id=sub_user_id, destination=travel_dest,
+                new_discount_pct=float(qualification.discount_pct or 0),
+                pending_in_run_alerts=dispatched_alerts_in_run_by_user.get(sub_user_id),
+            ):
+                continue
+
             # Per-user dedup + click-tracking key.
             from app.notifications.dedup import compute_oneway_alert_key
             alert_key = (
@@ -1641,6 +1823,11 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                 )
                 if sent_ok:
                     dispatched += 1
+                    if sub_user_id:
+                        dispatched_alerts_in_run_by_user.setdefault(sub_user_id, []).append({
+                            "discount_pct": float(qualification.discount_pct or 0),
+                            "destination": travel_dest,
+                        })
             except Exception as e:
                 logger.warning(
                     f"One-way alert send failed user={sub_user_id}: {e}"
@@ -1657,8 +1844,13 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                             "user_id": sub_user_id,
                             "chat_id": chat_id,
                             "alert_key": alert_key,
-                            "destination": destination,
+                            # Use travel_dest (where the user actually goes)
+                            # so the L1 cooldown groups one-way alerts on the
+                            # same city as round-trip alerts.
+                            "destination": travel_dest,
                             "alert_type": "one_way",
+                            "price": float(qualification.price or 0),
+                            "discount_pct": float(qualification.discount_pct or 0),
                         },
                         on_conflict="user_id,alert_key",
                     ).execute()
@@ -1690,6 +1882,12 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
     destinations = get_priority_destinations(max_count=80, db=db)
     combos_dispatched = 0
 
+    # V10 — in-run cap tracker for Levier 2 (split-ticket variant).
+    # See _detect_and_dispatch_oneway_alerts for the rationale.
+    # 2026-05-05: stores destinations alongside discounts so the guard
+    # can apply the short-haul vs long-haul caps independently.
+    dispatched_alerts_in_run_by_user: dict[str, list[dict]] = {}
+
     # Pre-fetch users who opted in to split-ticket combos.
     # A combo is conceptually an A/R (just sold as 2 separate tickets), so
     # we require:
@@ -1699,7 +1897,7 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
     try:
         prefs_resp = (
             db.table("user_preferences")
-            .select("user_id,telegram_chat_id,airport_codes,flight_trip_types,blocked_destinations,include_split_tickets")
+            .select("user_id,telegram_chat_id,airport_codes,flight_trip_types,blocked_destinations,include_split_tickets,min_discount")
             .eq("telegram_connected", True)
             .execute()
         )
@@ -1804,8 +2002,31 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                 blocked = set(sub.get("blocked_destinations") or [])
                 if dest in blocked:
                     continue
+                # Honour the per-user discount floor against the combo's
+                # savings vs the equivalent round-trip baseline.
+                if not _user_passes_discount_floor(sub, combo_savings_pct):
+                    continue
                 chat_id = sub["telegram_chat_id"]
                 sub_user_id = sub.get("user_id")
+
+                # V10 dispatch guards (alert fatigue): same destination
+                # cooldown + 24h cap.
+                from app.notifications.dispatch_guards import (
+                    levier_1_destination_cooldown_blocks,
+                    levier_2_daily_cap_blocks,
+                )
+                if sub_user_id and levier_1_destination_cooldown_blocks(
+                    db=db, user_id=sub_user_id, destination=dest,
+                    new_price=float(combo.total or 0),
+                ):
+                    continue
+                if sub_user_id and levier_2_daily_cap_blocks(
+                    db=db, user_id=sub_user_id, destination=dest,
+                    new_discount_pct=float(combo_savings_pct or 0),
+                    pending_in_run_alerts=dispatched_alerts_in_run_by_user.get(sub_user_id),
+                ):
+                    continue
+
                 alert_key = (
                     compute_split_ticket_alert_key(
                         user_id=sub_user_id,
@@ -1862,12 +2083,19 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                     )
                     if sent_ok:
                         combos_dispatched += 1
+                        if sub_user_id:
+                            dispatched_alerts_in_run_by_user.setdefault(sub_user_id, []).append({
+                                "discount_pct": float(combo_savings_pct or 0),
+                                "destination": dest,
+                            })
                 except Exception as e:
                     logger.warning(
                         f"Split-ticket alert failed user={sub_user_id}: {e}"
                     )
 
                 # V9: persist sent_alerts row to power dedup + audit.
+                # V10: also persist price + discount_pct so the dispatch
+                # guards on the next run can read history for L1 / L2.
                 if sent_ok and sub_user_id and alert_key:
                     try:
                         db.table("sent_alerts").upsert(
@@ -1877,6 +2105,8 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                                 "alert_key": alert_key,
                                 "destination": dest,
                                 "alert_type": "split_ticket",
+                                "price": float(combo.total or 0),
+                                "discount_pct": float(combo_savings_pct or 0),
                             },
                             on_conflict="user_id,alert_key",
                         ).execute()
@@ -2020,6 +2250,7 @@ async def job_sync_stripe_subscriptions():
 
     import stripe as stripe_lib
     from app.config import settings as _settings
+    from app.stripe_helpers import stripe_subscription_period_end
 
     if not _settings.STRIPE_SECRET_KEY:
         logger.warning("STRIPE_SECRET_KEY not set — skipping Stripe sync")
@@ -2051,7 +2282,7 @@ async def job_sync_stripe_subscriptions():
         try:
             sub = stripe_lib.Subscription.retrieve(sub_id)
             status = sub.get("status", "")
-            period_end = sub.get("current_period_end")  # Unix timestamp
+            period_end = stripe_subscription_period_end(sub)  # Unix timestamp
 
             if status in ("active", "trialing") and period_end:
                 expires_at = datetime.fromtimestamp(period_end, tz=timezone.utc)

@@ -15,6 +15,7 @@ from app.db import db
 from app.config import settings
 from app.notifications.welcome_email import send_welcome_email as _send_welcome_email
 from app.auth.email_validator import validate_email_address
+from app.stripe_helpers import stripe_subscription_period_end
 
 logger = logging.getLogger(__name__)
 
@@ -1107,14 +1108,27 @@ def generate_telegram_link(user_id: str, user: dict = Depends(get_current_user))
 @router.post("/api/telegram/setup-webhook")
 async def setup_telegram_webhook(request: Request):
     _require_admin(request)
-    """Set Telegram webhook to point to our API."""
+    """Set Telegram webhook to point to our API and publish the slash-command
+    list (Telegram clients show these in the hamburger menu, making
+    /destinations and /pause discoverable without prior knowledge)."""
     import httpx
     webhook_url = f"{settings.BACKEND_URL}/api/telegram/webhook"
-    telegram_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/setWebhook"
+    base = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}"
+
+    commands = [
+        {"command": "destinations", "description": "Bloquer / débloquer une destination"},
+        {"command": "pause", "description": "Mettre les alertes en pause"},
+        {"command": "status", "description": "État du pipeline"},
+        {"command": "help", "description": "Aide"},
+    ]
 
     async with httpx.AsyncClient() as client:
-        resp = await client.post(telegram_url, json={"url": webhook_url})
-        return resp.json()
+        webhook_resp = await client.post(f"{base}/setWebhook", json={"url": webhook_url})
+        commands_resp = await client.post(f"{base}/setMyCommands", json={"commands": commands})
+        return {
+            "set_webhook": webhook_resp.json(),
+            "set_my_commands": commands_resp.json(),
+        }
 
 
 @router.get("/api/users/{user_id}/telegram/status")
@@ -1460,7 +1474,7 @@ async def stripe_webhook(request: Request):
             try:
                 stripe.api_key = settings.STRIPE_SECRET_KEY
                 sub = stripe.Subscription.retrieve(subscription_id)
-                period_end = sub.get("current_period_end")
+                period_end = stripe_subscription_period_end(sub)
                 if period_end:
                     from datetime import datetime, timezone
                     premium_expires_at = datetime.fromtimestamp(period_end, tz=timezone.utc).isoformat()
@@ -1477,7 +1491,7 @@ async def stripe_webhook(request: Request):
     elif event_type == "customer.subscription.updated":
         # Renewal or plan change — update the expiry date
         customer_id = data.get("customer")
-        period_end = data.get("current_period_end")
+        period_end = stripe_subscription_period_end(data)
         status = data.get("status", "")
         if db and customer_id and period_end and status in ("active", "trialing"):
             from datetime import datetime, timezone
@@ -1574,17 +1588,6 @@ async def subscription_status(user: dict = Depends(get_current_user)):
 class AdminGrantPremiumRequest(BaseModel):
     expires_at: str | None = None
     reason: str | None = None
-
-
-class AdminMinDiscountRequest(BaseModel):
-    value: int
-
-    @field_validator("value")
-    @classmethod
-    def validate_value(cls, v: int) -> int:
-        if v not in {20, 30, 40, 50, 60}:
-            raise ValueError("value must be one of 20,30,40,50,60")
-        return v
 
 
 class AdminTestWelcomeEmailRequest(BaseModel):
@@ -1890,26 +1893,18 @@ def admin_revoke_premium(user_id: str, request: Request):
     return {"ok": True, "revoked_count": len(resp.data or [])}
 
 
-@router.put("/api/admin/users/{user_id}/min_discount")
-def admin_update_min_discount(user_id: str, req: AdminMinDiscountRequest, request: Request):
-    _require_admin(request)
-    if not db:
-        raise HTTPException(status_code=503, detail="Database not configured")
-    resp = db.table("user_preferences").update({"min_discount": req.value}).eq("user_id", user_id).execute()
-    if not resp.data:
-        raise HTTPException(status_code=404, detail="User preferences not found")
-    return {"ok": True, "min_discount": req.value}
-
-
 @router.post("/api/admin/users/{user_id}/reset_prefs")
 def admin_reset_prefs(user_id: str, request: Request):
     _require_admin(request)
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
+    # NOTE: we deliberately don't touch `min_discount` here. That field
+    # is user-controlled via /profile (40/50/60), and resetting it from
+    # the admin would silently undo a user's choice — same class of bug
+    # as the now-removed admin override endpoint.
     defaults = {
         "airport_codes": ["CDG"],
         "offer_types": ["package", "flight", "accommodation"],
-        "min_discount": 20,
         "max_budget": None,
         "preferred_destinations": [],
     }
@@ -2244,8 +2239,52 @@ def _cancel_stripe_subscription_for_user(user_id: str) -> dict:
     return result
 
 
+_VALID_CANCEL_REASONS = {
+    "too_expensive",
+    "too_few_alerts",
+    "too_many_alerts",
+    "travelling_less",
+    "found_better",
+    "bugs",
+    "other",
+    "no_answer",
+}
+
+
+class CancelSubscriptionRequest(BaseModel):
+    """Optional reason + free-form feedback collected from the cancellation
+    survey. Both fields are optional so an empty body still cancels — we
+    don't want to block users who refuse to answer."""
+
+    reason: str | None = None
+    feedback: str | None = None
+
+    @field_validator("reason")
+    @classmethod
+    def _check_reason(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if v not in _VALID_CANCEL_REASONS:
+            raise ValueError(f"reason must be one of {sorted(_VALID_CANCEL_REASONS)}")
+        return v
+
+    @field_validator("feedback")
+    @classmethod
+    def _trim_feedback(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        # Cap at 500 chars to match the textarea limit on the frontend.
+        return v[:500]
+
+
 @router.post("/api/users/me/cancel-subscription", status_code=200)
-def cancel_subscription_self(current_user: dict = Depends(get_current_user)):
+def cancel_subscription_self(
+    body: CancelSubscriptionRequest | None = None,
+    current_user: dict = Depends(get_current_user),
+):
     """User-initiated subscription cancellation.
 
     Reuses _cancel_stripe_subscription_for_user(). The user's account
@@ -2254,6 +2293,12 @@ def cancel_subscription_self(current_user: dict = Depends(get_current_user)):
     webhook turns into is_premium=False — so the user keeps premium
     until the end of their paid period (Stripe behaviour) but no new
     invoice is generated.
+
+    The optional body captures the cancellation survey answers (reason,
+    free-form feedback). They're persisted to cancellation_reasons even
+    when Stripe says had_subscription=False — losing the feedback
+    because Stripe is in a weird state would be worse than the small
+    risk of a duplicate row.
 
     Idempotent: calling it on a free user returns 200 with
     had_subscription=False. A Stripe error returns 502 so the frontend
@@ -2264,6 +2309,24 @@ def cancel_subscription_self(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=401, detail="auth missing")
 
     result = _cancel_stripe_subscription_for_user(user_id)
+
+    # Persist the survey answer regardless of the Stripe outcome. We
+    # care about the signal even if the Stripe call later fails, and we
+    # certainly don't want to throw away the feedback because of a
+    # network blip on Stripe's side.
+    if body and body.reason and db:
+        try:
+            db.table("cancellation_reasons").insert({
+                "user_id": user_id,
+                "reason": body.reason,
+                "feedback": body.feedback,
+                "was_premium": result["had_subscription"],
+                "subscription_id": result.get("subscription_id"),
+            }).execute()
+        except Exception as e:
+            # Non-blocking: we don't want a survey insert failure to
+            # prevent the user from cancelling.
+            logger.warning(f"Failed to persist cancellation reason for {user_id}: {e}")
 
     if result["had_subscription"] and not result["cancelled"]:
         # Stripe is supposed to have cancelled the sub but didn't.

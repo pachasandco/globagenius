@@ -30,45 +30,45 @@ export function FlightDealCard({ deal }: { deal: FlightDeal }) {
       </div>
 
       {isPremium && (
-        <span className="inline-block bg-[#FFC940] text-[#0A1F3D] text-[10px] font-bold px-2 py-0.5 rounded-full mb-2">
+        <span className="inline-block bg-[#FFC940] text-[#082B78] text-[10px] font-bold px-2 py-0.5 rounded-full mb-2">
           PREMIUM
         </span>
       )}
 
-      <div className="font-[family-name:var(--font-dm-serif)] text-xl md:text-2xl text-[#0A1F3D] mb-1 pr-12">
+      <div className="font-[family-name:var(--font-dm-serif)] text-xl md:text-2xl text-[#082B78] mb-1 pr-12">
         {deal.origin} → {deal.destination}
       </div>
 
       {isOneWay ? (
-        <div className="text-sm text-[#0A1F3D]/60 mb-3">
+        <div className="text-sm text-[#082B78]/60 mb-3">
           ➡️ Aller simple · {dep}
         </div>
       ) : (
-        <div className="text-sm text-[#0A1F3D]/60 mb-3">
+        <div className="text-sm text-[#082B78]/60 mb-3">
           {dep} – {ret} · {days} jour{(days ?? 0) > 1 ? "s" : ""}
         </div>
       )}
 
       <div className="flex flex-wrap items-center gap-1.5 mb-4">
         {deal.airline && (
-          <span className="bg-[#F0E6D8]/60 text-[#0A1F3D] text-xs px-2.5 py-1 rounded-full">
+          <span className="bg-[#F0E6D8]/60 text-[#082B78] text-xs px-2.5 py-1 rounded-full">
             ✈️ {deal.airline}
           </span>
         )}
-        <span className="bg-[#F0E6D8]/60 text-[#0A1F3D] text-xs px-2.5 py-1 rounded-full">
+        <span className="bg-[#F0E6D8]/60 text-[#082B78] text-xs px-2.5 py-1 rounded-full">
           {stopsLabel}
         </span>
       </div>
 
       {locked ? (
         <div className="flex items-baseline gap-2 select-none mb-3">
-          <span className="text-3xl font-bold blur-sm text-[#0A1F3D]/30">••• €</span>
-          <span className="text-sm text-[#0A1F3D]/30 line-through blur-sm">••• €</span>
+          <span className="text-3xl font-bold blur-sm text-[#082B78]/30">••• €</span>
+          <span className="text-sm text-[#082B78]/30 line-through blur-sm">••• €</span>
         </div>
       ) : (
         <div className="flex items-baseline gap-2 mb-1">
-          <span className="text-3xl font-bold text-[#0A1F3D]">{Math.round(deal.price as number)} €</span>
-          <span className="text-sm text-[#0A1F3D]/40 line-through">{Math.round(deal.baseline_price as number)} €</span>
+          <span className="text-3xl font-bold text-[#082B78]">{Math.round(deal.price as number)} €</span>
+          <span className="text-sm text-[#082B78]/40 line-through">{Math.round(deal.baseline_price as number)} €</span>
         </div>
       )}
 

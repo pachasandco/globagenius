@@ -55,6 +55,26 @@ GlobeGenius est un outil de détection et d'alerte de bons plans vols en temps r
 
 ---
 
+## Hébergement Railway — split web / worker
+
+Le projet Railway `lovely-heart` héberge **deux services indépendants** qui partagent le même code et les mêmes variables d'environnement, mais qui jouent des rôles différents :
+
+| Service | Rôle | `RUN_SCHEDULER` | `WEB_CONCURRENCY` | Domaine |
+|---|---|---|---|---|
+| `globagenius` | API REST publique (auth, deals, articles, Stripe webhooks, bot Telegram) | `0` | `2` | `globagenius-production-1380.up.railway.app` |
+| `globagenius-worker` | APScheduler + scrapers + dispatch des alertes Telegram | `1` | `1` | (interne, pas exposé HTTP) |
+
+**Pourquoi le split :** APScheduler et les scrapers sont CPU/IO-intensifs (900+ requêtes Supabase par minute en pic). Quand ils tournaient dans le même process que l'API FastAPI, l'event loop saturait et `/health` répondait en 5–15 s. Après le split, l'API répond en ~80 ms et le worker peut scraper en parallèle sans bloquer les utilisateurs.
+
+**Garde-fous critiques :**
+- `RUN_SCHEDULER=0` sur `globagenius` est **obligatoire** dès que `WEB_CONCURRENCY > 1`. Sinon chaque worker Uvicorn lance son propre scheduler → doublons d'alertes Telegram, double charge Supabase, conflits sur les inserts. Voir `app/main.py:53` (`_RUN_SCHEDULER`).
+- Un seul service doit avoir `RUN_SCHEDULER=1`. Pour faire évoluer la capacité de scraping, augmenter le plan Railway plutôt que dupliquer le worker.
+- Les deux services partagent la même `DATABASE_URL` Supabase ; n'oubliez pas de répliquer toute nouvelle variable sensible des deux côtés (Stripe, Telegram, Brevo…) sinon le worker plante au démarrage.
+
+**En cas de panne du worker** : l'API reste up, mais les alertes Telegram s'arrêtent et aucun nouveau deal n'est détecté. Le frontend affiche le fallback "Pas de nouveau deal détecté depuis 6h…" pour ne pas afficher une page vide.
+
+---
+
 ## Pipeline de détection
 
 ### Vue d'ensemble
@@ -350,23 +370,6 @@ GlobeGenius cible les voyageurs français opportunistes — ceux qui partent qua
 ---
 
 ## Dette technique
-
-### 🔴 Critique — Orchestration des jobs (APScheduler in-process)
-
-**État actuel** : APScheduler tourne dans le même processus Uvicorn que l'API FastAPI sur Railway. Un seul worker, un seul scheduler.
-
-**Risques à mesure que le service scale :**
-- **Doublons de jobs** : si Railway redémarre le service ou scale à plusieurs replicas, chaque instance lance son propre scheduler → double scraping, double dispatch d'alertes, doublons en DB.
-- **Trous de scraping** : un redémarrage en cours de job (déploiement, crash) interrompt le run sans reprise.
-- **Contention API** : les jobs lourds (scraping 900+ vols, reverify 50 deals) partagent le thread pool avec les requêtes HTTP entrantes → latence API dégradée pendant les runs.
-
-**Seuil de criticité** : acceptable jusqu'à ~500 utilisateurs actifs avec un seul worker Railway. Devient dangereux au-delà ou dès qu'on active le scaling horizontal.
-
-**Solution cible** : externaliser le scheduler dans un worker Railway dédié (service séparé dans le même projet) avec une variable d'environnement `SCHEDULER_ONLY=true`. Le service API reste stateless, le worker scheduler est unique par design. Alternativement : migrer vers un queue-based system (Redis + ARQ ou Celery) avec Railway Redis add-on.
-
-**Action avant scale** : ajouter une guard `SCHEDULER_ENABLED=false` sur le service API dès qu'un second replica est activé.
-
----
 
 ### 🟡 Moyen — Robustesse statistique des baselines
 

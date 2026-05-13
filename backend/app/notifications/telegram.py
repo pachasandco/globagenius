@@ -163,14 +163,89 @@ def format_admin_report(stats: dict) -> str:
     return "\n".join(lines)
 
 
-def _deal_badge(discount_pct: float) -> str:
-    if discount_pct >= 60:
+_YOUNG_BASELINE_SAMPLE_THRESHOLD = 15
+
+
+def _deal_badge(
+    discount_pct: float,
+    sources: set[str] | None = None,
+    min_sample_count: int | None = None,
+) -> str:
+    """Return the deal-tier badge shown at the top of an alert.
+
+    `sources` is the set of raw_flights.source values backing the offer.
+    When all backing rows come from a single Tier 1 leadprice source
+    (`vueling_direct`, `ryanair_direct`), we cap the badge at "Deal rare"
+    even past the 60% threshold — those endpoints expose one-way
+    leadprices, and their A/R extrapolation is approximate. The
+    "Erreur de prix" label is reserved for deals confirmed by at least
+    two independent sources (Travelpayouts + at least one direct
+    endpoint), or by Travelpayouts alone (which scrapes real A/R).
+
+    `min_sample_count`: smallest baseline.sample_count across the
+    offers backing the alert. When the baseline corpus is young
+    (< _YOUNG_BASELINE_SAMPLE_THRESHOLD observations), a -65% discount
+    can be a statistical artefact rather than a true bargain. We cap
+    the badge at "Promo flash" in that regime so the alert doesn't
+    promise more than the data can support. Once the baseline matures
+    (more historical scrapes accumulate), this branch stops firing
+    automatically.
+    """
+    leadprice_only_sources = {"vueling_direct", "ryanair_direct"}
+    is_leadprice_only = bool(sources) and sources.issubset(leadprice_only_sources)
+    # Young-baseline cap fires only when we have positive evidence that the
+    # baseline is small — i.e. min_sample_count is set AND > 0 AND below
+    # the threshold. A value of None / 0 means "unknown" (no data plumbed
+    # through) and we keep the original badge ladder. This avoids
+    # accidentally degrading every alert in scenarios where the offer dict
+    # didn't carry the sample_count metadata.
+    is_young_baseline = (
+        min_sample_count is not None
+        and 0 < min_sample_count < _YOUNG_BASELINE_SAMPLE_THRESHOLD
+    )
+
+    if is_young_baseline and discount_pct >= 30:
+        # Young baselines: keep the wording credible regardless of the
+        # raw discount. A -67% claim with 6 observations isn't honest;
+        # "Promo flash" sells the deal without staking credibility on a
+        # specific savings figure.
+        return "🟡 Promo flash"
+
+    if discount_pct >= 60 and not is_leadprice_only:
         return "🔴 Erreur de prix"
-    if discount_pct >= 45:
+    if discount_pct >= 45 or (discount_pct >= 60 and is_leadprice_only):
         return "🟠 Deal rare"
     if discount_pct >= 30:
         return "🟡 Promo flash"
     return "🟢 Bon deal"
+
+
+def _price_verification_line(
+    price_confidences: set[str], any_young_baseline: bool
+) -> str:
+    """Build the price-confidence line shown under each offer.
+
+    Replaces the previous blanket "✅ Vol vérifié" with a copy that
+    matches the actual evidence. Three regimes:
+
+    - Two sources agreed (Tier 1 direct + Travelpayouts cross-check, or
+      pure Travelpayouts) → "✅ Prix Aviasales confirmé". This is what
+      the user will actually see when they click; we can stand behind
+      it.
+    - Single-source confirmation (direct endpoint only, TP had no data
+      for these dates) OR young baseline (low historical confidence in
+      the baseline used to compute the discount) → "🔍 Prix indicatif
+      — peut varier sur Aviasales". Honest hedge: the alert is still
+      useful, but we don't promise a number we can't guarantee.
+    - No confidence flag at all (legacy callers / tests) → fall back to
+      the previous "✅ Vol vérifié" copy so existing call sites keep
+      working unchanged.
+    """
+    if not price_confidences:
+        return "✅ Vol vérifié"
+    if "single_source" in price_confidences or any_young_baseline:
+        return "🔍 Prix indicatif — peut varier sur Aviasales"
+    return "✅ Prix Aviasales confirmé"
 
 
 def _fmt_date_fr(date_str: str) -> str:
@@ -547,7 +622,7 @@ def format_grouped_flight_alerts(
     - Destination + count at top (scannable)
     - Price isolated and prominent in each offer line
     - Deal qualification tags (EXCELLENT/BON/CLASSIQUE)
-    - Simplified CTAs (Voir le vol, Voir les hôtels)
+    - Single CTA per offer (Voir le deal)
     - Urgency signals (scarcity, frequency)
 
     offers: list of dicts with keys:
@@ -560,7 +635,6 @@ def format_grouped_flight_alerts(
       - booking_url (optional, default empty string → no CTA line)
     """
     from app.config import settings
-    from app.notifications.booking import build_booking_url
 
     total = len(offers)
     sorted_by_discount = sorted(offers, key=lambda o: o.get("discount_pct", 0), reverse=True)
@@ -568,7 +642,44 @@ def format_grouped_flight_alerts(
     remaining = total - len(shown)
 
     max_discount = max(o.get("discount_pct", 0) for o in shown)
-    badge = _deal_badge(max_discount)
+    # Pass the underlying sources so leadprice-only Tier 1 deals don't
+    # get the "Erreur de prix" label (they're one-way prices doubled,
+    # which can diverge from the real A/R Aviasales shows on click).
+    sources_in_offer = {o.get("source", "") for o in shown if o.get("source")}
+    # Aggregate confidence signals across the offers. The badge ladder
+    # caps at "Promo flash" when the smallest baseline behind any offer
+    # is young, and the per-offer verification line switches to
+    # "🔍 Prix indicatif" the moment any single offer comes from a
+    # single-source confirmation or sits on a young baseline.
+    sample_counts = [
+        int(o.get("baseline_sample_count") or 0) for o in shown
+    ]
+    # `min_sample_count` is None when the offer dict doesn't carry the
+    # baseline metadata at all (legacy callers, tests). When at least one
+    # offer has positive evidence, we use the smallest positive sample
+    # count — that's the worst-case confidence among shown offers.
+    positive_samples = [s for s in sample_counts if s > 0]
+    min_sample_count = min(positive_samples) if positive_samples else None
+    price_confidences = {
+        o.get("price_confidence") for o in shown if o.get("price_confidence")
+    }
+    any_young_baseline = any(
+        0 < s < _YOUNG_BASELINE_SAMPLE_THRESHOLD for s in sample_counts
+    )
+    badge = _deal_badge(
+        max_discount,
+        sources=sources_in_offer,
+        min_sample_count=min_sample_count if sample_counts else None,
+    )
+    verification_line = _price_verification_line(
+        price_confidences, any_young_baseline
+    )
+    # When we softened the badge because the baseline is young, drop the
+    # "-XX %" claim from each offer line and use a softer "Prix observé
+    # récemment" framing for the strikethrough. The discount number is
+    # not a lie per se, but with very few observations it's a statistical
+    # artefact more than a defensible promise.
+    show_discount_pct = not any_young_baseline
 
     from app.config import iata_label
 
@@ -620,7 +731,17 @@ def format_grouped_flight_alerts(
             disc = int(round(o.get("discount_pct", 0)))
 
             baseline = o.get("baseline_price")
-            baseline_str = f"\n   Prix habituel : ~{int(round(baseline))} €~" if baseline and baseline > price else ""
+            # Soft framing when the baseline is young: "Prix observé
+            # récemment" instead of "Prix habituel" — we have evidence
+            # the price was seen, but not enough history to call it
+            # "habituel".
+            baseline_label = (
+                "Prix observé récemment" if any_young_baseline else "Prix habituel"
+            )
+            baseline_str = (
+                f"\n   {baseline_label} : ~{int(round(baseline))} €~"
+                if baseline and baseline > price else ""
+            )
 
             # V8.2: when the alert mixes several origin airports, tag the
             # specific origin on each offer line so the user knows which
@@ -629,11 +750,21 @@ def format_grouped_flight_alerts(
             if multi_origin and o.get("origin"):
                 origin_tag = f"  ·  via {o['origin']}"
 
+            # 2026-05: drop the "-XX %" claim when the baseline behind
+            # this alert is young — the savings figure rests on too few
+            # observations to be defensible. The price stays prominent
+            # so users see the absolute number, which is what they'll
+            # pay regardless of baseline maturity.
+            price_line = (
+                f"\n💰 *{price} € A/R · -{disc} %*{origin_tag}"
+                if show_discount_pct
+                else f"\n💰 *{price} € A/R*{origin_tag}"
+            )
             lines.append(
-                f"\n💰 *{price} € A/R · -{disc} %*{origin_tag}\n"
+                f"{price_line}\n"
                 f"   {dep_str} – {ret_str} · {duration} jours"
                 f"{baseline_str}\n"
-                f"   ✅ Vol vérifié"
+                f"   {verification_line}"
             )
 
             booking_url = o.get("booking_url", "").strip()
@@ -648,16 +779,9 @@ def format_grouped_flight_alerts(
                     tracked = _add_utms(booking_url, origin_iata or "", destination_iata)
                 lines.append(f"   👉 [Voir le deal]({tracked})")
 
-            # Hotel CTA for high-value deals
-            if disc >= 40:
-                hotel_url = build_booking_url(
-                    dest_city,
-                    o["departure_date"],
-                    o["return_date"],
-                    marker=settings.TRAVELPAYOUTS_MARKER or None,
-                )
-                hotel_tracked = _add_utms(hotel_url, origin_iata or "", destination_iata)
-                lines.append(f"   🏨 [Voir les hôtels]({hotel_tracked})")
+            # Hotel CTA removed: it cluttered alerts and the Booking
+            # affiliation revenue was negligible vs the noise it added
+            # to the message.
 
             lines.append("")
 
@@ -708,14 +832,26 @@ async def send_grouped_flight_alerts(
         has_guide=has_guide,
     )
 
-    # Inline keyboard — quick action without leaving Telegram.
-    # 'Se désabonner' was removed (full opt-out is too aggressive for an
-    # accidental tap; users can disconnect Telegram from /profile if they
-    # really want out). The Pause button toggles indefinitely.
+    # Inline keyboard — quick actions without leaving Telegram:
+    #  - "Masquer <destination>": one-tap to hide future alerts for this
+    #    specific destination (most-asked feature: users skim notifs and
+    #    want to dismiss the city they're not interested in).
+    #  - "Pause": opens a sub-menu (7d / 30d / indefinite) on click; the
+    #    callback handler swaps in the duration buttons.
+    # 'Se désabonner' is intentionally absent — full opt-out is too easy
+    # to fat-finger; users can disconnect from /profile if they really
+    # want out.
     reply_markup = None
     if user_id:
+        # Truncate the destination label to keep the button text short on
+        # narrow screens (Telegram clips long button labels mid-word).
+        short_dest = (dest_city or destination_iata)[:18]
         reply_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⏸ Pause les alertes", callback_data=f"pause:{user_id}")]
+            [InlineKeyboardButton(
+                f"🚫 Masquer {short_dest}",
+                callback_data=f"block:{user_id}:{destination_iata}",
+            )],
+            [InlineKeyboardButton("⏸ Pause les alertes", callback_data=f"pause_menu:{user_id}")],
         ])
 
     try:

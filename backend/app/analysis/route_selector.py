@@ -3,62 +3,90 @@
 from datetime import datetime, timezone
 
 SEASONAL_DESTINATIONS = {
-    "winter": {  # Dec-Feb
+    "winter": {  # Dec-Feb — vacances scolaires Noël + février
         "primary": [
-            # Soleil long-courrier
-            "RAK", "BKK", "CUN", "PUJ", "DXB", "MLE", "MRU", "RUN",
-            # Canaries + Mediterranee
-            "TFS", "PMI", "AGP", "HER",
-            # US + Australie (ete la-bas)
-            "JFK", "MIA", "SYD",
-            # Sun escapes (Canaries, Madere, Mer Rouge, Andalousie)
-            "FUE", "LPA", "ACE", "FNC", "SSH", "HRG", "SVQ",
+            # Long-courrier soleil — saison sèche idéale
+            "BKK", "HKT", "DPS", "SGN", "HAN",
+            "CUN", "PUJ", "HAV", "VRA", "SDQ", "POP",
+            "DXB", "DOH", "AUH",
+            "MLE", "MRU", "RUN", "SEZ",
+            "RAK", "AGA", "TUN",
+            # DOM-TOM Caraïbes + Pacifique (haute saison touristique FR)
+            "PTP", "FDF", "PPT", "NOU", "CAY",
+            # Canaries + Madère + Andalousie (soleil court-courrier)
+            "TFS", "FUE", "LPA", "ACE", "FNC", "SSH", "HRG", "SVQ",
+            # USA / Australie (été là-bas)
+            "JFK", "MIA", "LAX", "SYD", "MEL",
         ],
-        "secondary": ["LIS", "FCO", "ATH", "IST", "CAI", "TUN", "GVA", "PDL"],
+        "secondary": [
+            "LIS", "FCO", "ATH", "IST", "CAI", "GVA", "PDL",
+            "PMI", "HER",
+            "BOM", "DEL", "CMB",
+        ],
     },
-    "spring": {  # Mar-May
+    "spring": {  # Mar-May — Pâques, ponts mai
         "primary": [
             # Europe basse saison
             "LIS", "ATH", "PRG", "BCN", "BUD", "OPO", "NAP", "DBV",
             # Maghreb
             "RAK", "CMN", "TUN",
             # Long-courrier
-            "IST", "NRT", "JFK",
+            "IST", "NRT", "JFK", "YUL",
+            # Asie en pleine saison sèche
+            "BKK", "DPS", "SGN", "HAN", "HKT",
+            # Caraïbes / DOM-TOM (encore en saison sèche)
+            "PUJ", "HAV", "PTP", "FDF",
             # Europe du Sud + Balkans mi-saison
             "FAO", "ALC", "BLQ", "SAW", "TIV", "SKG",
         ],
         "secondary": [
             "AMS", "FCO", "BER", "MAD", "VCE", "SPU", "EDI",
-            "BKK", "YUL", "DXB", "MIA", "SYD",
-            "HND", "ICN", "SIN", "HKG",
+            "DXB", "MIA", "SYD", "PPT",
+            "HND", "ICN", "SIN", "HKG", "KIX", "BOM", "DEL",
+            "TNR", "ZNZ",
         ],
     },
-    "summer": {  # Jun-Aug
+    "summer": {  # Jun-Aug — grandes vacances
         "primary": [
-            # Europe off-peak
+            # Europe off-peak Nord
             "PRG", "BUD", "DUB", "BER", "WAW", "ZAG", "SPU", "DBV",
             "EDI", "CPH", "HEL", "OSL", "ARN",
-            # Long-courrier
-            "YUL", "NRT", "SYD",
+            # Long-courrier été — USA, Canada, Pacifique
+            "JFK", "EWR", "YUL", "YVR", "LAX", "MIA", "SFO",
+            "NRT", "HND", "KIX", "SYD", "MEL", "AKL", "PPT", "NOU",
             # Mediterranee estivale (iles grecques, Italie du sud, Espagne)
-            "VLC", "CAG", "OLB", "BRI", "CTA", "RHO", "JTR", "JMK", "CFU", "IBZ",
+            "VLC", "CAG", "BRI", "CTA", "RHO", "JTR", "JMK", "CFU", "IBZ",
+            "PMI", "ALC",
         ],
-        "secondary": ["IST", "RAK", "ATH", "LIS", "OPO", "VCE", "JFK", "KUL", "BOM", "DEL"],
+        "secondary": [
+            "IST", "RAK", "ATH", "LIS", "OPO", "VCE",
+            "BKK", "KUL", "BOM", "DEL", "ICN", "HKG", "SIN", "CGK", "MNL",
+            "GIG", "EZE", "SCL", "BOG", "LIM",  # printemps austral, prix bas
+        ],
     },
-    "autumn": {  # Sep-Nov
+    "autumn": {  # Sep-Nov — Toussaint, arrière-saison
         "primary": [
             # Americas + Oceanie
-            "JFK", "YUL", "GIG", "MIA", "LAX", "SYD",
+            "JFK", "EWR", "YUL", "YVR", "MIA", "LAX", "SFO", "GIG", "EZE", "SCL",
+            "SYD", "MEL", "AKL",
+            # Caraïbes (saison sèche reprend en novembre)
+            "PUJ", "HAV", "VRA", "PTP", "FDF",
+            # Asie début saison sèche
+            "BKK", "HKT", "DPS", "SGN", "HAN", "CMB",
             # Europe arriere-saison
             "BCN", "LIS", "FCO", "IST", "BUD", "PRG", "ATH",
             # Maghreb
-            "RAK",
+            "RAK", "TUN", "AGA",
+            # Afrique long-courrier
+            "JNB", "CPT", "NBO", "TNR", "ZNZ",
             # City-breaks Europe centrale + Baltes + Alpes
             "KRK", "WAW", "VIE", "SOF", "TLL", "RIX", "VNO", "HEL", "BRU", "ZRH", "GVA",
         ],
         "secondary": [
-            "AMS", "BER", "DUB", "NAP", "MAD", "BKK", "DXB", "CMN",
-            "BOG", "LIM", "EZE", "SCL", "JNB", "CPT", "ZNZ",
+            "AMS", "BER", "DUB", "NAP", "MAD", "DXB", "DOH", "CMN",
+            "BOG", "LIM", "MLE", "MRU", "RUN", "SEZ",
+            "BOM", "DEL", "ICN", "HKG", "SIN", "KUL",
+            "PPT", "NOU", "CAY",
         ],
     },
 }
@@ -66,19 +94,26 @@ SEASONAL_DESTINATIONS = {
 HIGH_FARE_MISTAKE_ROUTES = {
     # Transatlantic
     "CDG-JFK", "CDG-EWR", "ORY-JFK", "LYS-JFK",
+    "CDG-YUL", "CDG-YVR", "CDG-YYZ",
     # Asia via hub
     "CDG-BKK", "CDG-NRT", "CDG-HKG", "CDG-DXB",
     "CDG-HND", "CDG-ICN", "CDG-SIN", "CDG-KUL", "CDG-DEL", "CDG-BOM",
-    # Caribbean
-    "CDG-CUN", "CDG-PUJ", "ORY-PUJ",
+    "CDG-DPS", "CDG-HKT", "CDG-SGN", "CDG-HAN", "CDG-CGK", "CDG-MNL", "CDG-CMB",
+    # Caribbean (incl. Cuba/DR very price-volatile via charters)
+    "CDG-CUN", "CDG-PUJ", "ORY-PUJ", "CDG-HAV", "CDG-VRA", "CDG-SDQ", "CDG-POP",
     # US
     "CDG-MIA", "CDG-LAX", "CDG-SFO",
     # Iles + Oceanie
-    "CDG-MLE", "CDG-MRU", "ORY-RUN", "CDG-SYD",
+    "CDG-MLE", "CDG-MRU", "ORY-RUN", "CDG-SYD", "CDG-MEL", "CDG-AKL",
+    "CDG-PPT", "ORY-PPT", "CDG-NOU", "CDG-SEZ",
+    # DOM-TOM (Air Caraïbes / French Bee promotional fares from Orly)
+    "ORY-PTP", "ORY-FDF", "ORY-CAY", "CDG-PTP", "CDG-FDF",
     # South America
-    "CDG-EZE", "CDG-BOG", "CDG-LIM", "CDG-SCL",
+    "CDG-EZE", "CDG-BOG", "CDG-LIM", "CDG-SCL", "CDG-GIG", "CDG-GRU",
     # Africa
-    "CDG-JNB", "CDG-CPT", "CDG-ZNZ",
+    "CDG-JNB", "CDG-CPT", "CDG-ZNZ", "CDG-NBO", "CDG-TNR",
+    # Middle East
+    "CDG-DOH", "CDG-AUH",
 }
 
 LOW_COST_COMPETITION = {
@@ -89,10 +124,25 @@ LOW_COST_COMPETITION = {
 }
 
 LONG_HAUL_DESTINATIONS = {
-    "NRT", "JFK", "BKK", "YUL", "DXB", "MIA", "SYD",
-    "CUN", "PUJ", "MLE", "MRU", "RUN", "GIG", "LAX",
-    "HND", "ICN", "HKG", "SIN", "KUL", "DEL", "BOM",
-    "BOG", "LIM", "EZE", "SCL", "JNB", "CPT", "ZNZ",
+    # North America
+    "JFK", "EWR", "MIA", "LAX", "SFO", "YUL", "YYZ", "YVR", "MEX", "CUN",
+    # Caribbean (incl. French DOM-TOM and Cuba/DR popular winter spots)
+    "PUJ", "PTP", "FDF", "HAV", "VRA", "SDQ", "POP", "SXM", "SJU",
+    # South America
+    "GIG", "GRU", "EZE", "SCL", "BOG", "LIM",
+    # Asia
+    "BKK", "HKT", "NRT", "HND", "KIX", "ICN", "HKG", "SIN", "KUL",
+    "DEL", "BOM", "DPS", "SGN", "HAN", "CGK", "MNL", "CMB",
+    # Oceania + Pacific
+    "SYD", "MEL", "AKL", "PPT", "NOU",
+    # Indian Ocean
+    "MLE", "MRU", "RUN", "ZNZ", "SEZ",
+    # Africa (sub-Saharan + west Africa)
+    "JNB", "CPT", "NBO", "TNR", "DKR", "ABJ",
+    # Middle East (long-haul-ish from CDG)
+    "DXB", "DOH", "AUH", "AMM",
+    # French Guiana (DOM)
+    "CAY",
 }
 
 

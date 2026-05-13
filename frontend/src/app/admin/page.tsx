@@ -184,7 +184,7 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-[#FFF8F0]">
       <nav className="sticky top-0 z-50 bg-white border-b border-gray-100">
-        <div className="max-w-6xl mx-auto px-4 h-[64px] flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-4 h-[80px] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-red-500 flex items-center justify-center text-white font-bold text-sm">A</div>
             <span className="font-[family-name:var(--font-dm-serif)] text-[19px]">Admin</span>

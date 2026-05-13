@@ -215,7 +215,7 @@ export function LandingDealsMap({ initialDeals }: { initialDeals: LandingDeal[] 
   return (
     <div className="absolute inset-0 w-full h-full">
       {/* Background gradient */}
-      <div className="absolute inset-0 bg-gradient-to-br from-[#0A1F3D] via-[#10284D] to-[#0A1F3D]" />
+      <div className="absolute inset-0 bg-gradient-to-br from-[#082B78] via-[#10284D] to-[#082B78]" />
 
       {/* Subtle grain dots — hint of latitude/longitude grid without being a real graticule */}
       <svg
@@ -323,12 +323,12 @@ function DealPin({
           transition={{ duration: 2.4, repeat: Infinity, delay, ease: "easeOut" }}
         />
         {/* Solid pin dot */}
-        <span className="absolute left-1/2 -bottom-1 h-2 w-2 -translate-x-1/2 rounded-full bg-[#FF6B47] ring-2 ring-[#0A1F3D]" />
+        <span className="absolute left-1/2 -bottom-1 h-2 w-2 -translate-x-1/2 rounded-full bg-[#FF6B47] ring-2 ring-[#082B78]" />
 
         {/* Card */}
         <div className="mb-2 rounded-lg bg-[#FFFEF9] px-2.5 py-1.5 shadow-[0_4px_12px_rgba(0,0,0,0.25)] whitespace-nowrap">
           <div
-            className="text-[11px] sm:text-xs font-semibold leading-tight text-[#0A1F3D]"
+            className="text-[11px] sm:text-xs font-semibold leading-tight text-[#082B78]"
             style={{ fontFamily: "var(--font-dm-serif), serif" }}
           >
             {pin.coords.label}

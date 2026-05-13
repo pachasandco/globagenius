@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getPreferences, updatePreferences, changePassword, clearSessionCookie, getTelegramStatus, generateTelegramLink, cancelSubscription, type FlightTripType } from "@/lib/api";
+import { getPreferences, updatePreferences, changePassword, clearSessionCookie, getTelegramStatus, generateTelegramLink, cancelSubscription, type FlightTripType, type CancellationReason } from "@/lib/api";
+import { Wordmark } from "../_components/Wordmark";
 
 const AIRPORTS = [
   { code: "CDG", label: "Paris Charles de Gaulle" },
@@ -183,6 +184,11 @@ export default function ProfilePage() {
   const [deleting, setDeleting] = useState(false);
   const [cancellingSubscription, setCancellingSubscription] = useState(false);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  // Cancellation survey: a single radio reason + an optional free-form
+  // textarea. Both stay null/empty until the user actually picks
+  // something so we can disable the Confirm button until then.
+  const [cancelReason, setCancelReason] = useState<CancellationReason | null>(null);
+  const [cancelFeedback, setCancelFeedback] = useState("");
   // Telegram connection state. null = not yet known (avoids flashing the
   // 'connect Telegram' card to users who are actually connected).
   const [telegramConnected, setTelegramConnected] = useState<boolean | null>(null);
@@ -350,16 +356,22 @@ export default function ProfilePage() {
   }
 
   async function handleCancelSubscription() {
+    if (!cancelReason) return;  // UI disables the button, but be defensive
     setCancellingSubscription(true);
     setError("");
     try {
-      const r = await cancelSubscription();
+      const r = await cancelSubscription({
+        reason: cancelReason,
+        feedback: cancelFeedback.trim() || undefined,
+      });
       if (r.had_subscription) {
         setSuccess("Abonnement annulé. Vous gardez Premium jusqu'à la fin de la période en cours.");
       } else {
         setSuccess("Aucun abonnement actif à annuler.");
       }
       setCancelConfirmOpen(false);
+      setCancelReason(null);
+      setCancelFeedback("");
       setTimeout(() => setSuccess(""), 6000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur d'annulation");
@@ -472,7 +484,7 @@ export default function ProfilePage() {
       <div className="bg-white border-b">
         <div className="max-w-2xl mx-auto px-4 md:px-5 py-4 flex items-center justify-between">
           <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-xl leading-none">
-            Globe<span className="text-[#FF6B47]">Genius</span>
+            <Wordmark />
           </Link>
           <div className="flex items-center gap-3">
             <Link href="/home" className="text-gray-400 text-sm hover:text-gray-600">
@@ -516,7 +528,7 @@ export default function ProfilePage() {
                 ✈️
               </div>
               <div className="flex-1">
-                <h2 className="text-lg font-semibold text-[#0A1F3D] mb-1">
+                <h2 className="text-lg font-semibold text-[#082B78] mb-1">
                   Connectez Telegram pour recevoir vos alertes
                 </h2>
                 <p className="text-sm text-gray-600 mb-4">
@@ -566,7 +578,7 @@ export default function ProfilePage() {
 
           {!showEmailForm ? (
             <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-200">
-              <span className="text-gray-900">{email}</span>
+              <span className="text-[var(--color-ink)]">{email}</span>
               <button
                 onClick={() => setShowEmailForm(true)}
                 className="text-sm text-[#FF6B47] hover:text-[#E55A38] font-semibold transition-colors"
@@ -792,7 +804,7 @@ export default function ProfilePage() {
                   className="mt-0.5 w-4 h-4 accent-cyan-500 cursor-pointer"
                 />
                 <div className="flex-1">
-                  <div className="text-sm font-medium text-[#0A1F3D] group-hover:text-cyan-700 transition-colors">
+                  <div className="text-sm font-medium text-[#082B78] group-hover:text-cyan-700 transition-colors">
                     💡 Inclure les combos malins (2 billets)
                   </div>
                   <div className="text-xs text-gray-500 mt-0.5">
@@ -816,14 +828,14 @@ export default function ProfilePage() {
           <div className="mb-12">
             <h2 className="text-xl font-semibold mb-1">Niveau de promo</h2>
             <p className="text-gray-400 text-sm mb-6">
-              À partir de quel niveau de réduction souhaitez-vous être alerté&nbsp;? Plus vous montez, moins vous recevez d&apos;alertes — mais celles que vous recevez sont exceptionnelles.
+              À partir de quel niveau de réduction souhaitez-vous être alerté&nbsp;? Plus vous montez, moins vous recevez d&apos;alertes — mais celles que vous recevez sont exceptionnelles. Dans tous les cas, on plafonne à 3 alertes par jour pour ne pas saturer votre Telegram (les long-courriers ne comptent pas dans ce plafond).
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {[
-                { value: 40 as const, label: "À partir de -40%", desc: "Tous les bons plans détectés (cadence normale).", icon: "📊" },
-                { value: 50 as const, label: "À partir de -50%", desc: "Seulement les très bonnes affaires.", icon: "🔥" },
-                { value: 60 as const, label: "À partir de -60%", desc: "Uniquement les perles rares (erreurs de prix).", icon: "💎" },
+                { value: 40 as const, label: "À partir de -40%", desc: "~2-3 alertes/jour. Tous les bons plans détectés.", icon: "📊" },
+                { value: 50 as const, label: "À partir de -50%", desc: "~1-2 alertes/jour. Sélectif, on garde les très bonnes affaires.", icon: "🔥" },
+                { value: 60 as const, label: "À partir de -60%", desc: "0-1 alerte/jour. Que les vraies pépites (erreurs de prix).", icon: "💎" },
               ].map((opt) => {
                 const selected = minDiscount === opt.value;
                 return (
@@ -952,22 +964,93 @@ export default function ProfilePage() {
                   Annuler mon abonnement
                 </button>
               ) : (
-                <div className="flex gap-2 items-center">
-                  <button
-                    type="button"
-                    onClick={handleCancelSubscription}
-                    disabled={cancellingSubscription}
-                    className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold"
-                  >
-                    {cancellingSubscription ? "Annulation…" : "Confirmer l'annulation"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCancelConfirmOpen(false)}
-                    className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700"
-                  >
-                    Garder l&apos;abonnement
-                  </button>
+                // Mini-survey before confirmation. We ask one mandatory
+                // reason + an optional free-form note. The actual
+                // cancellation only fires once a reason is selected, but
+                // "Préfère ne pas répondre" is one of the valid answers
+                // so users in a hurry can still leave quickly.
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm font-semibold text-[var(--color-ink)] mb-1">
+                      Avant de partir — pourquoi annulez-vous&nbsp;?
+                    </p>
+                    <p className="text-xs text-gray-500 mb-3">
+                      Vos réponses nous aident à améliorer le produit. C&apos;est anonyme.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {([
+                        { v: "too_expensive", label: "💸 Trop cher" },
+                        { v: "too_few_alerts", label: "🔇 Pas assez d'alertes pertinentes" },
+                        { v: "too_many_alerts", label: "🔊 Trop d'alertes" },
+                        { v: "travelling_less", label: "🛏️ Je voyage moins ces temps-ci" },
+                        { v: "found_better", label: "🔁 J'ai trouvé un meilleur outil" },
+                        { v: "bugs", label: "🐞 L'app ou le bot a des bugs" },
+                        { v: "other", label: "✏️ Autre raison" },
+                        { v: "no_answer", label: "🙊 Je préfère ne pas répondre" },
+                      ] as { v: CancellationReason; label: string }[]).map((opt) => {
+                        const selected = cancelReason === opt.v;
+                        return (
+                          <button
+                            key={opt.v}
+                            type="button"
+                            onClick={() => setCancelReason(opt.v)}
+                            className={
+                              "text-left text-sm px-3 py-2 rounded-lg border-2 transition-all " +
+                              (selected
+                                ? "border-[var(--color-coral)] bg-[var(--color-coral-50)] text-[var(--color-ink)] font-medium"
+                                : "border-gray-200 bg-white text-gray-700 hover:border-[var(--color-coral)]/40")
+                            }
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="cancel-feedback"
+                      className="block text-sm font-medium text-[var(--color-ink)] mb-1"
+                    >
+                      Une chose qui aurait pu vous faire rester&nbsp;?
+                      <span className="text-gray-400 font-normal"> (optionnel)</span>
+                    </label>
+                    <textarea
+                      id="cancel-feedback"
+                      value={cancelFeedback}
+                      onChange={(e) => setCancelFeedback(e.target.value.slice(0, 500))}
+                      maxLength={500}
+                      rows={3}
+                      placeholder="Ex : un seuil -45%, des départs depuis Lyon, prix mensuel…"
+                      className="w-full text-sm bg-gray-50 rounded-lg px-3 py-2 border border-gray-200 focus:border-[var(--color-coral)] focus:ring-2 focus:ring-[var(--color-coral)]/20 outline-none resize-none"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">
+                      {cancelFeedback.length}/500
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2 sm:items-center pt-2 border-t border-gray-100">
+                    <button
+                      type="button"
+                      onClick={handleCancelSubscription}
+                      disabled={cancellingSubscription || !cancelReason}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors"
+                    >
+                      {cancellingSubscription ? "Annulation…" : "Confirmer l'annulation"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCancelConfirmOpen(false);
+                        setCancelReason(null);
+                        setCancelFeedback("");
+                      }}
+                      className="px-4 py-2 text-sm text-gray-600 hover:text-[var(--color-ink)] font-medium"
+                    >
+                      Garder l&apos;abonnement
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

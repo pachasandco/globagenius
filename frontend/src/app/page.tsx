@@ -3,6 +3,7 @@ import Link from "next/link";
 import RedirectIfLoggedIn from "./_components/RedirectIfLoggedIn";
 import LandingAnimated, { HeroContent } from "./_components/LandingAnimated";
 import { LandingNotificationHero } from "./_components/LandingNotificationHero";
+import { Wordmark } from "./_components/Wordmark";
 
 export const metadata: Metadata = {
   alternates: {
@@ -29,7 +30,8 @@ async function fetchRecentDestinationGuides(): Promise<Array<{ iata: string; des
 
 const faqs = [
   { q: "Comment fonctionne Globe Genius ?", a: "On surveille en permanence les prix des vols au départ de 9 aéroports français. Dès qu’on détecte une baisse de prix significative, on vous envoie une alerte sur Telegram avec tous les détails pour réserver." },
-  { q: "Quelle est la différence entre Gratuit et Premium ?", a: "En Gratuit, vous recevez 1 deal aller-retour entre -20% et -40% chaque jour, plus 1 grosse promo (≥-40%) une fois par semaine. En Premium, vous choisissez votre seuil (-40, -50 ou -60%), vous recevez les alertes sans limite, et vous accédez en plus aux aller simple et aux combos malins (2 billets séparés moins chers qu'un A/R)." },
+  { q: "Quelle est la différence entre Gratuit et Premium ?", a: "En Gratuit, vous recevez 1 deal aller-retour entre -20% et -40% chaque jour, plus 1 grosse promo (≥-40%) une fois par semaine. En Premium, vous choisissez votre seuil (-40, -50 ou -60%), vous accédez en plus aux aller simple et aux combos malins (2 billets séparés moins chers qu'un A/R), et les long-courriers ne sont jamais plafonnés." },
+  { q: "Combien d'alertes je reçois par jour ?", a: "On plafonne à 3 alertes par jour pour ne pas saturer votre Telegram. Les long-courriers (Asie, Amériques, océan Indien...) ne comptent pas dans ce plafond car ils sont rares et précieux. Vous pilotez le volume avec votre seuil de promo : -40% (~2-3/jour), -50% (~1-2/jour), -60% (0-1/jour, mais quand ça arrive c'est exceptionnel)." },
   { q: "Comment fonctionne la garantie 30 jours ?", a: "Si Premium ne vous convient pas, contactez-nous dans les 30 jours suivant votre achat et on vous rembourse intégralement, sans question." },
   { q: "Les prix incluent-ils les bagages ?", a: "Les prix affichés sont ceux des compagnies aériennes. Les bagages en soute sont parfois inclus selon la compagnie et le tarif. On le précise dans chaque alerte quand l’information est disponible." },
   { q: "Combien de temps entre la publication du prix et votre alerte ?", a: "Les prix sont mis à jour toutes les 20 minutes au départ de Paris (Beauvais, CDG et Orly), et toutes les 2 heures sur les autres aéroports français. Dès qu'une bonne affaire est repérée, l'alerte Telegram part dans la foulée, généralement moins de 5 minutes après l'apparition du deal." },
@@ -56,9 +58,9 @@ export default async function Landing() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />
 
       {/* ── NAVBAR ── */}
-      <nav aria-label="Navigation principale" className="sticky top-0 z-50 flex items-center justify-between px-6 sm:px-12 py-4 bg-[var(--color-cream)]/95 backdrop-blur-sm border-b border-[var(--color-sand)]">
+      <nav aria-label="Navigation principale" className="sticky top-0 z-50 flex items-center justify-between px-6 sm:px-12 h-[80px] bg-[var(--color-cream)]/95 backdrop-blur-sm border-b border-[var(--color-sand)]">
         <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-lg leading-none">
-          Globe<span className="text-[var(--color-coral)]">Genius</span>
+          <Wordmark />
         </Link>
         <div className="flex items-center gap-6 text-sm">
           <a href="#comment-ca-marche" className="hidden sm:inline text-[var(--color-ink)] hover:text-[var(--color-coral)] transition-colors">Comment ça marche</a>
@@ -90,7 +92,7 @@ export default async function Landing() {
         {/* ── STATS BAR ── */}
         <section className="flex flex-wrap justify-center gap-8 sm:gap-12 py-6 px-6 bg-white border-t border-[var(--color-sand)]">
           {[
-            { value: "-20%", label: "alerte chaque jour (gratuit)" },
+            { value: "<5s", label: "alerte sur Telegram" },
             { value: "-70%", label: "meilleur deal repéré" },
             { value: "24h/24", label: "surveillance des prix" },
             { value: "9", label: "aéroports français" },
@@ -114,15 +116,21 @@ export default async function Landing() {
               {recentGuides.map((g) => (
                 <Link key={g.iata} href={`/destination/${g.iata.toLowerCase()}`}
                       className="group block overflow-hidden rounded-2xl border border-[var(--color-sand)] bg-white hover:border-[var(--color-coral)] transition-colors">
-                  {g.cover_photo && (
-                    <div className="relative aspect-video overflow-hidden">
-                      {/* Using <img> here intentionally — <Image> with `fill` requires extra layout setup
-                          and these cards are below the fold. */}
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <div className="relative aspect-video overflow-hidden">
+                    {g.cover_photo ? (
+                      // Using <img> here intentionally — <Image> with `fill` requires extra layout setup
+                      // and these cards are below the fold.
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img src={g.cover_photo} alt={g.destination}
                            className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform" />
-                    </div>
-                  )}
+                    ) : (
+                      <div className="absolute inset-0 bg-gradient-to-br from-[var(--color-coral-50)] to-[var(--color-cream)] flex items-center justify-center">
+                        <span className="font-[family-name:var(--font-dm-serif)] text-3xl text-[var(--color-coral)]/40">
+                          {g.iata}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                   <div className="p-4">
                     <div className="text-xs text-gray-400">{g.destination}</div>
                     <div className="font-bold text-[var(--color-ink)]">{g.title}</div>
@@ -178,6 +186,48 @@ export default async function Landing() {
         {/* Deals passés, comment ça marche, FAQ */}
         <LandingAnimated />
 
+        {/* ── POURQUOI TELEGRAM ── */}
+        <section className="py-16 px-6 sm:px-12 bg-white border-t border-[var(--color-sand)]">
+          <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-[var(--color-ink)] text-center mb-2">
+            Pourquoi Telegram, et pas un email&nbsp;?
+          </h2>
+          <p className="text-center text-gray-500 text-sm max-w-xl mx-auto mb-10">
+            Parce qu&apos;un bon plan vol disparaît en 1 à 4 heures. L&apos;email arrive trop tard,
+            une app à installer fait perdre 30 secondes décisives.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-sand)] rounded-2xl p-6">
+              <div className="text-2xl mb-3">⚡</div>
+              <h3 className="font-bold text-[var(--color-ink)] mb-2">5 secondes, pas 5 minutes</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                Une notif Telegram s&apos;affiche sur ton écran de verrouillage en quelques secondes.
+                Le temps qu&apos;un email arrive et soit lu, le tarif est déjà parti.
+              </p>
+            </div>
+            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-sand)] rounded-2xl p-6">
+              <div className="text-2xl mb-3">📱</div>
+              <h3 className="font-bold text-[var(--color-ink)] mb-2">Pas d&apos;app à installer</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                Tu utilises déjà Telegram (ou tu l&apos;installes en 30 secondes — gratuit).
+                Aucun compte à créer chez nous&nbsp;: tu autorises notre bot, c&apos;est tout.
+              </p>
+            </div>
+            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-sand)] rounded-2xl p-6">
+              <div className="text-2xl mb-3">🎚️</div>
+              <h3 className="font-bold text-[var(--color-ink)] mb-2">
+                Tu pilotes tout depuis Telegram
+              </h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                Bloque une destination en un tap, mets en pause 7 ou 30 jours,
+                reprends quand tu veux — sans jamais ouvrir le site. C&apos;est toi qui pilotes.
+              </p>
+            </div>
+          </div>
+          <p className="text-center text-xs text-gray-400 mt-6 max-w-xl mx-auto">
+            ✓ Compatible iPhone, Android, ordinateur · ✓ Tes alertes te suivent même hors connexion
+          </p>
+        </section>
+
         {/* ── PRICING ── */}
         <section id="tarifs" className="py-16 px-6 sm:px-12 bg-[var(--color-cream)] border-t border-[var(--color-sand)]">
           <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-[var(--color-ink)] text-center mb-2">
@@ -228,34 +278,61 @@ export default async function Landing() {
           </div>
         </section>
 
-        {/* ── CTA FINAL ── */}
-        <section className="py-16 px-6 sm:px-12 bg-[var(--color-ink)] text-center">
-          <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-white mb-4">
-            Prêt à voyager moins cher ?
+        {/* ── CTA FINAL — 2 cards : déjà Telegram / pas encore ── */}
+        <section className="py-16 px-6 sm:px-12 bg-[var(--color-ink)]">
+          <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-white text-center mb-3">
+            Prêt à recevoir ton premier deal&nbsp;?
           </h2>
-          <p className="text-gray-400 mb-8">
-            Rejoignez les voyageurs qui économisent sur chaque vol.
+          <p className="text-gray-400 text-center mb-10">
+            Choisis la voie selon ton équipement. Activation en 30 secondes dans les deux cas.
           </p>
-          <Link href="/signup" className="inline-block bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-8 py-4 rounded-xl font-bold text-lg transition-colors shadow-[0_8px_24px_rgba(255,107,71,0.3)]">
-            Commencer gratuitement
-          </Link>
-        </section>
-
-        {/* ── TELEGRAM BANNER ── */}
-        <section className="py-8 px-6 sm:px-12 bg-gradient-to-r from-[#0088cc]/10 to-[#0088cc]/5 border-t border-[#0088cc]/20">
-          <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6">
-            <div className="flex items-center gap-4">
-              <svg className="w-12 h-12 text-[#0088cc] flex-shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
-              </svg>
-              <div>
-                <h3 className="text-lg font-bold text-[#0088cc] mb-1">Reçois les alertes en temps réel</h3>
-                <p className="text-gray-600 text-sm">Télécharge Telegram pour être notifié instantanément de chaque incroyable deal découvert</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-4xl mx-auto">
+            {/* Already on Telegram */}
+            <div className="bg-white rounded-2xl p-6 flex flex-col">
+              <div className="text-sm font-semibold text-[var(--color-coral)] mb-2">
+                ✓ Tu as déjà Telegram
               </div>
+              <h3 className="font-[family-name:var(--font-dm-serif)] text-xl text-[var(--color-ink)] mb-3">
+                Active tes alertes en 30 secondes
+              </h3>
+              <p className="text-sm text-gray-500 leading-relaxed mb-6 flex-1">
+                Crée ton compte gratuit, choisis tes aéroports, lie ton Telegram en un clic.
+                Le premier deal arrive dans les 24h en moyenne.
+              </p>
+              <Link
+                href="/signup"
+                className="block text-center bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-6 py-3 rounded-xl font-bold text-sm transition-colors shadow-[0_8px_24px_rgba(255,107,71,0.25)]"
+              >
+                Activer mes alertes Telegram
+              </Link>
+              <p className="text-xs text-gray-400 mt-2 text-center">Gratuit, sans carte bancaire</p>
             </div>
-            <a href="https://telegram.org/apps" target="_blank" rel="noopener noreferrer" className="px-6 py-3 bg-[#0088cc] hover:bg-[#006daa] text-white font-semibold rounded-xl transition-colors flex-shrink-0">
-              Télécharger Telegram
-            </a>
+
+            {/* Doesn't have Telegram yet */}
+            <div className="bg-[#0088cc]/10 border border-[#0088cc]/30 rounded-2xl p-6 flex flex-col">
+              <div className="text-sm font-semibold text-[#4DA9DD] mb-2 flex items-center gap-2">
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+                </svg>
+                Pas encore Telegram&nbsp;?
+              </div>
+              <h3 className="font-[family-name:var(--font-dm-serif)] text-xl text-white mb-3">
+                30 secondes, gratuit, depuis l&apos;App Store
+              </h3>
+              <p className="text-sm text-gray-300 leading-relaxed mb-6 flex-1">
+                Telegram est utilisé par plus d&apos;un milliard de personnes dans le monde.
+                Compatible iPhone, Android et ordinateur. Aucun spam, aucune pub, jamais.
+              </p>
+              <a
+                href="https://telegram.org/apps"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-center bg-[#0088cc] hover:bg-[#006daa] text-white px-6 py-3 rounded-xl font-bold text-sm transition-colors"
+              >
+                Télécharger Telegram
+              </a>
+              <p className="text-xs text-gray-400 mt-2 text-center">Puis reviens t&apos;inscrire ici</p>
+            </div>
           </div>
         </section>
       </main>
