@@ -154,8 +154,15 @@ A month after deploy, when no NULL `message_id` rows should remain
 ```sql
 ALTER TABLE sent_alerts
   ADD CONSTRAINT message_id_required
-  CHECK (message_id IS NOT NULL OR created_at < '2026-05-17');
+  CHECK (message_id IS NOT NULL OR created_at < '{DEPLOY_DATE_OF_039}');
 ```
+
+**Important**: `{DEPLOY_DATE_OF_039}` is a placeholder. Replace it
+with the actual date the migration 039 went live in production (not
+the date this spec was written). Any row inserted between this spec's
+date and the migration's actual deploy date would still pass through
+the application code without `message_id`, so the cutoff must reflect
+when the new code shipped, not when the design was written.
 
 This forces future code to respect the invariant.
 
@@ -293,17 +300,61 @@ are excluded from the denominator — they are zombies, not failing
 baselines, and have no place in the maturity number.
 
 Estimated for current data: 162 hot + 487 warm + 542 cold + 1123
-dormant → `649 / 1191 = 54%`. Much more legible than 39/100.
+dormant → `649 / 1191 = 54.5%`. Much more legible than 39/100.
+
+#### Per-cluster percentages
+
+The per-cluster percentages displayed next to each cluster count use
+the **total brut** as denominator (all 2314 baselines, dormants
+included). This is intentionally honest: hiding the 49% dormant share
+by reweighting the percentages would mask the very signal that
+forces the cleanup decision.
+
+So two different denominators coexist in the report by design:
+
+- **Headline `mature_coverage_pct`** uses `hot + warm + cold` (1191)
+  — what fraction of the *active* baselines have matured.
+- **Per-cluster `(X%)`** uses `total` (2314) — the photo of the
+  whole baseline population, dormants included.
+
+#### ETA cold → warm
+
+For each cold baseline, project days needed to reach 10 samples (the
+warm threshold):
+
+```python
+def eta_cold_to_warm(samples: int, rate_per_day: float) -> int | None:
+    if rate_per_day <= 0:
+        return None
+    return int((10 - samples) / rate_per_day)
+```
+
+For the report, take the median over all cold baselines that have a
+defined ETA:
+
+```python
+cold_etas = [
+    eta_cold_to_warm(b.samples, b.rate_per_day)
+    for b in cold_baselines
+    if b.rate_per_day > 0
+]
+median_eta_days = (
+    int(statistics.median(cold_etas)) if len(cold_etas) >= 5 else None
+)
+```
+
+If fewer than 5 cold baselines have a defined ETA, display `—`
+instead of a median — too small a sample to be meaningful.
 
 #### Telegram report format (≤12 lines)
 
 ```
 🟡 Couverture mature : 54%
 
-  🟢 Hot     162  (14%)  ≥30 samples
-  🟡 Warm    487  (41%)  10-29 samples
-  🟠 Cold    542  (45%)  ETA warm: 45j (médiane)
-  🔴 Dormant 1123       → CSV envoyé
+  🟢 Hot     162  (7%)   ≥30 samples
+  🟡 Warm    487 (21%)   10-29 samples
+  🟠 Cold    542 (23%)   ETA warm: 45j (médiane)
+  🔴 Dormant 1123 (49%)  → CSV envoyé
 
 samples/baseline/jour (méd) : 0.17
 
@@ -493,3 +544,8 @@ The following are explicitly deferred:
 - Reinstating the L2 exceptional bypass — revisit at ~100 active
   users or 2026-08, whichever first. TODO comment added in
   `dispatch_guards.py` and a line in `ROADMAP.md` Deferred section.
+- **Tier-aware alert caps (free vs premium)** — design pending. Will
+  introduce a `users.tier` column, dynamic caps in
+  `dispatch_guards.py` (3 short / 0 long for free, current 3+2 for
+  premium), and grandfathered premium status for the existing
+  recipients. Scoped as a separate sprint after these three chantiers.
