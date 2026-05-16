@@ -9,16 +9,15 @@ Two leviers, applied in order at the per-user × per-destination level
         is below 70% of the previously alerted price (= a real chute
         that's worth re-pinging the user about).
 
-    Levier 2 — rolling 24h cap of 3 notifications per user
-        At most 3 short-haul alerts are pushed per user in any 24h
-        window. Long-haul destinations (`is_long_haul`) have their own
-        smaller cap — `LONG_HAUL_DAILY_CAP=2` per 24h, no exception
-        path — because real long-haul mistake fares are rare and the
-        cap is itself a feature (the bypass that existed before could
-        let a chatty week breach the user's notification budget).
-        A 4th short-haul alert is also allowed when its discount is
-        ≥10 points above the *best* discount already alerted in the
-        rolling window — bounded by `EXCEPTIONAL_BYPASS_CEILING=1`.
+    Levier 2 — rolling 24h cap of 5 total notifications per user
+        At most 3 short-haul + 2 long-haul alerts per user in any 24h
+        window, POOLED into a strict total of 5. Long-haul over-spend
+        eats into the short-haul budget and vice versa. No exception
+        path — the previous "+1 if exceptional discount" bypass made
+        the real worst case 6/day, breaking the "3+2" promise users
+        rely on. With reverification at ~95%, every alert that lands
+        is already high-quality; an extra bypass slot adds noise more
+        than signal.
 
 Deals filtered out by either levier are NOT discarded — they remain in
 qualified_items and surface on /home so the user can browse them on
@@ -102,26 +101,14 @@ def levier_1_destination_cooldown_blocks(
 
 # ── Levier 2 ────────────────────────────────────────────────────────────────
 
-# Short-haul cap (typical European deal alerts). 3 baseline + 1 exception.
-DAILY_ALERT_CAP = 3
-# Long-haul cap. No exception slot — long-haul deals are individually rare
-# enough that 2 high-quality alerts in a day already cover almost every
-# realistic mistake-fare scenario, and a hard cap is what the user
-# actually wants from the notification stream.
-LONG_HAUL_DAILY_CAP = 2
+# Pooled 5/24h cap, broken down as 3 short-haul + 2 long-haul.
+# Each lane has its own ceiling, but the TOTAL across both is also
+# capped — so 2 long-haul + 3 short = 5 (allowed), but 2 long + 4 short
+# = 6 (blocked) even if the short lane individually had room.
+DAILY_ALERT_CAP = 3            # short-haul ceiling
+LONG_HAUL_DAILY_CAP = 2        # long-haul ceiling
+TOTAL_DAILY_CAP = DAILY_ALERT_CAP + LONG_HAUL_DAILY_CAP  # 5
 DAILY_CAP_WINDOW_HOURS = 24
-# A 4th short-haul alert is allowed past the cap when its discount beats
-# the BEST (highest) discount already alerted in the window by this many
-# points. Comparing against the MAX (not the MIN) keeps the bar genuinely
-# high: once a great alert has fired, every subsequent exception must
-# beat it.
-EXCEPTIONAL_DISCOUNT_GAP = 10.0
-# Hard ceiling on exceptional bypasses per rolling 24h (short-haul only).
-# Without this, even a "must beat the max" rule would let an arbitrarily
-# long sequence of monotonically increasing discounts slip through. With
-# ceiling=1, the worst case is DAILY_ALERT_CAP + 1 = 4 short-haul alerts
-# per user per 24h. Long-haul has no exception path at all.
-EXCEPTIONAL_BYPASS_CEILING = 1
 # Granularity (minutes) for collapsing sent_alerts rows that belong to the
 # same Telegram message. The dispatcher writes ONE row per offer-key for
 # the 168h dedup, but a grouped alert containing N offers is still ONE
@@ -174,24 +161,17 @@ def levier_2_daily_cap_blocks(
 ) -> bool:
     """Return True if levier 2 says this alert should NOT be pushed.
 
-    Two separate caps apply, depending on the destination class:
+    Pooled 5/24h cap, broken down as 3 short-haul + 2 long-haul:
 
-    Short-haul (everything not in `LONG_HAUL_DESTINATIONS`):
-        Cap = `DAILY_ALERT_CAP` (3) per rolling 24h. Past the cap, a
-        single "exceptional" alert is allowed when its discount exceeds
-        the BEST already-sent discount in the window by at least
-        `EXCEPTIONAL_DISCOUNT_GAP` (10) points. Bounded by
-        `EXCEPTIONAL_BYPASS_CEILING` (1). Worst case: 4 alerts / 24h.
+      1. Short-haul lane ceiling   = DAILY_ALERT_CAP (3)
+      2. Long-haul lane ceiling    = LONG_HAUL_DAILY_CAP (2)
+      3. Total across both lanes   = TOTAL_DAILY_CAP (5)
 
-    Long-haul (`is_long_haul(destination)` is True):
-        Cap = `LONG_HAUL_DAILY_CAP` (2) per rolling 24h, no exception
-        slot. Long-haul mistake fares are rare enough that 2 alerts per
-        day saturates the user's appetite — the previous "always pass"
-        bypass let chatty weeks (Christmas / June Asia promos) leak
-        far above what the user actually wants.
-
-    The two caps are independent: a user can receive 3 short-haul +
-    2 long-haul alerts in the same 24h window. They are NOT pooled.
+    All three must be under their respective ceiling for the new alert
+    to pass. Worst case: 5 notifications per user per 24h. There is no
+    exceptional-discount bypass — with reverification at ~95%, every
+    alert that lands is already a vetted deal, and the previous "+1"
+    slot pushed the real ceiling to 6 while breaking the "3+2" promise.
 
     Notification-only filter: counted alerts include only flight rows
     (no teasers, no system messages — see allowed_alert_types below).
@@ -216,14 +196,18 @@ def levier_2_daily_cap_blocks(
       discount against `min(countable_discounts) + EXCEPTIONAL_GAP`.
       Once one ≥40% alert had fired, the threshold stayed anchored to
       the lowest discount in the window, letting subsequent ≥40%
-      alerts slip through with no upper bound. Fixed by comparing
-      against MAX and adding the hard ceiling.
+      alerts slip through with no upper bound.
     - 2026-05-05 (long-haul bypass): long-haul previously bypassed
       the cap entirely. Replaced by `LONG_HAUL_DAILY_CAP`.
     - 2026-05-05 (multi-row inflation): each grouped alert wrote N
       rows for N offers, and L2 counted rows. A single 3-offer
       message could saturate the cap. Fixed by collapsing rows on
       `(destination, MESSAGE_BUCKET_MINUTES bucket)` before binning.
+    - 2026-05-16 (lane independence + bypass): the short and long caps
+      were independent and a 4th short alert could slip through past
+      the cap on an "exceptional discount" rule. Worst case was 6/day,
+      not 5. Replaced by a pooled TOTAL_DAILY_CAP=5 with no exception
+      slot — the cap now matches the "3+2" the product promises.
     """
     if not db:
         return False
@@ -296,28 +280,20 @@ def levier_2_daily_cap_blocks(
                 short_haul_discounts.append(float(d))
 
     new_is_long_haul = is_long_haul(destination)
+    short_count = len(short_haul_discounts)
+    long_count = len(long_haul_discounts)
+    total_count = short_count + long_count
 
-    if new_is_long_haul:
-        # Long-haul: pure hard cap, no exception path.
-        if len(long_haul_discounts) < LONG_HAUL_DAILY_CAP:
-            return False  # under long-haul cap → allow
-        return True  # at or past long-haul cap → block
-
-    # Short-haul lane (existing behaviour).
-    if len(short_haul_discounts) < DAILY_ALERT_CAP:
-        return False  # under cap → allow
-
-    # At or past cap. Hard ceiling first: deterministic worst-case
-    # regardless of how discounts are distributed.
-    if len(short_haul_discounts) >= DAILY_ALERT_CAP + EXCEPTIONAL_BYPASS_CEILING:
+    # Hit the total pool first — the strictest of the three checks
+    # whenever both lanes have already contributed.
+    if total_count >= TOTAL_DAILY_CAP:
         return True
 
-    # Exceptional-deal exception: the new discount must beat the BEST
-    # already-sent short-haul discount by EXCEPTIONAL_DISCOUNT_GAP
-    # points. Comparing against the MAX (not the MIN) keeps the bar
-    # high — once one outstanding deal lands, only a strictly better
-    # one can interrupt the user past the cap.
-    max_sent = max(short_haul_discounts)
-    if new_discount_pct >= max_sent + EXCEPTIONAL_DISCOUNT_GAP:
-        return False  # exceptional improvement over the best → allow
-    return True  # cap reached, not exceptional → block
+    if new_is_long_haul:
+        if long_count >= LONG_HAUL_DAILY_CAP:
+            return True
+        return False
+
+    if short_count >= DAILY_ALERT_CAP:
+        return True
+    return False

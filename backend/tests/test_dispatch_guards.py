@@ -11,10 +11,9 @@ from unittest.mock import MagicMock
 
 from app.notifications.dispatch_guards import (
     DAILY_ALERT_CAP,
-    EXCEPTIONAL_BYPASS_CEILING,
-    EXCEPTIONAL_DISCOUNT_GAP,
     LONG_HAUL_DAILY_CAP,
     MESSAGE_BUCKET_MINUTES,
+    TOTAL_DAILY_CAP,
     levier_1_destination_cooldown_blocks,
     levier_2_daily_cap_blocks,
 )
@@ -83,44 +82,22 @@ def test_l2_under_cap_allows():
     ) is False
 
 
-def test_l2_at_cap_blocks_unexceptional():
-    """At cap with [30, 30, 30], a 35% discount must NOT pass — it's
-    not 10 points above the best (max=30)."""
+def test_l2_at_short_cap_blocks_even_high_discount():
+    """REGRESSION (2026-05-16): once short-haul cap is reached, NO
+    further short-haul alert passes — no exceptional bypass, regardless
+    of how good the discount is. Previously a 99% deal could slip past
+    a [30,30,30] window by exceeding max+10."""
+    db = _make_db([_row(30.0) for _ in range(DAILY_ALERT_CAP)])
+    assert levier_2_daily_cap_blocks(
+        db=db, user_id="u", destination="LIS", new_discount_pct=99.0
+    ) is True
+
+
+def test_l2_at_short_cap_blocks_unexceptional():
+    """At cap with [30, 30, 30], a 35% discount must be blocked."""
     db = _make_db([_row(30.0) for _ in range(DAILY_ALERT_CAP)])
     assert levier_2_daily_cap_blocks(
         db=db, user_id="u", destination="LIS", new_discount_pct=35.0
-    ) is True
-
-
-def test_l2_at_cap_allows_exceptional_over_max():
-    """At cap with [30, 30, 30], a 41% discount passes — exceeds the
-    best by EXCEPTIONAL_DISCOUNT_GAP+1 points."""
-    db = _make_db([_row(30.0) for _ in range(DAILY_ALERT_CAP)])
-    assert levier_2_daily_cap_blocks(
-        db=db, user_id="u", destination="LIS", new_discount_pct=41.0
-    ) is False
-
-
-def test_l2_high_discount_in_window_raises_the_bar():
-    """REGRESSION (2026-05-05): when the window contains a 50% deal
-    plus two 30% deals, a 40% candidate must NOT pass. Previously the
-    code compared against MIN(window)=30 → threshold 40 → allow.
-    Switching to MAX(window)=50 → threshold 60 → block."""
-    db = _make_db([_row(30.0), _row(30.0), _row(50.0)])
-    assert levier_2_daily_cap_blocks(
-        db=db, user_id="u", destination="LIS", new_discount_pct=40.0
-    ) is True
-
-
-def test_l2_hard_ceiling_blocks_even_extreme_discount():
-    """Hard ceiling: once the user has already received
-    DAILY_ALERT_CAP + EXCEPTIONAL_BYPASS_CEILING alerts in the window,
-    no further alert passes — not even a 99% discount. Worst case is
-    deterministic."""
-    n = DAILY_ALERT_CAP + EXCEPTIONAL_BYPASS_CEILING
-    db = _make_db([_row(30.0) for _ in range(n)])
-    assert levier_2_daily_cap_blocks(
-        db=db, user_id="u", destination="LIS", new_discount_pct=99.0
     ) is True
 
 
@@ -153,8 +130,8 @@ def test_l2_in_run_pending_counts_against_cap():
         new_discount_pct=30.0,
         pending_in_run_alerts=pending_two,
     ) is False  # 2 < cap → allow
-    # Three prior alerts in run + new candidate of 35% → at cap, not
-    # exceptional vs max=30, threshold=40 → block.
+    # Three prior alerts in run + new short candidate → short cap (3)
+    # reached → block regardless of discount.
     pending_three = pending_two + [{"discount_pct": 30.0, "destination": "BCN"}]
     assert levier_2_daily_cap_blocks(
         db=db, user_id="u", destination="LIS",
@@ -195,24 +172,50 @@ def test_l2_long_haul_at_cap_blocks():
     ) is True
 
 
-def test_l2_long_haul_does_not_count_short_haul_against_its_cap():
-    """The two caps are independent: a long-haul candidate is NOT
-    blocked just because the user already received 3 short-haul alerts.
-    The user can still get short_cap + long_cap alerts in 24h."""
+def test_l2_long_haul_lane_open_when_short_lane_full():
+    """After 3 short-haul alerts, the long-haul lane is still open up to
+    its own ceiling of 2 — pooled total = 3+1 = 4 ≤ TOTAL_DAILY_CAP."""
     db = _make_db([_row(30.0, "LIS"), _row(35.0, "OPO"), _row(40.0, "BCN")])
     assert levier_2_daily_cap_blocks(
         db=db, user_id="u", destination="NRT", new_discount_pct=30.0
     ) is False
 
 
-def test_l2_short_haul_does_not_count_long_haul_against_its_cap():
-    """Symmetric: a short-haul candidate isn't blocked because long-haul
-    alerts filled their lane. Two long-haul alerts + a 30% short-haul
-    candidate → allow (short-haul lane still empty)."""
+def test_l2_short_haul_lane_open_when_long_lane_full():
+    """Symmetric: after 2 long-haul alerts, short-haul lane is still
+    open. Total = 2+1 = 3 ≤ TOTAL_DAILY_CAP."""
     db = _make_db([_row(30.0, "NRT"), _row(40.0, "BKK")])
     assert levier_2_daily_cap_blocks(
         db=db, user_id="u", destination="LIS", new_discount_pct=30.0
     ) is False
+
+
+def test_l2_pooled_total_blocks_5th_alert():
+    """REGRESSION (2026-05-16): 3 short + 2 long = 5 alerts. The 6th
+    alert in ANY lane must be blocked — total cap is pooled, not the
+    sum of two independent ceilings."""
+    db = _make_db([
+        _row(30.0, "LIS"),
+        _row(35.0, "OPO"),
+        _row(40.0, "BCN"),
+        _row(45.0, "NRT"),
+        _row(50.0, "BKK"),
+    ])
+    # 6th short-haul attempt — should block on TOTAL_DAILY_CAP.
+    assert levier_2_daily_cap_blocks(
+        db=db, user_id="u", destination="MAD", new_discount_pct=30.0
+    ) is True
+    # 6th long-haul attempt — same, blocks on TOTAL_DAILY_CAP.
+    assert levier_2_daily_cap_blocks(
+        db=db, user_id="u", destination="JFK", new_discount_pct=30.0
+    ) is True
+
+
+def test_l2_pooled_total_cap_matches_doc():
+    """Sanity guard: pool ceiling must stay at 5 (3 short + 2 long).
+    Any future refactor that widens this without updating the docstring
+    will trip this test."""
+    assert TOTAL_DAILY_CAP == DAILY_ALERT_CAP + LONG_HAUL_DAILY_CAP == 5
 
 
 def test_l2_long_haul_in_run_counter_works():
@@ -309,9 +312,9 @@ def test_l2_dedup_bucket_distinguishes_messages_far_apart():
         )),
     ]
     db = _make_db(rows)
-    # 2 distinct messages to LIS in the window. With one more,
-    # short-haul cap is hit; a 4th 35% candidate is blocked
-    # (35 < max(40, 40) + 10 = 50).
+    # 2 distinct messages to LIS in the window. With one more short
+    # message, short-haul cap is hit (3); a 4th short candidate must
+    # block — no exceptional bypass exists.
     rows.append(_row(40.0, "OPO", created_at="2026-05-05T08:00:00+00:00"))
     db = _make_db(rows)
     assert levier_2_daily_cap_blocks(
@@ -345,7 +348,8 @@ def test_l2_dedup_does_not_collapse_different_destinations():
         _row(40.0, "BCN", created_at=same_ts),
     ]
     db = _make_db(rows)
-    # 3 distinct messages (LIS / OPO / BCN), at cap, 35% < 50 → block.
+    # 3 distinct short-haul messages (LIS / OPO / BCN), short cap hit
+    # → 4th short candidate blocks.
     assert levier_2_daily_cap_blocks(
         db=db, user_id="u", destination="MAD", new_discount_pct=35.0
     ) is True
@@ -362,8 +366,8 @@ def test_l2_dedup_handles_missing_created_at_per_row():
         {"discount_pct": 40.0, "destination": "LIS"},  # no created_at
     ]
     db = _make_db(rows)
-    # 1 message with created_at + 2 unbucketable rows → 3 events.
-    # 35% candidate at cap, not exceptional vs max=40, threshold=50 → block.
+    # 1 message with created_at + 2 unbucketable rows → 3 short events
+    # → short cap hit → 4th short candidate blocks.
     assert levier_2_daily_cap_blocks(
         db=db, user_id="u", destination="OPO", new_discount_pct=35.0
     ) is True
