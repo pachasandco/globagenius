@@ -1,5 +1,5 @@
 """Generate a 2000-word destination guide following the
-travel-journalist-writer skill (format: guide destination).
+travel-journalist-writer skill (format: city presentation).
 
 Architecture decision: this module is intentionally separate from the
 legacy article_writer.py (which produces a different 4-section shape
@@ -9,8 +9,12 @@ articles' contract.
 
 The output dict matches what we'll insert into the `articles` table:
 title, h1, slug, meta_description, lead, nut_graf, top_picks,
-itinerary, infos_pratiques, faq, sources, tags, photo_query, plus
-the technical fields iata, generated_at, word_count.
+neighborhoods, infos_pratiques, faq, sources, tags, photo_query,
+plus the technical fields iata, generated_at, word_count.
+
+The legacy `itinerary` field (3-day program) was dropped in 2026-05
+because GG users don't reliably stay 3 days — we now profile the city
+itself (assets, character) rather than prescribe a stay.
 
 References (from /tmp/travel-skill/travel-journalist-writer/):
 - references/format-guide.md (structure)
@@ -41,7 +45,7 @@ PRINCIPES NON-NÉGOCIABLES:
 5. Pas de clichés ("perle de…", "pays des sourires", "Venise du Nord").
 6. Le lecteur n'est pas un client. L'article informe et raconte, il ne vend pas.
 
-FORMAT GUIDE DESTINATION mixé Top X + Itinéraire J1-J3 + Infos pratiques. Toujours en français, toujours rigoureux.
+FORMAT GUIDE DESTINATION mixé Top X + Quartiers + Infos pratiques. Toujours en français, toujours rigoureux. Pas d'itinéraire prescrit : tu profiles la ville, le lecteur s'organise lui-même.
 
 Réponds UNIQUEMENT avec un JSON valide qui suit EXACTEMENT cette structure:
 
@@ -61,20 +65,14 @@ Réponds UNIQUEMENT avec un JSON valide qui suit EXACTEMENT cette structure:
     }
     // EXACTEMENT 8 entrées
   ],
-  "itinerary": [
+  "neighborhoods": [
     {
-      "day": 1,
-      "title": "Titre thématique de la journée",
-      "morning": "9h-12h: description avec adresses + temps + prix",
-      "lunch": "Restau précis avec adresse et budget",
-      "afternoon": "14h-18h: description + transports",
-      "evening": "Bar/dîner/spectacle",
-      "lodging": "Suggestion gamme + quartier",
-      "rain_plan": "Plan B 1-2 phrases si pluie",
-      "budget_option": "Variante éco",
-      "premium_option": "Variante haut de gamme"
+      "name": "Nom du quartier",
+      "character": "Phrase d'angle 8-15 mots qui dit son caractère (chic, populaire, alternatif, vert, touristique...)",
+      "description": "3-5 phrases journalistiques: ambiance, qui y vit ou y traîne, ce qu'on y voit/mange/boit, anecdote ou détail sensoriel",
+      "highlights": "Adresses ou repères clés (rues, places, marchés, cafés) séparés par · "
     }
-    // EXACTEMENT 3 jours
+    // 3 à 5 quartiers représentatifs (ne pas brodier au-delà s'il n'y en a pas)
   ],
   "infos_pratiques": {
     "best_season": "Mois précis et pourquoi (3-4 phrases)",
@@ -100,7 +98,7 @@ Réponds UNIQUEMENT avec un JSON valide qui suit EXACTEMENT cette structure:
   "photo_query": "search query in English for Unsplash, e.g. 'Barcelona Spain travel'"
 }
 
-Densité totale visée: 2000 mots minimum (lead + nut_graf + 8x top_picks + 3x itinerary + infos_pratiques + faq). Sans bourrage. Si l'angle ne porte pas 2000 mots de qualité, descends à 1500 mais ne brode pas.
+Densité totale visée: 2000 mots minimum (lead + nut_graf + 8x top_picks + 3-5x neighborhoods + infos_pratiques + faq). Sans bourrage. Si l'angle ne porte pas 2000 mots de qualité, descends à 1500 mais ne brode pas.
 
 Aucun texte en dehors du JSON. Aucun ```. JSON brut."""
 
@@ -129,9 +127,10 @@ def _count_words(article: dict) -> int:
     for pick in article.get("top_picks", []) or []:
         parts.append(pick.get("description", ""))
         parts.append(pick.get("practical", ""))
-    for day in article.get("itinerary", []) or []:
-        for k in ("morning", "lunch", "afternoon", "evening", "lodging", "rain_plan", "budget_option", "premium_option"):
-            parts.append(day.get(k, ""))
+    for nb in article.get("neighborhoods", []) or []:
+        parts.append(nb.get("character", ""))
+        parts.append(nb.get("description", ""))
+        parts.append(nb.get("highlights", ""))
     infos = article.get("infos_pratiques") or {}
     for v in infos.values():
         if isinstance(v, str):
@@ -157,9 +156,10 @@ def generate_destination_guide(iata: str) -> Optional[dict]:
     city_label = IATA_TO_CITY.get(iata, iata)
     user_message = (
         f"Rédige le guide destination pour {city_label} (code aéroport: {iata}). "
-        f"Public: voyageurs français qui partent en court ou moyen séjour. "
+        f"Public: voyageurs français au départ de Paris, durée de séjour variable. "
+        f"Profile la ville (atouts, quartiers, vie locale) plutôt que de prescrire un programme. "
         f"Mot-clé SEO principal: \"{city_label.lower()} guide voyage\". "
-        f"Mots-clés secondaires: \"que faire à {city_label.lower()}\", \"itinéraire {city_label.lower()}\", "
+        f"Mots-clés secondaires: \"que faire à {city_label.lower()}\", \"quartiers {city_label.lower()}\", "
         f"\"voyage {city_label.lower()} pas cher\". Format de réponse: JSON brut conforme au schéma."
     )
 

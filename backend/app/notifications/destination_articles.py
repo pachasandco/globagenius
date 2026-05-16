@@ -12,6 +12,12 @@ Cost discipline: an article is generated AT MOST ONCE per destination,
 ever. Subsequent alerts to the same destination don't pay any Anthropic
 tokens.
 
+A separate `is_legacy_format()` / `regenerate_in_background()` pair
+handles the 2026-05 schema change (itinerary → neighborhoods): the
+/api/destinations/{iata} endpoint detects articles still carrying the
+old 3-day program and triggers a non-blocking regeneration so the next
+visitor sees the new city-presentation format.
+
 Failure modes don't crash the caller — they return False so the alert
 dispatcher can decide to send the alert without the guide link.
 """
@@ -123,4 +129,68 @@ def ensure_article_for_destination(iata: str) -> bool:
         return True
     except Exception as e:
         logger.error("Article insert failed for %s: %s", iata, e)
+        return False
+
+
+# ── Legacy-format regeneration (2026-05 schema change) ────────────────────
+
+
+def is_legacy_format(article: dict) -> bool:
+    """An article is "legacy" when it carries the dropped 3-day
+    itinerary and lacks the new neighborhoods block.
+
+    We don't treat "has itinerary AND has neighborhoods" as legacy —
+    that's an article mid-migration and the frontend should already
+    render the neighborhoods. Same for "no itinerary AND no
+    neighborhoods" (a generation that bailed early, not our concern).
+    """
+    itinerary = article.get("itinerary") or []
+    neighborhoods = article.get("neighborhoods") or []
+    return bool(itinerary) and not neighborhoods
+
+
+def regenerate_article(iata: str) -> bool:
+    """Re-run generate_destination_guide() and UPDATE (not insert) the
+    existing row. Keeps the cover photo and id; overwrites the body
+    fields (lead, top_picks, neighborhoods, infos_pratiques, faq, etc.)
+    and nulls out the legacy `itinerary`.
+
+    Returns True on success. Logs and returns False on any failure —
+    the caller (a background task) doesn't propagate the error to the
+    HTTP response, so users get the stale article rather than an error.
+    """
+    if not db:
+        return False
+    article = generate_destination_guide(iata)
+    if not article:
+        logger.warning("Regen returned None for %s", iata)
+        return False
+
+    # Don't touch the cover photo — Unsplash already resolved one and
+    # re-querying could land on a different image, breaking the cache
+    # and confusing returning visitors.
+    update = {
+        "title": article.get("title"),
+        "h1": article.get("h1"),
+        "slug": article.get("slug"),
+        "meta_description": article.get("meta_description"),
+        "lead": article.get("lead"),
+        "nut_graf": article.get("nut_graf"),
+        "top_picks": article.get("top_picks") or [],
+        "neighborhoods": article.get("neighborhoods") or [],
+        "infos_pratiques": article.get("infos_pratiques") or {},
+        "faq": article.get("faq") or [],
+        "sources": article.get("sources") or [],
+        "tags": article.get("tags") or [],
+        "itinerary": None,  # drop the legacy 3-day block
+        "word_count": article.get("word_count"),
+        "generated_at": article.get("generated_at"),
+    }
+    try:
+        db.table("articles").update(update).eq("iata", iata).execute()
+        logger.info("Article regenerated for %s (new format, %s words)",
+                    iata, article.get("word_count"))
+        return True
+    except Exception as e:
+        logger.error("Regen update failed for %s: %s", iata, e)
         return False

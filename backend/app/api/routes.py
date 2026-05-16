@@ -1218,11 +1218,17 @@ def list_destinations(limit: int = 6, random: bool = False):
 
 
 @router.get("/api/destinations/{iata}")
-def get_destination(iata: str):
+def get_destination(iata: str, bg_tasks: BackgroundTasks):
     """Public endpoint backing the /destination/[iata] page.
 
     Returns the article + cover photo + up to 5 active deals towards
     this destination. 404 if no article generated yet.
+
+    Articles still carrying the legacy 3-day itinerary are flagged for
+    background regeneration so the next visitor sees the new
+    city-presentation format. The current request still returns the
+    old article — regenerating synchronously would block 30-60s on the
+    LLM, which is unacceptable for a page-load endpoint.
     """
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
@@ -1241,6 +1247,15 @@ def get_destination(iata: str):
     if not art_resp.data:
         raise HTTPException(status_code=404, detail="No guide for this destination yet")
     article = art_resp.data[0]
+
+    # Schema migration (2026-05): legacy articles carry a 3-day
+    # itinerary instead of neighborhoods. Trigger a background
+    # regeneration. Visitors that follow this one will see the new
+    # format; this visitor still gets the legacy content.
+    from app.notifications.destination_articles import is_legacy_format, regenerate_article
+    if is_legacy_format(article):
+        logger.info("Scheduling background regen for legacy article %s", iata_upper)
+        bg_tasks.add_task(regenerate_article, iata_upper)
 
     photo = {
         "url": article.get("cover_photo", ""),

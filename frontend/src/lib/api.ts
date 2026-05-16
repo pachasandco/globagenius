@@ -247,7 +247,10 @@ export interface DestinationGuide {
       description: string;
       practical: string;
     }>;
-    itinerary: Array<{
+    // Legacy 3-day program — dropped in 2026-05, kept optional until
+    // every article has been regenerated to the new format. Render
+    // `neighborhoods` instead.
+    itinerary?: Array<{
       day: number;
       title: string;
       morning: string;
@@ -258,6 +261,12 @@ export interface DestinationGuide {
       rain_plan: string;
       budget_option: string;
       premium_option: string;
+    }> | null;
+    neighborhoods?: Array<{
+      name: string;
+      character: string;
+      description: string;
+      highlights: string;
     }>;
     infos_pratiques: Record<string, string>;
     faq: Array<{ q: string; a: string }>;

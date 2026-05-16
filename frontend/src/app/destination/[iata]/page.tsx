@@ -113,24 +113,24 @@ export default async function DestinationPage({ params }: PageProps) {
           </div>
         ))}
 
-        <h2 className="mt-12 font-[family-name:var(--font-dm-serif)] text-3xl">L&apos;itinéraire suggéré</h2>
-        {a.itinerary.map((day) => (
-          <div key={day.day} className="mb-8">
-            <h3 className="text-xl font-bold">
-              Jour {day.day} — {day.title}
-            </h3>
-            <p><strong>Matin (9h-12h) :</strong> {day.morning}</p>
-            <p><strong>Déjeuner :</strong> {day.lunch}</p>
-            <p><strong>Après-midi (14h-18h) :</strong> {day.afternoon}</p>
-            <p><strong>Soir :</strong> {day.evening}</p>
-            <p><strong>Logement :</strong> {day.lodging}</p>
-            <p className="text-sm text-gray-600">
-              <strong>Si pluie :</strong> {day.rain_plan}<br />
-              <strong>Option budget :</strong> {day.budget_option}<br />
-              <strong>Option premium :</strong> {day.premium_option}
-            </p>
-          </div>
-        ))}
+        {a.neighborhoods && a.neighborhoods.length > 0 && (
+          <>
+            <h2 className="mt-12 font-[family-name:var(--font-dm-serif)] text-3xl">Les quartiers</h2>
+            {a.neighborhoods.map((nb, i) => (
+              <div key={i} className="mb-8">
+                <h3 className="text-xl font-bold">
+                  {nb.name} — <span className="font-normal italic">{nb.character}</span>
+                </h3>
+                <p>{nb.description}</p>
+                {nb.highlights && (
+                  <p className="text-sm text-gray-600">
+                    <strong>À voir :</strong> {nb.highlights}
+                  </p>
+                )}
+              </div>
+            ))}
+          </>
+        )}
 
         {/* Deals slot */}
         {deals.length > 0 && (
