@@ -373,3 +373,59 @@ def _recent_alert_ts_for_user(
         return datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+def levier_3_burst_blocks(
+    *,
+    db,
+    user_id: str,
+    destination: str,
+    new_discount_pct: float,
+    pending_in_run_alerts: dict[str, datetime] | None = None,
+    now: datetime | None = None,
+) -> bool:
+    """Return True iff levier 3 says this alert should NOT be pushed.
+
+    Rule:
+      1. Lookup the most recent alert to this user in the last
+         BURST_WINDOW_HOURS (default 3h). Includes both DB-persisted
+         alerts and in-run pending alerts dispatched earlier in the
+         same scheduler tick.
+      2. If nothing in window → pass (False).
+      3. If something in window:
+         - Long-haul candidate (per is_long_haul(destination)):
+           pass iff new_discount_pct >= BURST_EXCEPTION_DISCOUNT_LONG (60).
+         - Short-haul candidate:
+           pass iff new_discount_pct >= BURST_EXCEPTION_DISCOUNT_SHORT (70).
+         Otherwise block (True).
+
+    pending_in_run_alerts: Dict[user_id, most_recent_ts] — alerts
+    dispatched to this user earlier in the current scheduler tick
+    that haven't been flushed to DB yet. The dict-keyed shape (vs a
+    list) is intentional: it dedups in case of retry within the same
+    tick. None / empty dict → no in-run state.
+
+    Note on separation of concerns: L3 only enforces TIMING (burst).
+    L2 enforces VOLUME (5/24h pool). The dispatcher applies them in
+    order L1 → L3 → L2; passing L3 does NOT guarantee L2 will pass.
+    """
+    now = now or datetime.now(timezone.utc)
+    db_ts = _recent_alert_ts_for_user(db=db, user_id=user_id, now=now)
+    in_run_ts = (pending_in_run_alerts or {}).get(user_id)
+
+    candidates = [t for t in (db_ts, in_run_ts) if t is not None]
+    if not candidates:
+        return False  # no burst in window → pass
+
+    # Most recent across DB and in-run.
+    recent = max(candidates)
+    if (now - recent) >= timedelta(hours=BURST_WINDOW_HOURS):
+        return False  # outside window → pass (defensive; query already filters)
+
+    # Inside window. Apply the exception threshold.
+    threshold = (
+        BURST_EXCEPTION_DISCOUNT_LONG
+        if is_long_haul(destination)
+        else BURST_EXCEPTION_DISCOUNT_SHORT
+    )
+    return new_discount_pct < threshold
