@@ -135,3 +135,41 @@ def test_mature_coverage_returns_zero_when_no_active_baselines():
     """All dormants → 0 / 0 → return 0.0 (not a crash)."""
     counts = {"hot": 0, "warm": 0, "cold": 0, "dormant": 100}
     assert mature_coverage_pct(counts) == 0.0
+
+
+from app.analysis.baseline_clusters import eta_cold_to_warm, median_cold_eta_days
+
+
+def test_eta_cold_to_warm_basic():
+    """At 0 samples + 0.5/day, need 10 samples → 20 days."""
+    assert eta_cold_to_warm(samples=0, rate_per_day=0.5) == 20
+
+
+def test_eta_cold_to_warm_partial_progress():
+    """At 5 samples + 0.5/day, need 5 more → 10 days."""
+    assert eta_cold_to_warm(samples=5, rate_per_day=0.5) == 10
+
+
+def test_eta_cold_to_warm_zero_rate_is_none():
+    """rate_per_day == 0 → ETA undefined (don't divide by zero)."""
+    assert eta_cold_to_warm(samples=5, rate_per_day=0.0) is None
+
+
+def test_median_cold_eta_returns_int_when_5_or_more_baselines():
+    """At least 5 cold baselines with defined ETAs → median is an int."""
+    etas = [10, 20, 30, 40, 50]
+    assert median_cold_eta_days(etas) == 30
+
+
+def test_median_cold_eta_returns_none_when_under_5_samples():
+    """Fewer than 5 cold baselines with defined ETAs → return None.
+    The Telegram report renders this as '—'."""
+    assert median_cold_eta_days([10, 20, 30]) is None
+    assert median_cold_eta_days([]) is None
+
+
+def test_median_cold_eta_ignores_none_values():
+    """None entries (zero-rate baselines) are filtered out before
+    the count threshold is checked."""
+    # 4 defined ETAs + 1 None → under threshold → None
+    assert median_cold_eta_days([10, None, 20, None, 30, None, 40]) is None
