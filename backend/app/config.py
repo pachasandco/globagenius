@@ -37,6 +37,12 @@ class Settings:
     BREVO_API_KEY: str = os.getenv("BREVO_API_KEY", "")
     UNSPLASH_ACCESS_KEY: str = os.getenv("UNSPLASH_ACCESS_KEY", "")
     BREVO_WELCOME_TEMPLATE_ID: int = int(os.getenv("BREVO_WELCOME_TEMPLATE_ID", "0") or 0)
+    # Onboarding follow-ups (chantier 10, 2026-05-17).
+    # Set to 0 to disable the email — the job logs the would-be
+    # send and skips the actual API call. This is the default
+    # until the templates are designed in Brevo.
+    BREVO_RELANCE_TELEGRAM_TEMPLATE_ID: int = int(os.getenv("BREVO_RELANCE_TELEGRAM_TEMPLATE_ID", "0") or 0)
+    BREVO_INACTIVITY_TEMPLATE_ID: int = int(os.getenv("BREVO_INACTIVITY_TEMPLATE_ID", "0") or 0)
     BREVO_SENDER_EMAIL: str = os.getenv("BREVO_SENDER_EMAIL", "contact@globegenius.app")
     BREVO_SENDER_NAME: str = os.getenv("BREVO_SENDER_NAME", "Globe Genius")
     SCRAPE_FLIGHTS_INTERVAL_HOURS: int = int(os.getenv("SCRAPE_FLIGHTS_INTERVAL_HOURS", "6"))

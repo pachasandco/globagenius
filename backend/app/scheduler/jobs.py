@@ -132,6 +132,19 @@ def get_scheduler_jobs() -> list[dict]:
             "hour": 9,
             "minute": 0,
         },
+        # ── ONBOARDING EMAILS : tous les jours à 10h ──
+        # Cron J+1 relance Telegram (users sans Telegram lié créés
+        # entre 24h et 48h) + J+7 inactivité (users avec Telegram lié
+        # depuis 7 jours mais 0 alerte reçue). Idempotent via la table
+        # onboarding_email_log. Skips silently if BREVO templates IDs
+        # are 0 (default).
+        {
+            "id": "daily_onboarding_emails",
+            "func": job_send_onboarding_emails,
+            "trigger": "cron",
+            "hour": 10,
+            "minute": 0,
+        },
         # ── TIER 1 : toutes les 20 min (CDG + ORY via endpoints directs LCC) ──
         # Ryanair + Transavia directs → données quasi temps-réel pour les routes chaudes.
         # Polling intensif justifié : ces routes contiennent les mistake fares éphémères.
@@ -1611,6 +1624,40 @@ async def job_daily_admin_health():
         logger.exception("daily_admin_health failed")
         try:
             await send_admin_alert(f"Daily health crashed: {e}")
+        except Exception:
+            pass
+
+
+async def job_send_onboarding_emails():
+    """Daily cron — run the J+1 + J+7 onboarding follow-up cohorts.
+
+    All filtering + Brevo calls live in
+    app.notifications.onboarding_emails. This wrapper just invokes
+    the function and surfaces a one-line summary in the admin chat
+    so the operator can see at a glance how many emails were sent
+    (or skipped because templates aren't configured yet)."""
+    from app.notifications.onboarding_emails import send_onboarding_emails_once
+    try:
+        counts = await send_onboarding_emails_once()
+    except Exception as e:
+        logger.exception("daily_onboarding_emails failed")
+        try:
+            await send_admin_alert(f"Onboarding emails crashed: {e}")
+        except Exception:
+            pass
+        return
+    summary = (
+        f"Onboarding emails — "
+        f"J+1: {counts.get('j1_relance_sent', 0)} sent / {counts.get('j1_relance_skipped', 0)} skipped · "
+        f"J+7: {counts.get('j7_inactivity_sent', 0)} sent / {counts.get('j7_inactivity_skipped', 0)} skipped"
+    )
+    logger.info(summary)
+    # Surface the count only when something fired. The cron runs
+    # daily, so a daily summary on top of admin_health would be
+    # noisy when no one is in the cohort.
+    if counts.get("j1_relance_sent") or counts.get("j7_inactivity_sent"):
+        try:
+            await send_admin_text(summary)
         except Exception:
             pass
 
