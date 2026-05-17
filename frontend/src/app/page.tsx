@@ -4,10 +4,21 @@ import RedirectIfLoggedIn from "./_components/RedirectIfLoggedIn";
 import LandingAnimated, { HeroContent } from "./_components/LandingAnimated";
 import { LandingNotificationHero } from "./_components/LandingNotificationHero";
 import { Wordmark } from "./_components/Wordmark";
+import { getBetaCount } from "@/lib/api";
 
 export const metadata: Metadata = {
+  title: "GlobeGenius — Alertes vols vérifiées 9 aéroports français · Beta",
+  description:
+    "Une à trois alertes Telegram par jour sur les vols à -40% / -80% depuis 9 aéroports français. Couverture Europe + Méditerranée + Afrique du Nord. Beta publique, gratuit pour les 100 premiers fondateurs.",
   alternates: {
     canonical: "https://globegenius.app",
+  },
+  openGraph: {
+    title: "GlobeGenius · Beta publique · 9 aéroports français",
+    description:
+      "Alertes vols vérifiées (95%) sur 162 destinations Europe/Med matures. Gratuit pour les 100 premiers fondateurs.",
+    url: "https://globegenius.app",
+    type: "website",
   },
 };
 
@@ -49,7 +60,10 @@ const faqSchema = {
 };
 
 export default async function Landing() {
-  const recentGuides = await fetchRecentDestinationGuides();
+  const [recentGuides, betaCount] = await Promise.all([
+    fetchRecentDestinationGuides(),
+    getBetaCount(),
+  ]);
   return (
     <div className="min-h-screen bg-[var(--color-cream)]">
       <RedirectIfLoggedIn />
@@ -64,13 +78,13 @@ export default async function Landing() {
         </Link>
         <div className="flex items-center gap-6 text-sm">
           <a href="#comment-ca-marche" className="hidden sm:inline text-[var(--color-ink)] hover:text-[var(--color-coral)] transition-colors">Comment ça marche</a>
-          <a href="#tarifs" className="hidden sm:inline text-[var(--color-ink)] hover:text-[var(--color-coral)] transition-colors">Tarifs</a>
+          <Link href="/beta" className="hidden sm:inline text-[var(--color-ink)] hover:text-[var(--color-coral)] transition-colors">Beta</Link>
           <a href="#faq" className="hidden sm:inline text-[var(--color-ink)] hover:text-[var(--color-coral)] transition-colors">FAQ</a>
           <Link href="/login" className="text-[var(--color-ink)] hover:text-[var(--color-coral)] transition-colors font-medium text-sm">
             Connexion
           </Link>
           <Link href="/signup" className="bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors">
-            S&apos;inscrire
+            Rejoindre la beta
           </Link>
         </div>
       </nav>
@@ -86,15 +100,27 @@ export default async function Landing() {
         */}
         <section className="relative min-h-[520px] sm:min-h-[600px] flex items-center overflow-hidden">
           <LandingNotificationHero />
-          <HeroContent />
+          <HeroContent
+            foundersCount={betaCount.founders_count}
+            maxFounders={betaCount.max_founders}
+          />
         </section>
 
-        {/* ── STATS BAR ── */}
+        {/* ── STATS BAR ──
+            Four numbers chosen to recalibrate visitor expectations vs the
+            old hero (which over-promised on volume and global coverage):
+              - 95% = defensible differentiator (reverification)
+              - 162 = honest scope (Europe + Med matures), more credible
+                than "destinations dans le monde entier"
+              - 1-3 = honest volume per day (prevents drop-off from users
+                expecting Skyscanner-style firehose)
+              - 9 = real geographic edge vs anglo-saxon competitors
+        */}
         <section className="flex flex-wrap justify-center gap-8 sm:gap-12 py-6 px-6 bg-white border-t border-[var(--color-sand)]">
           {[
-            { value: "<5s", label: "alerte sur Telegram" },
-            { value: "-70%", label: "meilleur deal repéré" },
-            { value: "24h/24", label: "surveillance des prix" },
+            { value: "95%", label: "alertes vérifiées avant envoi" },
+            { value: "162", label: "destinations Europe + Méd matures" },
+            { value: "1-3", label: "alertes/jour, jamais plus" },
             { value: "9", label: "aéroports français" },
           ].map((s) => (
             <div key={s.label} className="text-center">
@@ -228,53 +254,46 @@ export default async function Landing() {
           </p>
         </section>
 
-        {/* ── PRICING ── */}
+        {/* ── BETA INVITE ──
+            Replaces the Free vs Premium pricing block during the public
+            beta. Stripe is still wired in the backend, but we don't
+            display a paid plan until the long-haul coverage lands
+            (target: summer 2026). The "founders for life" framing
+            converts curiosity into commitment without asking for a
+            payment that the product doesn't justify yet.
+        */}
         <section id="tarifs" className="py-16 px-6 sm:px-12 bg-[var(--color-cream)] border-t border-[var(--color-sand)]">
           <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-[var(--color-ink)] text-center mb-2">
-            Choisissez votre formule
+            Pendant la beta publique
           </h2>
           <p className="text-center text-gray-400 text-sm mb-10">
-            Un vol Premium rentabilise l&apos;abonnement dès le premier voyage.
+            Tout est gratuit pour les {betaCount.max_founders} premiers inscrits.
+            Statut « Membre fondateur » à vie quand on lancera officiellement.
           </p>
-          <div className="flex flex-col sm:flex-row gap-6 max-w-2xl mx-auto">
-            <div className="flex-1 bg-white border border-[var(--color-sand)] rounded-2xl p-6">
-              <div className="font-bold text-[var(--color-ink)] text-sm mb-1">Gratuit</div>
-              <div className="text-3xl font-extrabold text-[var(--color-ink)] mb-5">0€</div>
-              <div className="text-sm text-gray-500 leading-loose mb-6">
-                ✓ <span className="text-[var(--color-ink)] font-medium">1 deal -20% à -40%</span> par jour<br />
-                ✓ <span className="text-[var(--color-ink)] font-medium">1 grosse promo ≥-40%</span> par semaine<br />
-                ✓ Aller-retour, 9 aéroports de départ<br />
-                <span className="text-gray-300">✗ Choisir le seuil de promo</span><br />
-                <span className="text-gray-300">✗ Alertes illimitées</span><br />
-                <span className="text-gray-300">✗ Aller simple &amp; combos malins</span>
-              </div>
-              <Link href="/signup" className="block text-center py-3 rounded-xl font-bold text-sm border-2 border-[var(--color-ink)] text-[var(--color-ink)] hover:bg-[var(--color-ink)] hover:text-white transition-colors">
-                S&apos;inscrire gratuitement
-              </Link>
+          <div className="max-w-2xl mx-auto bg-[var(--color-ink)] rounded-2xl p-8 text-center">
+            <div className="text-[var(--color-coral)] text-sm font-bold mb-2">
+              🚧 Beta publique · Lancement officiel été 2026
             </div>
-            <div className="flex-1 bg-[var(--color-ink)] rounded-2xl p-6 relative">
-              <span className="absolute -top-3 right-4 bg-[var(--color-coral)] text-white text-xs font-bold px-3 py-1 rounded-full">
-                POPULAIRE
-              </span>
-              <div className="font-bold text-[var(--color-coral)] text-sm mb-1">Premium</div>
-              <div className="mb-5">
-                <span className="line-through text-gray-500 text-base">59€</span>{" "}
-                <span className="text-3xl font-extrabold text-white">29€</span>
-                <span className="text-gray-500 text-sm">/an</span>
-              </div>
-              <div className="text-sm text-gray-400 leading-loose mb-6">
-                ✓ <span className="text-white">Tous les deals jusqu&apos;à -70%+</span><br />
-                ✓ <span className="text-white">Filtre personnalisé : -40, -50 ou -60%</span><br />
-                ✓ <span className="text-white">Alertes illimitées, sans quota</span><br />
-                ✓ <span className="text-white">Aller simple &amp; combos malins</span><br />
-                ✓ <span className="text-white">9 aéroports de départ</span><br />
-                ✓ <span className="text-white">Garantie satisfait 30 jours</span><br />
-                <span className="text-[var(--color-forest)]">= 2,42€/mois</span>
-              </div>
-              <Link href="/signup" className="block text-center py-3 rounded-xl font-bold text-sm bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white transition-colors">
-                Offre printemps -41%
-              </Link>
+            <div className="font-[family-name:var(--font-dm-serif)] text-4xl text-white mb-2">
+              {betaCount.founders_count} / {betaCount.max_founders}
             </div>
+            <div className="text-gray-400 text-sm mb-6">places fondateurs prises</div>
+            <div className="text-sm text-gray-300 leading-loose mb-8 text-left max-w-md mx-auto">
+              ✓ <span className="text-white">Alertes premium gratuites à vie</span><br />
+              ✓ <span className="text-white">Accès au long-courrier dès l&apos;été 2026</span><br />
+              ✓ <span className="text-white">Détection stopover dès qu&apos;elle sera livrée</span><br />
+              ✓ <span className="text-white">Tes préférences personnalisées</span><br />
+              ✓ <span className="text-white">Aucun engagement, désinscription en 1 clic</span>
+            </div>
+            <Link
+              href="/signup"
+              className="inline-block bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-8 py-4 rounded-xl font-bold text-base transition-colors shadow-[0_8px_24px_rgba(255,107,71,0.25)]"
+            >
+              Rejoindre la beta — gratuit à vie
+            </Link>
+            <p className="text-xs text-gray-500 mt-4">
+              <Link href="/beta" className="underline hover:text-gray-300">En savoir plus sur le programme fondateur →</Link>
+            </p>
           </div>
         </section>
 

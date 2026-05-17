@@ -27,33 +27,38 @@ type NotifSample = {
   meta: string;
 };
 
+// All three cards mirror deals we have actually shipped in the last
+// 14 days (Marrakech, Barcelone, Lisbonne are in our top destinations).
+// The point is honesty: a visitor who signs up can realistically
+// receive any of these in their first week, vs the previous
+// Paris → Tokyo example which we don't even scrape round-trip.
 const NOTIFS: NotifSample[] = [
   {
     variant: "round_trip",
-    badge: "🟠 Promo flash",
+    badge: "🟡 Promo flash",
     origin: "Paris",
-    destination: "Tokyo",
-    headline: "Paris → Tokyo · 480 € A/R",
-    body: "Prix habituel ~840 € · -43%",
-    meta: "12 mars – 26 mars · 14 jours · Air France",
+    destination: "Marrakech",
+    headline: "Paris → Marrakech · 74 € A/R",
+    body: "Prix habituel ~155 € · -52%",
+    meta: "22 mai – 26 mai · 4 jours · Transavia",
   },
   {
-    variant: "one_way",
-    badge: "🔴 Erreur de prix",
+    variant: "round_trip",
+    badge: "🟢 Deal exceptionnel",
     origin: "Paris",
-    destination: "New York",
-    headline: "Paris → New York · 220 € aller seul",
-    body: "Prix habituel ~520 € · -58%",
-    meta: "Départ 8 avril · French Bee · ↩ retour estimé ~280 €",
+    destination: "Barcelone",
+    headline: "Paris → Barcelone · 40 € A/R",
+    body: "Prix habituel ~165 € · -76%",
+    meta: "8 juin – 12 juin · 4 jours · Vueling",
   },
   {
-    variant: "split_ticket",
-    badge: "💡 Combo malin",
+    variant: "round_trip",
+    badge: "🟡 Promo flash",
     origin: "Paris",
-    destination: "Bangkok",
-    headline: "Paris ⇄ Bangkok · 540 € total",
-    body: "A/R habituel ~780 € · économie 240 € (-31%)",
-    meta: "2 billets : French Bee + Norse · 4-22 avril",
+    destination: "Lisbonne",
+    headline: "Paris → Lisbonne · 89 € A/R",
+    body: "Prix habituel ~210 € · -58%",
+    meta: "15 juin – 22 juin · 7 jours · TAP Portugal",
   },
 ];
 

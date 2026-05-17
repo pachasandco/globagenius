@@ -22,6 +22,14 @@ const nextConfig: NextConfig = {
         destination: "/signup",
         permanent: true,
       },
+      {
+        // Beta reframing 2026-05-17: the public pricing block became
+        // the founder programme. Old "/tarifs" links (anchor or
+        // historical indexed URLs) land on /beta instead.
+        source: "/tarifs",
+        destination: "/beta",
+        permanent: true,
+      },
     ];
   },
   async headers() {

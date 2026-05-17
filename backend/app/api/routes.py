@@ -2526,3 +2526,43 @@ def admin_ctr(request: Request, days: int = 30):
         "by_trip_type": by_trip_type,
         "by_qualification_method": by_qualification,
     }
+
+
+# ── PUBLIC stats for the landing page ──────────────────────────────────────
+
+
+# Beta cohort cap. The hero card and /beta page render "founders_count /
+# MAX_FOUNDERS" as a scarcity signal. The actual gating (refuse signup
+# above this count) is not enforced — early users self-select via the
+# Telegram link step, which already filters out the curious.
+MAX_FOUNDERS = 100
+
+
+@router.get("/api/stats/beta-count")
+def beta_count():
+    """Public endpoint: how many "founders" have linked Telegram.
+
+    A founder = a user with a non-null telegram_chat_id in their
+    preferences. The Telegram-linking step is the real activation
+    barrier; signups without it are tourists, not founders.
+
+    Cached client-side via standard HTTP semantics — this endpoint
+    runs at every page render, so kept dead simple (one count query).
+    """
+    if not db:
+        return {"founders_count": 0, "max_founders": MAX_FOUNDERS}
+    try:
+        resp = (
+            db.table("user_preferences")
+            .select("user_id", count="exact")
+            .not_.is_("telegram_chat_id", "null")
+            .limit(1)
+            .execute()
+        )
+        return {
+            "founders_count": resp.count or 0,
+            "max_founders": MAX_FOUNDERS,
+        }
+    except Exception as e:
+        logger.warning(f"beta_count query failed: {e}")
+        return {"founders_count": 0, "max_founders": MAX_FOUNDERS}

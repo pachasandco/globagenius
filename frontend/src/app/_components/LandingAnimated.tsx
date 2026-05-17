@@ -46,7 +46,15 @@ function FAQItem({ q, a, i }: { q: string; a: string; i: number }) {
   );
 }
 
-export function HeroContent() {
+type HeroContentProps = {
+  /** Number of users with Telegram linked — drives the "X / 100" badge. */
+  foundersCount?: number;
+  /** Hard cap from the backend. Defaults to 100 if not supplied. */
+  maxFounders?: number;
+};
+
+export function HeroContent({ foundersCount = 0, maxFounders = 100 }: HeroContentProps) {
+  const remaining = Math.max(maxFounders - foundersCount, 0);
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -54,25 +62,33 @@ export function HeroContent() {
       transition={{ duration: 0.6 }}
       className="relative z-10 px-6 sm:px-12 py-16 max-w-2xl"
     >
-      <span className="inline-block bg-[var(--color-coral)]/20 border border-[var(--color-coral)]/40 text-[#FF9B82] px-4 py-1.5 rounded-full text-sm font-bold mb-6 backdrop-blur-sm">
-        🔥 Offre printemps — Premium à 29€/an au lieu de 59€
-      </span>
+      <Link
+        href="/beta"
+        className="inline-block bg-[var(--color-coral)]/20 border border-[var(--color-coral)]/40 text-[#FF9B82] px-4 py-1.5 rounded-full text-sm font-bold mb-6 backdrop-blur-sm hover:bg-[var(--color-coral)]/30 transition-colors"
+      >
+        🚧 Beta publique · {foundersCount}/{maxFounders} places fondateurs prises
+      </Link>
       <h1 className="font-[family-name:var(--font-dm-serif)] text-4xl sm:text-5xl font-bold text-white leading-tight mb-4">
-        Alertes vols pas chers,{" "}
-        <br className="hidden sm:block" />
-        détectées{" "}
-        <em className="not-italic text-[var(--color-coral)]">avant tout le monde</em>.
+        Alertes vols{" "}
+        <em className="not-italic text-[var(--color-coral)]">vérifiées</em>{" "}
+        depuis 9 aéroports français.
       </h1>
       <p className="text-white/75 text-lg leading-relaxed mb-8 max-w-lg">
-        Une notification Telegram dès qu&apos;un vol chute de -40% à -70%. Tu lis, tu cliques, tu réserves — avant que le tarif ne disparaisse.
+        Couverture actuelle : Europe, Méditerranée, Afrique du Nord.
+        <br />
+        Une à trois notifications Telegram par jour, jamais plus.
+        <br />
+        Long-courrier (Asie, Amériques) cet été 2026.
       </p>
       <Link
         href="/signup"
         className="inline-block bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-8 py-4 rounded-xl font-bold text-lg transition-colors shadow-[0_8px_24px_rgba(255,107,71,0.3)]"
       >
-        Activer mes alertes Telegram
+        Rejoindre les {maxFounders} fondateurs
       </Link>
-      <p className="text-white/50 text-sm mt-3">Gratuit, sans carte bancaire</p>
+      <p className="text-white/50 text-sm mt-3">
+        Gratuit · Statut premium à vie · Plus que {remaining} places
+      </p>
     </motion.div>
   );
 }

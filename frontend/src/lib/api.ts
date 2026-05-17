@@ -302,3 +302,28 @@ export async function getDestinationGuide(iata: string): Promise<DestinationGuid
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
+
+
+// ─── Beta cohort counter ───
+
+export interface BetaCount {
+  founders_count: number;
+  max_founders: number;
+}
+
+/**
+ * Fetch the current beta-founder count. Used by the hero badge and
+ * the /beta page to render "X / 100 places fondateurs prises".
+ * Falls back to {0, 100} on network error so the page never crashes.
+ */
+export async function getBetaCount(): Promise<BetaCount> {
+  try {
+    const res = await fetch(`${API_URL}/api/stats/beta-count`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return { founders_count: 0, max_founders: 100 };
+    return res.json();
+  } catch {
+    return { founders_count: 0, max_founders: 100 };
+  }
+}
