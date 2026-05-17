@@ -173,3 +173,64 @@ def test_median_cold_eta_ignores_none_values():
     the count threshold is checked."""
     # 4 defined ETAs + 1 None → under threshold → None
     assert median_cold_eta_days([10, None, 20, None, 30, None, 40]) is None
+
+
+from app.analysis.baseline_clusters import build_cluster_report
+
+
+def test_build_cluster_report_counts_per_cluster_and_unknowns():
+    """End-to-end of the aggregation step: given baselines + a
+    samples_by_route map, build a report dict with cluster counts,
+    mature_coverage_pct, median cold ETA, and parsing diagnostics."""
+    baselines = [
+        # 2 hot
+        {"route_key": "CDG-LIS-1m", "sample_count": 50},
+        {"route_key": "CDG-BCN-1m", "sample_count": 35},
+        # 1 warm
+        {"route_key": "CDG-MAD-1m", "sample_count": 15},
+        # 6 cold (so median ETA is reported). 3-letter alpha dest
+        # codes required by the regex; we use a ZAx series to keep
+        # them parseable yet distinct from the warm/hot ones.
+        {"route_key": "CDG-ZAA-1m", "sample_count": 5},
+        {"route_key": "CDG-ZAB-1m", "sample_count": 5},
+        {"route_key": "CDG-ZAC-1m", "sample_count": 5},
+        {"route_key": "CDG-ZAD-1m", "sample_count": 5},
+        {"route_key": "CDG-ZAE-1m", "sample_count": 5},
+        {"route_key": "CDG-ZAF-1m", "sample_count": 5},
+        # 2 dormant
+        {"route_key": "CDG-ZOM-1m", "sample_count": 2},
+        {"route_key": "CDG-ZON-1m", "sample_count": 3},
+        # 1 unparseable
+        {"route_key": "MALFORMED", "sample_count": 99},
+    ]
+    # 6 cold baselines have rate=4/7=0.57/day (>0.1 → cold).
+    # ZOM/ZON absent from map → rate 0 → dormant.
+    samples_by_route = {
+        ("CDG", "ZAA"): 4,
+        ("CDG", "ZAB"): 4,
+        ("CDG", "ZAC"): 4,
+        ("CDG", "ZAD"): 4,
+        ("CDG", "ZAE"): 4,
+        ("CDG", "ZAF"): 4,
+    }
+    known_origins = {"CDG"}
+
+    report = build_cluster_report(
+        baselines=baselines,
+        samples_by_route=samples_by_route,
+        known_origins=known_origins,
+    )
+
+    assert report["counts"] == {
+        "hot": 2,
+        "warm": 1,
+        "cold": 6,
+        "dormant": 2,
+    }
+    assert report["unknown_count"] == 1
+    assert report["total_parsed"] == 11
+    assert report["total_with_unknown"] == 12
+    # mature = (2+1)/(2+1+6) = 3/9 = 33.3%
+    assert round(report["mature_coverage_pct"], 1) == 33.3
+    # 6 cold ETAs all = (10-5) / (4/7) = 8.75 → int = 8
+    assert report["median_cold_eta_days"] == 8
