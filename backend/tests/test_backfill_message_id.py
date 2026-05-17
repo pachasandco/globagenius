@@ -85,3 +85,83 @@ def test_dry_run_report_counts_groups_and_distribution():
     assert len(report["suspect_groups"]) == 1
     assert report["suspect_groups"][0]["size"] == 12
     assert report["suspect_groups"][0]["destination"] == "ROM"
+
+
+from unittest.mock import MagicMock
+
+
+class _FakeTable:
+    """In-memory fake of the supabase-py table interface, scoped to
+    sent_alerts. Only implements the methods the backfill script uses
+    (select.is_/order/range, update.in_)."""
+
+    def __init__(self, rows: list[dict]):
+        self.rows = rows
+        # Track update calls so tests can inspect them
+        self.update_calls: list[tuple[dict, list[str]]] = []
+
+    def select(self, _cols):  # noqa: D401
+        return self
+
+    def is_(self, col, val):
+        # Only "is_('message_id', 'null')" is used by the script.
+        assert col == "message_id" and val == "null"
+        self._filtered = [r for r in self.rows if r.get("message_id") is None]
+        return self
+
+    def order(self, _col):
+        return self
+
+    def range(self, start, end_inclusive):
+        self._slice = self._filtered[start : end_inclusive + 1]
+        return self
+
+    def execute(self):
+        out = MagicMock()
+        out.data = list(self._slice)
+        return out
+
+    def update(self, fields):
+        self._pending_update = fields
+        return self
+
+    def in_(self, col, ids):
+        assert col == "id"
+        self.update_calls.append((self._pending_update, list(ids)))
+        # Mutate the in-memory rows so subsequent SELECTs see the change
+        for r in self.rows:
+            if r["id"] in ids:
+                r.update(self._pending_update)
+        out = MagicMock()
+        out.data = [r for r in self.rows if r["id"] in ids]
+        return out
+
+
+def _fake_db(rows):
+    db = MagicMock()
+    fake_table = _FakeTable(rows)
+    db.table.return_value = fake_table
+    db._fake_table = fake_table
+    return db
+
+
+def test_apply_backfill_is_idempotent():
+    """A second run on already-backfilled data does nothing (no UPDATE
+    issued) because the WHERE message_id IS NULL filter returns empty."""
+    from scripts.backfill_message_id import apply_backfill
+
+    rows = [
+        _row("u1", "LIS", "2026-05-05T03:00:00.000+00:00", "ak1"),
+        _row("u1", "LIS", "2026-05-05T03:00:00.000+00:00", "ak2"),
+    ]
+    db = _fake_db(rows)
+    # First run: assigns UUIDs.
+    n1 = apply_backfill(db=db, batch_size=10)
+    assert n1 == 2  # two rows updated
+    assert all(r["message_id"] is not None for r in rows)
+    assigned_uuid = rows[0]["message_id"]
+    assert rows[1]["message_id"] == assigned_uuid  # same group → same UUID
+
+    # Second run: nothing to do.
+    n2 = apply_backfill(db=db, batch_size=10)
+    assert n2 == 0
