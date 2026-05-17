@@ -285,3 +285,34 @@ def test_format_renders_median_eta_dash_when_none():
         median_samples_per_baseline=0.0,
     )
     assert "—" in text  # em dash for undefined median
+
+
+from app.analysis.baseline_clusters import build_dormants_csv
+
+
+def test_build_dormants_csv_contains_expected_columns_and_season():
+    """CSV header + rows: every dormant baseline becomes one row
+    with route_key, sample_count, last_scrape_at, rate_per_day_7d,
+    last_seen_in_season."""
+    dormants = [
+        {
+            "route_key": "CDG-ZOM-1m",
+            "sample_count": 2,
+            "last_scrape_at": "2026-04-15T10:00:00+00:00",
+            "rate_per_day_7d": 0.0,
+        },
+        {
+            "route_key": "*-NRT-bucket_long",
+            "sample_count": 3,
+            "last_scrape_at": None,
+            "rate_per_day_7d": 0.05,
+        },
+    ]
+    csv_text = build_dormants_csv(dormants=dormants, current_season="spring")
+    lines = csv_text.strip().splitlines()
+    assert lines[0] == "route_key,sample_count,last_scrape_at,rate_per_day_7d,last_seen_in_season"
+    assert len(lines) == 3  # header + 2 rows
+    assert "CDG-ZOM-1m" in lines[1]
+    assert ",spring" in lines[1]
+    # NULL last_scrape_at renders as empty field, not the literal "None"
+    assert ",,0.05,spring" in lines[2]
