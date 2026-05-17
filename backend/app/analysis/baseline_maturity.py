@@ -1,192 +1,129 @@
-"""Baseline maturity scoring.
+"""Baseline maturity — cluster-based scoring.
 
-Computes 7 objective signals on the `price_baselines` table and emits a
-0–100 score plus a chiffré ETA for when the baseline reaches the
-"production-ready" threshold. Designed to be called weekly so the founder
-no longer has to eyeball the numbers — the score tells you whether
-tuning still adds value or whether you should ship features instead.
+Rewritten in chantier 2 (2026-05-17). The previous version produced
+a single 0–100 composite score assuming uniform sample distribution
+across baselines, which was misleading: 72% of samples concentrate
+on 5 Spain destinations. The new version classifies each baseline
+into one of four clusters (hot / warm / cold / dormant) and reports
+a headline % mature coverage that excludes dormants from the
+denominator.
 
-Thresholds (cible production-ready):
-  - median sample_count             ≥ 20
-  - % baselines with samples < 10   ≤ 20%
-  - % baselines with samples ≥ 30   ≥ 50%
-  - median CV (std/avg)             ≤ 15%
-  - % baselines with CV > 30%       ≤ 5%
-  - reverification rate (qualified) ≥ 75%
-  - % qual method 'unknown'         ≤ 5%
+The public interface stays compatible with the existing scheduler
+hook in app/scheduler/jobs.py:
+    compute_report() -> dict | None
+    format_for_telegram(report: dict) -> str
 """
 from __future__ import annotations
+
 import logging
 import statistics
-from dataclasses import dataclass, asdict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+from app.analysis.baseline_clusters import (
+    build_cluster_report,
+    format_cluster_report_for_telegram,
+)
 from app.db import db
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass
-class MaturitySignal:
-    name: str
-    value: float
-    target: float
-    higher_is_better: bool
-    score: float  # 0..1, where 1 = at or beyond target
-
-
-@dataclass
-class MaturityReport:
-    score: int  # 0..100
-    signals: list[MaturitySignal]
-    sample_count_median: int
-    samples_per_day: float  # raw_flights/jour, used for ETA
-    eta_days_to_mature: int | None
-    eta_date: str | None  # YYYY-MM-DD or None if already mature
-    generated_at: str
-
-    def as_dict(self) -> dict:
-        return {
-            **asdict(self),
-            "signals": [asdict(s) for s in self.signals],
-        }
+# Maps month → scheduler season label. Mirror of the priority logic
+# in route_selector. Kept as a flat dict so the maturity job doesn't
+# need to import the heavier route_selector module.
+_SEASON_BY_MONTH = {
+    1: "winter", 2: "winter", 12: "winter",
+    3: "spring", 4: "spring", 5: "spring",
+    6: "summer", 7: "summer", 8: "summer",
+    9: "autumn", 10: "autumn", 11: "autumn",
+}
 
 
-def _score_signal(value: float, target: float, higher_is_better: bool) -> float:
-    """Linear score in [0, 1]. 1.0 means target is met or exceeded."""
-    if higher_is_better:
-        return min(1.0, value / target) if target > 0 else 1.0
-    # lower-is-better: 1.0 when value=0, 0 when value≥2*target
-    if value <= target:
-        return 1.0
-    return max(0.0, 1.0 - (value - target) / target)
+def _current_season() -> str:
+    return _SEASON_BY_MONTH.get(datetime.now(timezone.utc).month, "unknown")
 
 
-def compute_report() -> MaturityReport | None:
-    """Pull everything from DB and compute the maturity score."""
+def _fetch_baselines() -> list[dict]:
+    """Pull all rows from price_baselines, paginated."""
     if not db:
-        return None
-
-    baselines = []
+        return []
+    rows: list[dict] = []
     offset = 0
     while True:
-        chunk = db.table("price_baselines").select(
-            "sample_count,avg_price,std_dev"
-        ).range(offset, offset + 999).execute()
-        rows = chunk.data or []
-        baselines.extend(rows)
-        if len(rows) < 1000:
+        chunk = (
+            db.table("price_baselines")
+            .select("route_key,sample_count,avg_price,std_dev")
+            .range(offset, offset + 999)
+            .execute()
+        )
+        page = chunk.data or []
+        rows.extend(page)
+        if len(page) < 1000:
             break
         offset += 1000
+    return rows
 
+
+def _fetch_samples_by_route() -> tuple[dict[tuple[str, str], int], set[str]]:
+    """Single grouped query: how many raw_flights per (origin, dest)
+    in the last 7 days. Returns the map and the set of distinct
+    origins seen (used for wildcard expansion in baseline_clusters)."""
+    if not db:
+        return {}, set()
+    # supabase-py doesn't expose GROUP BY directly; rely on the REST
+    # default and aggregate in Python. Paginate to be safe.
+    samples: dict[tuple[str, str], int] = {}
+    origins: set[str] = set()
+    offset = 0
+    seven_days_ago_iso = (
+        datetime.now(timezone.utc) - timedelta(days=7)
+    ).isoformat()
+    while True:
+        chunk = (
+            db.table("raw_flights")
+            .select("origin,destination")
+            .gte("scraped_at", seven_days_ago_iso)
+            .range(offset, offset + 999)
+            .execute()
+        )
+        page = chunk.data or []
+        for r in page:
+            o, d = r.get("origin"), r.get("destination")
+            if not o or not d:
+                continue
+            origins.add(o)
+            samples[(o, d)] = samples.get((o, d), 0) + 1
+        if len(page) < 1000:
+            break
+        offset += 1000
+    return samples, origins
+
+
+def compute_report() -> dict | None:
+    """Build the maturity report. Returns the same dict shape that
+    format_for_telegram consumes."""
+    baselines = _fetch_baselines()
     if not baselines:
+        logger.warning("baseline_maturity: no baselines to score")
         return None
-
-    samples = [b["sample_count"] for b in baselines if b.get("sample_count")]
-    cvs = [
-        b["std_dev"] / b["avg_price"]
-        for b in baselines
-        if b.get("avg_price") and b.get("std_dev") is not None and b["avg_price"] > 0
-    ]
-    sample_med = int(statistics.median(samples)) if samples else 0
-    weak_pct = 100 * sum(1 for s in samples if s < 10) / len(samples) if samples else 100
-    strong_pct = 100 * sum(1 for s in samples if s >= 30) / len(samples) if samples else 0
-    cv_med = statistics.median(cvs) if cvs else 1.0
-    cv_noisy_pct = 100 * sum(1 for c in cvs if c > 0.30) / len(cvs) if cvs else 100
-
-    # Reverification rate + legacy method share (last 30 days only — older data is noise)
-    from datetime import timedelta
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-    qi = db.table("qualified_items").select(
-        "qualification_method,reverified_at"
-    ).gte("created_at", cutoff).execute()
-    qi_rows = qi.data or []
-    rev_rate = (
-        100 * sum(1 for q in qi_rows if q.get("reverified_at")) / len(qi_rows)
-        if qi_rows else 0
+    samples_by_route, known_origins = _fetch_samples_by_route()
+    report = build_cluster_report(
+        baselines=baselines,
+        samples_by_route=samples_by_route,
+        known_origins=known_origins,
     )
-    unknown_pct = (
-        100 * sum(1 for q in qi_rows if q.get("qualification_method") == "unknown") / len(qi_rows)
-        if qi_rows else 100
+    # Median samples per baseline (informational, kept from v1).
+    counts = [int(b.get("sample_count") or 0) for b in baselines]
+    median_samples = statistics.median(counts) if counts else 0
+    report["median_samples_per_baseline"] = median_samples
+    report["season"] = _current_season()
+    report["generated_at"] = datetime.now(timezone.utc).isoformat()
+    return report
+
+
+def format_for_telegram(report: dict) -> str:
+    """Render the cluster report for the admin Telegram chat."""
+    return format_cluster_report_for_telegram(
+        report=report,
+        season=report.get("season", "unknown"),
+        median_samples_per_baseline=report.get("median_samples_per_baseline", 0),
     )
-
-    signals = [
-        MaturitySignal("Médiane samples/baseline", sample_med, 20, True,
-                       _score_signal(sample_med, 20, True)),
-        MaturitySignal("% baselines à <10 samples", weak_pct, 20, False,
-                       _score_signal(weak_pct, 20, False)),
-        MaturitySignal("% baselines à ≥30 samples", strong_pct, 50, True,
-                       _score_signal(strong_pct, 50, True)),
-        MaturitySignal("CV médian (std/avg, %)", cv_med * 100, 15, False,
-                       _score_signal(cv_med * 100, 15, False)),
-        MaturitySignal("% baselines bruitées (CV>30%)", cv_noisy_pct, 5, False,
-                       _score_signal(cv_noisy_pct, 5, False)),
-        MaturitySignal("Reverification rate (30j)", rev_rate, 75, True,
-                       _score_signal(rev_rate, 75, True)),
-        MaturitySignal("% qual_method 'unknown' (30j)", unknown_pct, 5, False,
-                       _score_signal(unknown_pct, 5, False)),
-    ]
-
-    # Equal-weighted average across signals
-    score = int(round(100 * sum(s.score for s in signals) / len(signals)))
-
-    # ETA — sample_count is the dominant blocker.
-    # Naïve "raw_flights/day per baseline" is misleading because raw volume
-    # concentrates on hot routes (BCN/AGP/MAD) while the median baseline
-    # belongs to a cold tail that barely accumulates samples.
-    # Better proxy: the median sample_count grows roughly with calendar
-    # depth — empirically ~1 sample/week per cold-tail baseline. Use the
-    # age of the oldest raw_flight to extrapolate.
-    oldest = db.table("raw_flights").select("scraped_at").order(
-        "scraped_at"
-    ).limit(1).execute()
-    history_days = 1.0
-    if oldest.data:
-        ts = oldest.data[0]["scraped_at"].replace("Z", "+00:00")
-        # tolerate non-6-digit microseconds (Postgres can emit 5)
-        if "." in ts and "+" in ts:
-            base, tz = ts.rsplit("+", 1)
-            head, frac = base.rsplit(".", 1)
-            ts = f"{head}.{frac[:6].ljust(6, '0')}+{tz}"
-        try:
-            start = datetime.fromisoformat(ts)
-            history_days = max((datetime.now(timezone.utc) - start).total_seconds() / 86400, 1.0)
-        except ValueError:
-            pass
-    samples_per_day = sample_med / history_days
-
-    eta_days = None
-    eta_date = None
-    if sample_med < 20 and samples_per_day > 0:
-        eta_days = int((20 - sample_med) / samples_per_day)
-        eta_date = (datetime.now(timezone.utc) + timedelta(days=eta_days)).date().isoformat()
-
-    return MaturityReport(
-        score=score,
-        signals=signals,
-        sample_count_median=sample_med,
-        samples_per_day=round(samples_per_day, 2),
-        eta_days_to_mature=eta_days,
-        eta_date=eta_date,
-        generated_at=datetime.now(timezone.utc).isoformat(),
-    )
-
-
-def format_for_telegram(r: MaturityReport) -> str:
-    """Render the report as a Markdown Telegram message."""
-    emoji = "🟢" if r.score >= 80 else "🟡" if r.score >= 60 else "🔴"
-    lines = [
-        f"{emoji} *Baseline maturity : {r.score}/100*",
-        "",
-        f"Médiane samples/baseline : *{r.sample_count_median}* (cible 20)",
-    ]
-    if r.eta_date:
-        lines.append(f"ETA mature : *{r.eta_date}* ({r.eta_days_to_mature}j au rythme actuel)")
-    else:
-        lines.append("✅ Cible samples atteinte")
-    lines.append("")
-    lines.append("*Détail des signaux :*")
-    for s in r.signals:
-        check = "✅" if s.score >= 0.95 else "🟡" if s.score >= 0.7 else "🔴"
-        val = f"{s.value:.0f}" if s.value >= 1 else f"{s.value:.1f}"
-        lines.append(f"{check} {s.name} : {val} (cible {s.target:.0f})")
-    return "\n".join(lines)
