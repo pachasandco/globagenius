@@ -43,3 +43,46 @@ def group_rows_into_messages(rows: Iterable[dict]) -> list[list[dict]]:
     for row in rows:
         buckets[_bucket_key(row)].append(row)
     return list(buckets.values())
+
+
+SUSPECT_GROUP_THRESHOLD = 10  # groups larger than this look anomalous in our data
+
+
+def build_dry_run_report(rows: Iterable[dict]) -> dict:
+    """Build a dict describing how the backfill would group rows.
+
+    Returns:
+      {
+        "total_rows": int,
+        "total_groups": int,
+        "size_distribution": {group_size: count_of_groups},
+        "suspect_groups": [{"user_id", "destination", "created_at", "size"}],
+      }
+
+    `suspect_groups` lists every group strictly larger than
+    SUSPECT_GROUP_THRESHOLD — those are worth eyeballing before
+    committing to the actual UPDATE, because in our data a Telegram
+    message typically holds 1-4 offers.
+    """
+    groups = group_rows_into_messages(list(rows))
+    size_distribution: dict[int, int] = defaultdict(int)
+    suspect_groups: list[dict] = []
+    total_rows = 0
+    for grp in groups:
+        size = len(grp)
+        size_distribution[size] += 1
+        total_rows += size
+        if size > SUSPECT_GROUP_THRESHOLD:
+            head = grp[0]
+            suspect_groups.append({
+                "user_id": head["user_id"],
+                "destination": head.get("destination") or "",
+                "created_at": head["created_at"],
+                "size": size,
+            })
+    return {
+        "total_rows": total_rows,
+        "total_groups": len(groups),
+        "size_distribution": dict(size_distribution),
+        "suspect_groups": suspect_groups,
+    }
