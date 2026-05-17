@@ -234,3 +234,54 @@ def test_build_cluster_report_counts_per_cluster_and_unknowns():
     assert round(report["mature_coverage_pct"], 1) == 33.3
     # 6 cold ETAs all = (10-5) / (4/7) = 8.75 → int = 8
     assert report["median_cold_eta_days"] == 8
+
+
+from app.analysis.baseline_clusters import format_cluster_report_for_telegram
+
+
+def test_format_cluster_report_fits_in_under_12_lines():
+    """The Telegram template must stay compact: ≤12 lines. Also
+    verify all four cluster rows + season + parsing diagnostic
+    are present."""
+    report = {
+        "counts": {"hot": 162, "warm": 487, "cold": 542, "dormant": 1123},
+        "unknown_count": 4,
+        "total_parsed": 2314,
+        "total_with_unknown": 2318,
+        "mature_coverage_pct": 54.5,
+        "median_cold_eta_days": 45,
+    }
+    text = format_cluster_report_for_telegram(
+        report=report,
+        season="spring",
+        median_samples_per_baseline=0.17,
+    )
+    lines = text.splitlines()
+    assert len(lines) <= 12, f"Expected ≤12 lines, got {len(lines)}: {text}"
+    assert "Couverture mature" in text
+    assert "54" in text  # %
+    assert "Hot" in text and "162" in text
+    assert "Warm" in text and "487" in text
+    assert "Cold" in text and "542" in text
+    assert "Dormant" in text and "1123" in text
+    assert "spring" in text
+    assert "2314/2318" in text or "2314" in text  # parsing diagnostic
+
+
+def test_format_renders_median_eta_dash_when_none():
+    """When fewer than 5 cold baselines, median_cold_eta_days is None
+    → the Cold line shows '—' instead of a number."""
+    report = {
+        "counts": {"hot": 0, "warm": 0, "cold": 2, "dormant": 0},
+        "unknown_count": 0,
+        "total_parsed": 2,
+        "total_with_unknown": 2,
+        "mature_coverage_pct": 0.0,
+        "median_cold_eta_days": None,
+    }
+    text = format_cluster_report_for_telegram(
+        report=report,
+        season="summer",
+        median_samples_per_baseline=0.0,
+    )
+    assert "—" in text  # em dash for undefined median
