@@ -692,3 +692,77 @@ def test_l3_does_not_consider_daily_volume():
             db=db, user_id="u", destination="LIS",
             new_discount_pct=disc, now=now,
         ) is False
+
+
+# ── Tier-aware caps (chantier 5, 2026-05-17) ───────────────────────────────
+
+
+from app.notifications.dispatch_guards import (
+    TIER_CAPS,
+    get_user_caps,
+)
+
+
+def test_tier_caps_constants_lock_the_policy():
+    """The TIER_CAPS dict pins the alert policy per tier. This test
+    locks the numbers so a later edit can't silently widen the free
+    cap (or shrink the premium one) without showing up in the diff."""
+    # Free: 3 short / 0 long / total 3, no burst exception
+    assert TIER_CAPS["free"]["short_24h"] == 3
+    assert TIER_CAPS["free"]["long_24h"] == 0
+    assert TIER_CAPS["free"]["total_24h"] == 3
+    assert TIER_CAPS["free"]["burst_exception_short"] is None
+    assert TIER_CAPS["free"]["burst_exception_long"] is None
+
+    # Premium: 3 short / 2 long / 5 total, exception 70/60
+    assert TIER_CAPS["premium"]["short_24h"] == 3
+    assert TIER_CAPS["premium"]["long_24h"] == 2
+    assert TIER_CAPS["premium"]["total_24h"] == 5
+    assert TIER_CAPS["premium"]["burst_exception_short"] == 70.0
+    assert TIER_CAPS["premium"]["burst_exception_long"] == 60.0
+
+    # Grandfathered = same caps as premium (alias)
+    assert TIER_CAPS["premium_grandfathered"] == TIER_CAPS["premium"]
+
+
+def _mk_user_db(tier):
+    """Build a mock that returns one users row with the given tier.
+    tier=None simulates a missing row (anonymous / deleted user)."""
+    if tier is None:
+        return _make_db([])
+    return _make_db([{"id": "u", "tier": tier}])
+
+
+def test_get_user_caps_returns_free_when_user_not_found():
+    """Defensive: if the user_id doesn't match any row (deleted,
+    anon, race condition), default to the strictest tier ('free').
+    The opposite (defaulting to premium) would silently raise the
+    cap for invalid IDs — too easy to abuse."""
+    db = _mk_user_db(None)
+    caps = get_user_caps(db=db, user_id="u")
+    assert caps == TIER_CAPS["free"]
+
+
+def test_get_user_caps_returns_tier_caps_for_known_user():
+    for tier in ("free", "premium", "premium_grandfathered"):
+        db = _mk_user_db(tier)
+        caps = get_user_caps(db=db, user_id="u")
+        assert caps == TIER_CAPS[tier], f"caps mismatch for {tier}"
+
+
+def test_get_user_caps_fails_open_on_db_error():
+    """On DB error, fall back to free caps — better silently strict
+    than silently permissive."""
+    db = MagicMock()
+    db.table.side_effect = Exception("supabase down")
+    caps = get_user_caps(db=db, user_id="u")
+    assert caps == TIER_CAPS["free"]
+
+
+def test_get_user_caps_unknown_tier_value_falls_back_to_free():
+    """If the DB has a tier value not in TIER_CAPS (e.g. an
+    in-progress migration adding a new tier before code is updated),
+    fall back to free rather than KeyError."""
+    db = _mk_user_db("enterprise")  # not a known tier
+    caps = get_user_caps(db=db, user_id="u")
+    assert caps == TIER_CAPS["free"]
