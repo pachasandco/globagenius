@@ -2126,6 +2126,7 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                 # V10: also persist price + discount_pct so the dispatch
                 # guards on the next run can read history for L1 / L2.
                 if sent_ok and sub_user_id and alert_key:
+                    message_id = str(uuid.uuid4())
                     try:
                         db.table("sent_alerts").upsert(
                             {
@@ -2136,6 +2137,7 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                                 "alert_type": "split_ticket",
                                 "price": float(combo.total or 0),
                                 "discount_pct": float(combo_savings_pct or 0),
+                                "message_id": message_id,
                             },
                             on_conflict="user_id,alert_key",
                         ).execute()
