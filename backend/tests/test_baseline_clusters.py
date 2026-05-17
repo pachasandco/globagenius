@@ -118,3 +118,20 @@ def test_rate_per_day_wildcard_origin_sums_across_known_origins():
     )
     # (14 + 7 + 0) / 7 = 3.0
     assert rate == 3.0
+
+
+from app.analysis.baseline_clusters import mature_coverage_pct
+
+
+def test_mature_coverage_excludes_dormants_from_denominator():
+    """(100 hot, 100 warm, 100 cold, 100 dormant) → 200/300 = 66.7%,
+    NOT 200/400 = 50%. Dormants are zombies, not failing baselines,
+    so they're not in the denominator."""
+    counts = {"hot": 100, "warm": 100, "cold": 100, "dormant": 100}
+    assert round(mature_coverage_pct(counts), 1) == 66.7
+
+
+def test_mature_coverage_returns_zero_when_no_active_baselines():
+    """All dormants → 0 / 0 → return 0.0 (not a crash)."""
+    counts = {"hot": 0, "warm": 0, "cold": 0, "dormant": 100}
+    assert mature_coverage_pct(counts) == 0.0
