@@ -120,7 +120,13 @@ def _simulate(
         verdict = "pass"
         if prev is not None and (ts - prev) < timedelta(hours=burst_hours):
             threshold = long_threshold if dest in long_haul_set else short_threshold
-            if disc is None or disc < threshold:
+            # Fail open on rows missing discount_pct (pre-migration 037
+            # legacy rows). In production the dispatcher always passes
+            # a real discount to levier_3_burst_blocks — None only
+            # appears in historical replay; treating it as "block"
+            # would inflate the blocked rate against rows that aren't
+            # representative of post-deploy behaviour.
+            if disc is not None and disc < threshold:
                 verdict = "blocked_by_l3"
         if verdict == "pass":
             last_ts[user] = ts
