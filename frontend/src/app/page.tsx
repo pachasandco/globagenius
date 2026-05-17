@@ -106,28 +106,41 @@ export default async function Landing() {
           />
         </section>
 
-        {/* ── STATS BAR ──
-            Four numbers chosen to recalibrate visitor expectations vs the
-            old hero (which over-promised on volume and global coverage):
-              - 95% = defensible differentiator (reverification)
-              - 162 = honest scope (Europe + Med matures), more credible
-                than "destinations dans le monde entier"
-              - 1-3 = honest volume per day (prevents drop-off from users
-                expecting Skyscanner-style firehose)
-              - 9 = real geographic edge vs anglo-saxon competitors
+        {/* ── 3 PILIERS DE POSITIONNEMENT ──
+            Replaces the 4-numbers stats bar with the three differentiators
+            that anchor the whole brand (see POSITIONNEMENT.md for the
+            long form). Each pillar is intentionally short: a pictogramme,
+            a 3-4 word headline, a one-line proof. The reader should be
+            able to read all three in under 5 seconds and remember them.
+              1. Géographie    — 9 aéroports français, pas Paris-only
+              2. Identité      — par un Français, pas une équipe US
+              3. Honnêteté     — prix de référence = médiane statistique
+                                  réelle, pas un max gonflé
         */}
-        <section className="flex flex-wrap justify-center gap-8 sm:gap-12 py-6 px-6 bg-white border-t border-[var(--color-sand)]">
-          {[
-            { value: "95%", label: "alertes vérifiées avant envoi" },
-            { value: "162", label: "destinations Europe + Méd matures" },
-            { value: "1-3", label: "alertes/jour, jamais plus" },
-            { value: "9", label: "aéroports français" },
-          ].map((s) => (
-            <div key={s.label} className="text-center">
-              <div className="text-2xl font-extrabold text-[var(--color-ink)]">{s.value}</div>
-              <div className="text-xs text-gray-400 mt-1">{s.label}</div>
+        <section className="py-12 px-6 sm:px-12 bg-white border-t border-[var(--color-sand)]">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            <div className="text-center md:text-left">
+              <div className="text-3xl mb-2">🇫🇷</div>
+              <h3 className="font-bold text-[var(--color-ink)] mb-1">9 aéroports français</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                Pas seulement Paris. Lyon, Marseille, Toulouse, Bordeaux, Nantes, Nice et 3 autres.
+              </p>
             </div>
-          ))}
+            <div className="text-center md:text-left">
+              <div className="text-3xl mb-2">🤝</div>
+              <h3 className="font-bold text-[var(--color-ink)] mb-1">Pensé en France</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                Un service d&apos;alertes vols pensé en France, pour les voyageurs qui partent de France.
+              </p>
+            </div>
+            <div className="text-center md:text-left">
+              <div className="text-3xl mb-2">💯</div>
+              <h3 className="font-bold text-[var(--color-ink)] mb-1">Sans prix gonflés</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                Référence = médiane statistique sur 6 mois. Pas un prix max théorique pour faire briller le deal.
+              </p>
+            </div>
+          </div>
         </section>
 
         {recentGuides.length > 0 && (
