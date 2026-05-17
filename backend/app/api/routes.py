@@ -2566,3 +2566,196 @@ def beta_count():
     except Exception as e:
         logger.warning(f"beta_count query failed: {e}")
         return {"founders_count": 0, "max_founders": MAX_FOUNDERS}
+
+
+# ── Admin health (chantier 6, 2026-05-17) ──────────────────────────────────
+
+
+@router.get("/api/admin/health")
+def admin_health(request: Request):
+    """Aggregated operational metrics — replaces the manual SELECTs
+    we run each debugging session. Cron-driven Telegram delivery
+    handles the daily push to the admin chat.
+
+    Returns 10 buckets covering alerts, users, baselines, articles,
+    pipeline freshness. Computed on the fly — no caching, no
+    snapshot table. The endpoint is read-only and idempotent.
+    """
+    _require_admin(request)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    now = datetime.now(timezone.utc)
+    cutoff_24h = (now - timedelta(hours=24)).isoformat()
+    cutoff_7d = (now - timedelta(days=7)).isoformat()
+
+    # ── Alerts
+    sa_24h = db.table("sent_alerts").select(
+        "id", count="exact"
+    ).gte("sent_at", cutoff_24h).limit(1).execute()
+    sa_7d = db.table("sent_alerts").select(
+        "id", count="exact"
+    ).gte("sent_at", cutoff_7d).limit(1).execute()
+    # Unique messages 24h (collapse N rows of grouped alert into 1)
+    sa_msgs_24h = db.table("sent_alerts").select(
+        "message_id"
+    ).gte("sent_at", cutoff_24h).execute()
+    unique_msgs_24h = len({r.get("message_id") for r in (sa_msgs_24h.data or []) if r.get("message_id")})
+
+    # ── Users by tier
+    users_resp = db.table("users").select("tier", count="exact").execute()
+    from collections import Counter
+    tier_dist = Counter(u.get("tier", "free") for u in (users_resp.data or []))
+    users_total = users_resp.count or 0
+
+    # Recipients in last 7d (distinct user_ids in sent_alerts)
+    recipients_7d_resp = db.table("sent_alerts").select(
+        "user_id"
+    ).gte("sent_at", cutoff_7d).execute()
+    recipients_7d = len({r.get("user_id") for r in (recipients_7d_resp.data or []) if r.get("user_id")})
+
+    # ── Baselines (per-cluster counts via the new clustering module)
+    try:
+        from app.analysis.baseline_maturity import compute_report
+        maturity = compute_report() or {}
+    except Exception as e:
+        logger.warning(f"admin_health: baseline_maturity crashed: {e}")
+        maturity = {}
+
+    # ── Articles
+    articles_resp = db.table("articles").select(
+        "iata,generated_at"
+    ).order("generated_at", desc=True).execute()
+    articles = articles_resp.data or []
+    article_iatas = {a.get("iata") for a in articles if a.get("iata")}
+    # Destinations alerted in last 7d but missing an article
+    alerted_dests = {
+        r.get("destination") for r in (sa_msgs_24h.data or [])
+        if r.get("destination")
+    } | {
+        r.get("destination") for r in (recipients_7d_resp.data or [])
+        if r.get("destination")
+    }
+    missing_articles = sorted(alerted_dests - article_iatas)[:20]
+
+    # ── Pipeline freshness
+    scrape_resp = db.table("scrape_logs").select(
+        "started_at,type"
+    ).order("started_at", desc=True).limit(1).execute()
+    last_scrape = scrape_resp.data[0] if scrape_resp.data else None
+    raw_24h = db.table("raw_flights").select(
+        "id", count="exact"
+    ).gte("scraped_at", cutoff_24h).limit(1).execute()
+
+    return {
+        "timestamp": now.isoformat(),
+        "alerts": {
+            "sent_rows_24h": sa_24h.count or 0,
+            "sent_rows_7d": sa_7d.count or 0,
+            "unique_messages_24h": unique_msgs_24h,
+        },
+        "users": {
+            "total": users_total,
+            "by_tier": dict(tier_dist),
+            "recipients_7d": recipients_7d,
+        },
+        "baselines": {
+            "mature_coverage_pct": maturity.get("mature_coverage_pct", 0),
+            "counts": maturity.get("counts", {}),
+            "unknown_count": maturity.get("unknown_count", 0),
+        },
+        "articles": {
+            "total": len(articles),
+            "last_generated_at": articles[0]["generated_at"] if articles else None,
+            "missing_for_alerted_destinations": missing_articles,
+            "missing_count": len(missing_articles),
+        },
+        "pipeline": {
+            "last_scrape_at": last_scrape["started_at"] if last_scrape else None,
+            "last_scrape_type": last_scrape["type"] if last_scrape else None,
+            "raw_flights_24h": raw_24h.count or 0,
+        },
+    }
+
+
+# ── Admin messages per user (chantier 7, 2026-05-17) ───────────────────────
+
+
+@router.get("/api/admin/messages")
+def admin_messages(request: Request, user_id: str, limit: int = 20):
+    """Last N Telegram messages sent to a given user, grouped by
+    message_id (chantier 1 column).
+
+    Each entry collapses the N sent_alerts rows of one Telegram
+    send into one record with offers_count, min_price, max_discount,
+    sent_at, destination, alert_type. For pre-migration rows where
+    message_id is NULL, the (user_id, destination, created_at-to-
+    second) bucket plays the role of message_id.
+
+    Caps `limit` at 100 to avoid runaway queries. Returns 404 only
+    when the user_id matches no row at all in users."""
+    _require_admin(request)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if limit < 1 or limit > 100:
+        raise HTTPException(status_code=400, detail="limit must be 1..100")
+
+    # Confirm the user exists (better error than empty list for a typo)
+    user_resp = db.table("users").select("id,email,tier").eq("id", user_id).limit(1).execute()
+    if not user_resp.data:
+        raise HTTPException(status_code=404, detail=f"User {user_id} not found")
+
+    # Pull more rows than needed (5×) because dedup will collapse them.
+    rows_resp = (
+        db.table("sent_alerts")
+        .select("message_id,destination,alert_type,price,discount_pct,sent_at,created_at,alert_key")
+        .eq("user_id", user_id)
+        .order("sent_at", desc=True)
+        .limit(limit * 5)
+        .execute()
+    )
+    rows = rows_resp.data or []
+
+    # Group into messages. Prefer message_id; fall back to
+    # (destination, created_at-to-second) for pre-039 rows.
+    from collections import defaultdict
+    groups: dict[tuple, list[dict]] = defaultdict(list)
+    for r in rows:
+        mid = r.get("message_id")
+        if mid:
+            key = ("mid", mid)
+        else:
+            ts = (r.get("created_at") or "")[:19]
+            key = ("bucket", r.get("destination") or "", ts)
+        groups[key].append(r)
+
+    # Sort groups by most recent sent_at desc.
+    def _group_ts(g: list[dict]) -> str:
+        return max((r.get("sent_at") or "") for r in g)
+
+    sorted_groups = sorted(groups.values(), key=_group_ts, reverse=True)[:limit]
+
+    messages = []
+    for g in sorted_groups:
+        prices = [r["price"] for r in g if r.get("price") is not None]
+        discounts = [r["discount_pct"] for r in g if r.get("discount_pct") is not None]
+        head = g[0]
+        messages.append({
+            "message_id": head.get("message_id"),
+            "sent_at": _group_ts(g),
+            "destination": head.get("destination"),
+            "alert_type": head.get("alert_type"),
+            "offers_count": len(g),
+            "min_price": min(prices) if prices else None,
+            "max_discount": max(discounts) if discounts else None,
+        })
+
+    return {
+        "user": {
+            "id": user_resp.data[0]["id"],
+            "email": user_resp.data[0].get("email"),
+            "tier": user_resp.data[0].get("tier"),
+        },
+        "messages": messages,
+        "count": len(messages),
+    }

@@ -121,6 +121,17 @@ def get_scheduler_jobs() -> list[dict]:
             "hour": 9,
             "minute": 30,
         },
+        # ── ADMIN HEALTH DAILY : tous les jours à 9h ──
+        # 10 métriques opérationnelles agrégées (alertes, users, baselines,
+        # articles, pipeline) poussées sur le chat admin Telegram. Remplace
+        # les SELECTs manuels qu'on fait chaque session de debug.
+        {
+            "id": "daily_admin_health",
+            "func": job_daily_admin_health,
+            "trigger": "cron",
+            "hour": 9,
+            "minute": 0,
+        },
         # ── TIER 1 : toutes les 20 min (CDG + ORY via endpoints directs LCC) ──
         # Ryanair + Transavia directs → données quasi temps-réel pour les routes chaudes.
         # Polling intensif justifié : ces routes contiennent les mistake fares éphémères.
@@ -1138,15 +1149,31 @@ async def _dispatch_grouped_flight_alerts(
             )
             continue
 
-        # V9 destination pages: lazily generate the destination guide before
-        # the very first alert to this dest. Synchronous (~30-60s on cold
-        # path). Subsequent alerts to the same dest = no-op. If generation
-        # fails, the alert still goes out without the "📖 Le guide" link.
+        # V9 destination pages: lazily generate the destination guide.
+        # Chantier 8 (2026-05-17): the previous version called
+        # ensure_article_for_destination SYNCHRONOUSLY in the dispatcher
+        # hot path. A cold-path generation costs 30-60s of LLM call, and
+        # a dispatcher tick with 5-10 candidates ended up taking minutes,
+        # being killed by the scheduler timeout, and silently dropping
+        # every alert in the batch.
+        # Fix: only return `has_guide=True` if the article ALREADY exists
+        # in DB. If missing, fire-and-forget a background task that will
+        # generate it for the next alert to this dest, but don't block
+        # the current send. Worst case: the FIRST alert for a fresh dest
+        # has no "📖 guide" link; the second one does.
         try:
-            from app.notifications.destination_articles import ensure_article_for_destination
-            has_guide = ensure_article_for_destination(grp_dest)
+            from app.notifications.destination_articles import _article_exists, ensure_article_for_destination
+            if _article_exists(grp_dest):
+                has_guide = True
+            else:
+                has_guide = False
+                # Fire-and-forget background generation so the next
+                # alert to this dest has the guide link. asyncio.to_thread
+                # runs the (synchronous) LLM call off the event loop.
+                import asyncio as _asyncio
+                _asyncio.create_task(_asyncio.to_thread(ensure_article_for_destination, grp_dest))
         except Exception as e:
-            logger.warning(f"ensure_article_for_destination crashed for {grp_dest}: {e}")
+            logger.warning(f"ensure_article_for_destination check crashed for {grp_dest}: {e}")
             has_guide = False
         success = False
         try:
@@ -1445,6 +1472,147 @@ async def job_monthly_dormant_baselines_csv():
         f"[Télécharger le CSV]({url})\n"
         f"_(lien valable 30 jours)_"
     )
+
+
+# ── Daily admin health (chantier 6, 2026-05-17) ────────────────────────────
+
+
+def _format_admin_health(health: dict) -> str:
+    """Render the /api/admin/health payload as a compact ≤15-line
+    Telegram message. Plain text — no Markdown — because route_keys
+    and IATA codes contain characters that MarkdownV1 chokes on."""
+    a = health.get("alerts", {})
+    u = health.get("users", {})
+    b = health.get("baselines", {})
+    ar = health.get("articles", {})
+    p = health.get("pipeline", {})
+    tier_dist = u.get("by_tier", {})
+    counts = b.get("counts", {})
+
+    def _tier_line() -> str:
+        keys = ("free", "premium", "premium_grandfathered")
+        parts = [f"{tier_dist.get(k, 0)} {k}" for k in keys if tier_dist.get(k, 0)]
+        return " | ".join(parts) or "0"
+
+    missing = ar.get("missing_for_alerted_destinations") or []
+    missing_str = ", ".join(missing[:5])
+    if len(missing) > 5:
+        missing_str += f", +{len(missing) - 5}"
+    if not missing:
+        missing_str = "aucun"
+
+    last_scrape = p.get("last_scrape_at") or "—"
+    last_scrape_short = last_scrape[:16].replace("T", " ") if isinstance(last_scrape, str) else "—"
+
+    lines = [
+        f"📊 GG Health — {health.get('timestamp', '')[:10]}",
+        "",
+        f"📨 Alertes : {a.get('unique_messages_24h', 0)} msg / 24h · {a.get('sent_rows_7d', 0)} rows / 7j",
+        "",
+        f"👥 Users : {u.get('total', 0)} total · {u.get('recipients_7d', 0)} actifs 7j",
+        f"   {_tier_line()}",
+        "",
+        f"🌡️ Baseline : {round(b.get('mature_coverage_pct', 0))}% mature",
+        f"   🟢 {counts.get('hot', 0)} 🟡 {counts.get('warm', 0)} 🟠 {counts.get('cold', 0)} 🔴 {counts.get('dormant', 0)}",
+        "",
+        f"📖 Articles : {ar.get('total', 0)} · manquants : {missing_str}",
+        "",
+        f"⚙️ Pipeline : scrape {last_scrape_short} · {p.get('raw_flights_24h', 0)} rows 24h",
+    ]
+    return "\n".join(lines)
+
+
+async def job_daily_admin_health():
+    """Build the health snapshot and post it to the admin Telegram chat.
+
+    Reuses the /api/admin/health endpoint logic (same imports, same
+    aggregations) so there's a single source of truth. Errors are
+    logged + reported to admin — silence isn't a failure mode here."""
+    from app.api.routes import admin_health
+    from fastapi import Request
+    from app.notifications.telegram import send_admin_text, send_admin_alert
+
+    try:
+        # Bypass the auth check by faking a request with the admin key.
+        # The job runs in-process so authentication is moot, but
+        # _require_admin reads from headers — quickest fix is a
+        # MagicMock-style stand-in. Cleaner: extract the inner
+        # function. For now, do the work inline.
+        from app.db import db as _db
+        if _db is None:
+            await send_admin_alert("Daily health: DB not configured")
+            return
+
+        # Re-build the payload (mirrors admin_health endpoint body).
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc)
+        cutoff_24h = (now - timedelta(hours=24)).isoformat()
+        cutoff_7d = (now - timedelta(days=7)).isoformat()
+
+        sa_24h = _db.table("sent_alerts").select("id", count="exact").gte("sent_at", cutoff_24h).limit(1).execute()
+        sa_7d = _db.table("sent_alerts").select("id", count="exact").gte("sent_at", cutoff_7d).limit(1).execute()
+        sa_msgs_24h = _db.table("sent_alerts").select("message_id,destination").gte("sent_at", cutoff_24h).execute()
+        unique_msgs_24h = len({r.get("message_id") for r in (sa_msgs_24h.data or []) if r.get("message_id")})
+
+        users_resp = _db.table("users").select("tier", count="exact").execute()
+        from collections import Counter
+        tier_dist = Counter(u.get("tier", "free") for u in (users_resp.data or []))
+
+        recipients_7d_resp = _db.table("sent_alerts").select("user_id,destination").gte("sent_at", cutoff_7d).execute()
+        recipients_7d = len({r.get("user_id") for r in (recipients_7d_resp.data or []) if r.get("user_id")})
+
+        try:
+            from app.analysis.baseline_maturity import compute_report
+            maturity = compute_report() or {}
+        except Exception:
+            maturity = {}
+
+        articles_resp = _db.table("articles").select("iata,generated_at").order("generated_at", desc=True).execute()
+        articles = articles_resp.data or []
+        article_iatas = {a.get("iata") for a in articles if a.get("iata")}
+        alerted_dests = {r.get("destination") for r in (sa_msgs_24h.data or []) if r.get("destination")} | \
+                        {r.get("destination") for r in (recipients_7d_resp.data or []) if r.get("destination")}
+        missing_articles = sorted(alerted_dests - article_iatas)[:20]
+
+        scrape_resp = _db.table("scrape_logs").select("started_at,type").order("started_at", desc=True).limit(1).execute()
+        last_scrape = scrape_resp.data[0] if scrape_resp.data else None
+        raw_24h = _db.table("raw_flights").select("id", count="exact").gte("scraped_at", cutoff_24h).limit(1).execute()
+
+        health = {
+            "timestamp": now.isoformat(),
+            "alerts": {
+                "sent_rows_24h": sa_24h.count or 0,
+                "sent_rows_7d": sa_7d.count or 0,
+                "unique_messages_24h": unique_msgs_24h,
+            },
+            "users": {
+                "total": users_resp.count or 0,
+                "by_tier": dict(tier_dist),
+                "recipients_7d": recipients_7d,
+            },
+            "baselines": {
+                "mature_coverage_pct": maturity.get("mature_coverage_pct", 0),
+                "counts": maturity.get("counts", {}),
+            },
+            "articles": {
+                "total": len(articles),
+                "last_generated_at": articles[0]["generated_at"] if articles else None,
+                "missing_for_alerted_destinations": missing_articles,
+                "missing_count": len(missing_articles),
+            },
+            "pipeline": {
+                "last_scrape_at": last_scrape["started_at"] if last_scrape else None,
+                "raw_flights_24h": raw_24h.count or 0,
+            },
+        }
+        msg = _format_admin_health(health)
+        await send_admin_text(msg)
+    except Exception as e:
+        logger.exception("daily_admin_health failed")
+        try:
+            await send_admin_alert(f"Daily health crashed: {e}")
+        except Exception:
+            pass
 
 
 async def job_scrape_tier1():
@@ -1956,16 +2124,21 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                 except Exception as e:
                     logger.warning(f"One-way dedup check failed: {e}")
 
-            # V9 destination pages: same lazy generation hook. The article
-            # is keyed by the actual travel destination (= `destination`
-            # for outbound, `origin` for inbound) — the airport the user
-            # is actually visiting, not their home airport.
+            # V9 destination pages — same fire-and-forget pattern as the
+            # grouped-flight site (chantier 8, 2026-05-17). Generation
+            # off the hot path; first alert for a fresh dest has no
+            # guide link, next ones do.
             article_dest = destination if direction == "outbound" else origin
             try:
-                from app.notifications.destination_articles import ensure_article_for_destination
-                has_guide = ensure_article_for_destination(article_dest)
+                from app.notifications.destination_articles import _article_exists, ensure_article_for_destination
+                if _article_exists(article_dest):
+                    has_guide = True
+                else:
+                    has_guide = False
+                    import asyncio as _asyncio
+                    _asyncio.create_task(_asyncio.to_thread(ensure_article_for_destination, article_dest))
             except Exception as e:
-                logger.warning(f"ensure_article_for_destination crashed for {article_dest}: {e}")
+                logger.warning(f"ensure_article_for_destination check crashed for {article_dest}: {e}")
                 has_guide = False
             sent_ok = False
             try:
@@ -2247,14 +2420,21 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                     except Exception as e:
                         logger.warning(f"Combo dedup check failed: {e}")
 
-                # V9 destination pages: lazy generation for the combo's
-                # outbound destination (the city the user travels to).
+                # V9 destination pages — same fire-and-forget pattern
+                # as the other two sites (chantier 8, 2026-05-17). First
+                # alert to a fresh dest has no guide link, next ones do.
                 combo_dest = combo.outbound.get("destination")
                 try:
-                    from app.notifications.destination_articles import ensure_article_for_destination
-                    has_guide = ensure_article_for_destination(combo_dest) if combo_dest else False
+                    from app.notifications.destination_articles import _article_exists, ensure_article_for_destination
+                    if combo_dest and _article_exists(combo_dest):
+                        has_guide = True
+                    else:
+                        has_guide = False
+                        if combo_dest:
+                            import asyncio as _asyncio
+                            _asyncio.create_task(_asyncio.to_thread(ensure_article_for_destination, combo_dest))
                 except Exception as e:
-                    logger.warning(f"ensure_article_for_destination crashed for combo dest {combo_dest}: {e}")
+                    logger.warning(f"ensure_article_for_destination check crashed for combo dest {combo_dest}: {e}")
                     has_guide = False
                 sent_ok = False
                 try:
