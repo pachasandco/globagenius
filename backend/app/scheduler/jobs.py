@@ -1094,6 +1094,7 @@ async def _dispatch_grouped_flight_alerts(
         # When a guard blocks, the deal stays in qualified_items (visible
         # on /home) but no Telegram push is sent.
         from app.notifications.dispatch_guards import (
+            get_user_caps,
             levier_1_destination_cooldown_blocks,
             levier_2_daily_cap_blocks,
             levier_3_burst_blocks,
@@ -1112,10 +1113,12 @@ async def _dispatch_grouped_flight_alerts(
             )
             continue
 
+        caps = get_user_caps(db=db, user_id=uid) if uid else None
         if uid and levier_3_burst_blocks(
             db=db, user_id=uid, destination=grp_dest,
             new_discount_pct=best_discount,
             pending_in_run_alerts=dispatched_burst_ts_by_user,
+            caps=caps,
         ):
             logger.info(
                 f"V10 dispatch blocked (L3 burst 3h): "
@@ -1127,6 +1130,7 @@ async def _dispatch_grouped_flight_alerts(
             db=db, user_id=uid, destination=grp_dest,
             new_discount_pct=best_discount,
             pending_in_run_alerts=dispatched_alerts_in_run_by_user.get(uid),
+            caps=caps,
         ):
             logger.info(
                 f"V10 dispatch blocked (L2 24h cap): "
@@ -1883,6 +1887,7 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
             # V10 dispatch guards (alert fatigue): same destination cooldown
             # + 24h cap. travel_dest is what the user actually flies to.
             from app.notifications.dispatch_guards import (
+                get_user_caps,
                 levier_1_destination_cooldown_blocks,
                 levier_2_daily_cap_blocks,
                 levier_3_burst_blocks,
@@ -1892,10 +1897,12 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                 new_price=float(qualification.price or 0),
             ):
                 continue
+            caps = get_user_caps(db=db, user_id=sub_user_id) if sub_user_id else None
             if sub_user_id and levier_3_burst_blocks(
                 db=db, user_id=sub_user_id, destination=travel_dest,
                 new_discount_pct=float(qualification.discount_pct or 0),
                 pending_in_run_alerts=dispatched_burst_ts_by_user,
+                caps=caps,
             ):
                 logger.info(
                     f"One-way dispatch blocked (L3 burst): "
@@ -1907,6 +1914,7 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                 db=db, user_id=sub_user_id, destination=travel_dest,
                 new_discount_pct=float(qualification.discount_pct or 0),
                 pending_in_run_alerts=dispatched_alerts_in_run_by_user.get(sub_user_id),
+                caps=caps,
             ):
                 continue
 
@@ -2174,6 +2182,7 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                 # V10 dispatch guards (alert fatigue): same destination
                 # cooldown + 24h cap.
                 from app.notifications.dispatch_guards import (
+                    get_user_caps,
                     levier_1_destination_cooldown_blocks,
                     levier_2_daily_cap_blocks,
                     levier_3_burst_blocks,
@@ -2183,10 +2192,12 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                     new_price=float(combo.total or 0),
                 ):
                     continue
+                caps = get_user_caps(db=db, user_id=sub_user_id) if sub_user_id else None
                 if sub_user_id and levier_3_burst_blocks(
                     db=db, user_id=sub_user_id, destination=dest,
                     new_discount_pct=float(combo_savings_pct or 0),
                     pending_in_run_alerts=dispatched_burst_ts_by_user,
+                    caps=caps,
                 ):
                     logger.info(
                         f"Split-ticket dispatch blocked (L3 burst): "
@@ -2198,6 +2209,7 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                     db=db, user_id=sub_user_id, destination=dest,
                     new_discount_pct=float(combo_savings_pct or 0),
                     pending_in_run_alerts=dispatched_alerts_in_run_by_user.get(sub_user_id),
+                    caps=caps,
                 ):
                     continue
 
