@@ -73,3 +73,48 @@ def test_cluster_boundary_rate_exactly_0_1_is_dormant():
     to >= doesn't silently widen the cold population."""
     assert cluster_baseline(samples=5, rate_per_day=0.1) == "dormant"
     assert cluster_baseline(samples=5, rate_per_day=0.10001) == "cold"
+
+
+from app.analysis.baseline_clusters import compute_rate_per_day
+
+
+def test_rate_per_day_concrete_origin():
+    """For (CDG, LIS), divide samples by 7."""
+    samples_by_route = {("CDG", "LIS"): 70, ("CDG", "BCN"): 14}
+    rate = compute_rate_per_day(
+        origin="CDG",
+        destination="LIS",
+        samples_by_route=samples_by_route,
+        known_origins={"CDG", "ORY"},
+    )
+    assert rate == 10.0
+
+
+def test_rate_per_day_unknown_route_is_zero():
+    """A baseline whose (origin, dest) doesn't appear in the
+    7-day query result → rate 0 (no recent scrapes)."""
+    rate = compute_rate_per_day(
+        origin="CDG",
+        destination="NRT",
+        samples_by_route={},
+        known_origins={"CDG"},
+    )
+    assert rate == 0.0
+
+
+def test_rate_per_day_wildcard_origin_sums_across_known_origins():
+    """origin=None means 'all origins toward dest'. Sum all matches
+    and divide by 7."""
+    samples_by_route = {
+        ("CDG", "HKT"): 14,
+        ("ORY", "HKT"): 7,
+        ("BVA", "HKT"): 0,
+    }
+    rate = compute_rate_per_day(
+        origin=None,
+        destination="HKT",
+        samples_by_route=samples_by_route,
+        known_origins={"CDG", "ORY", "BVA"},
+    )
+    # (14 + 7 + 0) / 7 = 3.0
+    assert rate == 3.0
