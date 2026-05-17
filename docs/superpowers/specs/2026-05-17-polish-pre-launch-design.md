@@ -542,8 +542,16 @@ The following are explicitly deferred:
 - Stopover detection via `flight_search v1` — blocked on
   Travelpayouts partner access request (sent 2026-05-13).
 - Reinstating the L2 exceptional bypass — revisit at ~100 active
-  users or 2026-08, whichever first. TODO comment added in
-  `dispatch_guards.py` and a line in `ROADMAP.md` Deferred section.
+  users or 2026-08, whichever first. **Decision rationale (2026-05-17,
+  during chantier 3):** L3 (burst) already carries the exception
+  logic for high-discount deals (≥70% short / ≥60% long). L2 stays
+  strict to keep the "max 5/24h" promise inviolable. The current
+  pipeline `L1 → L3 → L2` separates concerns cleanly: L3 = timing,
+  L2 = volume. If production data shows >2 high-discount alerts/month
+  blocked by L2 strict in saturated pools (currently 0 in our 14-day
+  history), revisit and consider cumulable exceptions with distinct
+  thresholds. TODO comment in `dispatch_guards.py` and a line in
+  `ROADMAP.md` Deferred section.
 - **Tier-aware alert caps (free vs premium)** — design pending. Will
   introduce a `users.tier` column, dynamic caps in
   `dispatch_guards.py` (3 short / 0 long for free, current 3+2 for
