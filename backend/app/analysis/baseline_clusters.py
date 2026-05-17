@@ -220,7 +220,13 @@ def format_cluster_report_for_telegram(
     season: str,
     median_samples_per_baseline: float,
 ) -> str:
-    """Render the report as a ≤12-line Markdown Telegram message.
+    """Render the report as a ≤12-line plain-text Telegram message.
+
+    No Markdown formatting: the message is sent with parse_mode=None
+    so we don't have to escape stars / underscores / brackets that
+    could appear in route_keys or counts (Telegram MarkdownV1 chokes
+    on stray special chars even when they're inside legitimately-
+    closed entities, e.g. after a wildcard `*-NRT-…`).
 
     The headline mature_coverage_pct uses (hot+warm)/(hot+warm+cold).
     The per-cluster (X%) badges use total_with_unknown (dormants
@@ -234,7 +240,7 @@ def format_cluster_report_for_telegram(
     eta_str = f"{eta}j (médiane)" if eta is not None else "— (méd.)"
 
     lines = [
-        f"🟡 *Couverture mature : {cov}%*",
+        f"🟡 Couverture mature : {cov}%",
         "",
         f"  🟢 Hot     {c['hot']:>4}  ({_pct_of_total(c['hot'], total)})  ≥30 samples",
         f"  🟡 Warm    {c['warm']:>4}  ({_pct_of_total(c['warm'], total)})  10-29 samples",

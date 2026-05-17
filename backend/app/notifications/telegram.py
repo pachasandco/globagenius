@@ -924,6 +924,25 @@ async def send_admin_alert(message: str) -> bool:
         return False
 
 
+async def send_admin_text(message: str) -> bool:
+    """Send a plain-text admin message without Markdown parsing.
+    Use this when the message body may contain characters Markdown
+    would mis-interpret (e.g. raw `*` from wildcard route keys, `_`
+    in identifiers, `[` from log lines)."""
+    bot = _get_bot()
+    if not bot or not settings.TELEGRAM_ADMIN_CHAT_ID:
+        return False
+    try:
+        await bot.send_message(
+            chat_id=int(settings.TELEGRAM_ADMIN_CHAT_ID),
+            text=message,
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send admin text: {e}")
+        return False
+
+
 async def send_admin_markdown(message: str) -> bool:
     bot = _get_bot()
     if not bot or not settings.TELEGRAM_ADMIN_CHAT_ID:

@@ -29,6 +29,7 @@ from app.notifications.telegram import (
     send_admin_report,
     send_admin_alert,
     send_admin_markdown,
+    send_admin_text,
 )
 from app.api.routes import _get_user_tier
 from app.scraper.scraper_health_agent import run_scraper_health_check
@@ -1331,8 +1332,14 @@ async def job_weekly_baseline_maturity():
         logger.warning("baseline maturity: no data")
         return
     msg = format_maturity_for_telegram(report)
-    await send_admin_markdown(msg)
-    logger.info(f"baseline maturity score: {report.score}/100 — ETA {report.eta_date}")
+    await send_admin_text(msg)
+    # report is a dict (chantier 2 rewrite): coverage % + median cold ETA
+    # is what the operator wants in the log line.
+    cov = report.get("mature_coverage_pct", 0)
+    eta = report.get("median_cold_eta_days")
+    logger.info(
+        f"baseline maturity: coverage={cov:.1f}% median_cold_eta={eta}"
+    )
 
 
 async def job_monthly_dormant_baselines_csv():
