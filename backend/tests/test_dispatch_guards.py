@@ -47,28 +47,24 @@ def _row(
     discount: float,
     destination: str = "LIS",
     created_at: str | None = None,
+    message_id: str | None = None,
 ) -> dict:
     """Build a sent_alerts row in the shape the guard expects.
 
-    The default `created_at` is unique per call (each call increments
-    a module-level counter), so multiple `_row()` calls produce rows
-    that L2 treats as DISTINCT messages — matching the test intent
-    where every helper call represents a separate notification event.
-
-    To test the multi-row-per-message scenario (a grouped alert that
-    wrote N rows for N offers), pass an explicit `created_at` shared
-    across the rows that belong to the same message.
+    `message_id`: new in chantier 1. When provided, L2 collapses rows
+    sharing this UUID into a single notification event (instead of
+    falling back to the (destination, 5-min bucket) heuristic for
+    pre-migration rows).
     """
     if created_at is None:
         n = next(_row_counter)
-        # Spread rows hours apart so they always fall in distinct
-        # MESSAGE_BUCKET_MINUTES buckets, regardless of how many tests run.
         base = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
         created_at = (base + timedelta(hours=n)).isoformat()
     return {
         "discount_pct": discount,
         "destination": destination,
         "created_at": created_at,
+        "message_id": message_id,
     }
 
 
@@ -404,4 +400,26 @@ def test_l1_legacy_row_without_price_fails_open():
     db = _make_db([{"price": None, "created_at": datetime.now(timezone.utc).isoformat()}])
     assert levier_1_destination_cooldown_blocks(
         db=db, user_id="u", destination="LIS", new_price=110.0
+    ) is False
+
+
+def test_l2_collapses_rows_sharing_message_id_not_just_bucket():
+    """REGRESSION (chantier 1, 2026-05-17): rows sharing a message_id
+    collapse to one event regardless of created_at distance. This is
+    the new mechanism; the 5-min bucket stays only for pre-migration
+    rows where message_id is NULL."""
+    mid = "00000000-0000-0000-0000-000000000001"
+    # Three rows of the same message, intentionally spread across
+    # times that would NOT fall in the same 5-min bucket. Pre-chantier-1,
+    # they would each count as a distinct event.
+    rows = [
+        _row(45.0, "LIS", created_at="2026-05-05T03:00:00+00:00", message_id=mid),
+        _row(45.0, "LIS", created_at="2026-05-05T03:30:00+00:00", message_id=mid),
+        _row(45.0, "LIS", created_at="2026-05-05T04:00:00+00:00", message_id=mid),
+    ]
+    db = _make_db(rows)
+    # 3 rows → 1 message → next candidate at 30% must pass under the
+    # short-haul cap of 3.
+    assert levier_2_daily_cap_blocks(
+        db=db, user_id="u", destination="OPO", new_discount_pct=30.0
     ) is False
