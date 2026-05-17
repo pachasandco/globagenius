@@ -204,3 +204,46 @@ def build_cluster_report(
         "mature_coverage_pct": mature_coverage_pct(counts),
         "median_cold_eta_days": median_cold_eta_days(cold_etas),
     }
+
+
+def _pct_of_total(count: int, total_with_unknown: int) -> str:
+    """Render 'X%' against the total-brut denominator (dormants
+    included). Returns ' 0%' when total is 0."""
+    if total_with_unknown == 0:
+        return " 0%"
+    return f"{round(100 * count / total_with_unknown):>2}%"
+
+
+def format_cluster_report_for_telegram(
+    *,
+    report: dict,
+    season: str,
+    median_samples_per_baseline: float,
+) -> str:
+    """Render the report as a ≤12-line Markdown Telegram message.
+
+    The headline mature_coverage_pct uses (hot+warm)/(hot+warm+cold).
+    The per-cluster (X%) badges use total_with_unknown (dormants
+    included) — by design, so the dormant share remains visible.
+    """
+    c = report["counts"]
+    cov = round(report["mature_coverage_pct"])
+    total = report["total_with_unknown"]
+    parsed_ok = report["total_parsed"]
+    eta = report["median_cold_eta_days"]
+    eta_str = f"{eta}j (médiane)" if eta is not None else "— (méd.)"
+
+    lines = [
+        f"🟡 *Couverture mature : {cov}%*",
+        "",
+        f"  🟢 Hot     {c['hot']:>4}  ({_pct_of_total(c['hot'], total)})  ≥30 samples",
+        f"  🟡 Warm    {c['warm']:>4}  ({_pct_of_total(c['warm'], total)})  10-29 samples",
+        f"  🟠 Cold    {c['cold']:>4}  ({_pct_of_total(c['cold'], total)})  ETA warm: {eta_str}",
+        f"  🔴 Dormant {c['dormant']:>4} ({_pct_of_total(c['dormant'], total)})  → CSV envoyé",
+        "",
+        f"samples/baseline/jour (méd) : {median_samples_per_baseline:.2f}",
+        "",
+        f"📊 Saison scheduler actuelle : {season}",
+        f"⚠️ Parsing route_key : {parsed_ok}/{total} OK, {report['unknown_count']} unknown",
+    ]
+    return "\n".join(lines)
