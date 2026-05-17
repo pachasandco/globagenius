@@ -138,3 +138,69 @@ def median_cold_eta_days(etas: list[Optional[int]]) -> Optional[int]:
     if len(defined) < MIN_COLD_SAMPLE_FOR_MEDIAN:
         return None
     return int(statistics.median(defined))
+
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def build_cluster_report(
+    *,
+    baselines: list[dict],
+    samples_by_route: dict[tuple[str, str], int],
+    known_origins: set[str],
+) -> dict:
+    """Assemble the per-cluster maturity report.
+
+    Inputs:
+      - baselines: list of dicts with at least 'route_key' and
+        'sample_count'.
+      - samples_by_route: precomputed 7-day group-by result.
+      - known_origins: distinct origins seen in the same 7-day query
+        (used for wildcard expansion).
+
+    Output dict:
+      {
+        "counts": {"hot": N, "warm": N, "cold": N, "dormant": N},
+        "unknown_count": int,                  # parse failures
+        "total_parsed": int,                   # baselines we classified
+        "total_with_unknown": int,             # baselines + unknowns
+        "mature_coverage_pct": float,          # (hot+warm)/(hot+warm+cold)
+        "median_cold_eta_days": int | None,    # None if <5 cold ETAs
+      }
+    """
+    counts = {"hot": 0, "warm": 0, "cold": 0, "dormant": 0}
+    cold_etas: list[Optional[int]] = []
+    unknown_count = 0
+
+    for b in baselines:
+        origin, destination = parse_route_key(b.get("route_key", ""))
+        if destination is None:
+            unknown_count += 1
+            logger.warning(
+                "baseline_clusters: unparseable route_key %r — classifying as unknown",
+                b.get("route_key"),
+            )
+            continue
+        samples = int(b.get("sample_count") or 0)
+        rate = compute_rate_per_day(
+            origin=origin,
+            destination=destination,
+            samples_by_route=samples_by_route,
+            known_origins=known_origins,
+        )
+        cluster = cluster_baseline(samples=samples, rate_per_day=rate)
+        counts[cluster] += 1
+        if cluster == "cold":
+            cold_etas.append(eta_cold_to_warm(samples=samples, rate_per_day=rate))
+
+    total_parsed = sum(counts.values())
+    return {
+        "counts": counts,
+        "unknown_count": unknown_count,
+        "total_parsed": total_parsed,
+        "total_with_unknown": total_parsed + unknown_count,
+        "mature_coverage_pct": mature_coverage_pct(counts),
+        "median_cold_eta_days": median_cold_eta_days(cold_etas),
+    }
