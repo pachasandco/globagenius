@@ -221,7 +221,7 @@ def levier_2_daily_cap_blocks(
     try:
         resp = (
             db.table("sent_alerts")
-            .select("discount_pct,destination,created_at")
+            .select("discount_pct,destination,created_at,message_id")
             .eq("user_id", user_id)
             .in_("alert_type", allowed_alert_types)
             .gte("created_at", cutoff)
@@ -236,17 +236,28 @@ def levier_2_daily_cap_blocks(
     # entry. A grouped alert with 3 offers writes 3 rows, but L2
     # counts notification events, not rows. Rows missing created_at
     # or destination keep their own bucket (fail-open).
+    # Two dedup mechanisms, applied in order:
+    # 1. `message_id` (chantier 1, 2026-05-17): authoritative — rows
+    #    sharing a UUID belong to one Telegram message regardless of
+    #    timing.
+    # 2. `(destination, 5-min bucket)` fallback: kept for pre-migration
+    #    rows where message_id is NULL. Removed once the backfill +
+    #    CHECK constraint guarantee no NULL rows remain.
+    seen_message_ids: set[str] = set()
     seen_buckets: set[tuple[str, str]] = set()
     unique_messages: list[dict] = []
     for r in sent:
         if r.get("discount_pct") is None:
-            # Pre-migration 037 row, can't compare. Drop entirely so
-            # the guard becomes progressively effective as fresh rows
-            # land. (Pre-existing fail-open contract.)
+            continue
+        mid = r.get("message_id")
+        if mid is not None:
+            if mid in seen_message_ids:
+                continue
+            seen_message_ids.add(mid)
+            unique_messages.append(r)
             continue
         bucket = _message_bucket_key(r)
         if bucket is None:
-            # No usable created_at/destination → count this row alone.
             unique_messages.append(r)
             continue
         if bucket in seen_buckets:
@@ -297,3 +308,124 @@ def levier_2_daily_cap_blocks(
     if short_count >= DAILY_ALERT_CAP:
         return True
     return False
+
+
+# ── Levier 3 — anti-burst (3h spacing) ─────────────────────────────────────
+#
+# Spec 2026-05-17: don't let the user wake up to 4 notifications
+# between 00h and 04h. A 3h window blocks tightly-packed alerts;
+# an exception threshold lets through truly exceptional discounts
+# (the mistake-fare lane). Long-haul gets a more permissive
+# threshold because long-haul deals at high discount are rarer
+# and more precious.
+#
+# L3 / L2 separation of concerns (design decision, 2026-05-17):
+#   - L3 handles the EXCEPTION case for high-discount deals within
+#     the burst window (the "mistake-fare lane").
+#   - L2 stays STRICT (no bypass) to keep the "max 5/24h" promise.
+#   The L2 exceptional bypass that existed before 2026-05-16 is NOT
+#   reinstated here. Revisit at ~100 active users or 2026-08.
+
+BURST_WINDOW_HOURS = 3
+BURST_EXCEPTION_DISCOUNT_SHORT = 70.0  # short-haul: must beat p90 of typical alerts
+BURST_EXCEPTION_DISCOUNT_LONG = 60.0   # long-haul: lower bar, deals are rarer
+
+
+def _recent_alert_ts_for_user(
+    *,
+    db,
+    user_id: str,
+    now: datetime,
+) -> datetime | None:
+    """Return the most recent sent_alerts.created_at for this user
+    within the burst window, or None if no row is in the window.
+
+    Only counts actual deal alerts (alert_type in flight/one_way/
+    split_ticket) — system messages, teasers etc. don't consume a
+    burst slot.
+
+    Fails open (returns None, "pass") on DB error — better one
+    extra alert than radio silence.
+    """
+    if not db:
+        return None
+    cutoff = (now - timedelta(hours=BURST_WINDOW_HOURS)).isoformat()
+    try:
+        resp = (
+            db.table("sent_alerts")
+            .select("created_at")
+            .eq("user_id", user_id)
+            .in_("alert_type", ["flight", "one_way", "split_ticket"])
+            .gte("created_at", cutoff)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+    except Exception:
+        return None
+    rows = resp.data or []
+    if not rows:
+        return None
+    raw = rows[0].get("created_at")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def levier_3_burst_blocks(
+    *,
+    db,
+    user_id: str,
+    destination: str,
+    new_discount_pct: float,
+    pending_in_run_alerts: dict[str, datetime] | None = None,
+    now: datetime | None = None,
+) -> bool:
+    """Return True iff levier 3 says this alert should NOT be pushed.
+
+    Rule:
+      1. Lookup the most recent alert to this user in the last
+         BURST_WINDOW_HOURS (default 3h). Includes both DB-persisted
+         alerts and in-run pending alerts dispatched earlier in the
+         same scheduler tick.
+      2. If nothing in window → pass (False).
+      3. If something in window:
+         - Long-haul candidate (per is_long_haul(destination)):
+           pass iff new_discount_pct >= BURST_EXCEPTION_DISCOUNT_LONG (60).
+         - Short-haul candidate:
+           pass iff new_discount_pct >= BURST_EXCEPTION_DISCOUNT_SHORT (70).
+         Otherwise block (True).
+
+    pending_in_run_alerts: Dict[user_id, most_recent_ts] — alerts
+    dispatched to this user earlier in the current scheduler tick
+    that haven't been flushed to DB yet. The dict-keyed shape (vs a
+    list) is intentional: it dedups in case of retry within the same
+    tick. None / empty dict → no in-run state.
+
+    Note on separation of concerns: L3 only enforces TIMING (burst).
+    L2 enforces VOLUME (5/24h pool). The dispatcher applies them in
+    order L1 → L3 → L2; passing L3 does NOT guarantee L2 will pass.
+    """
+    now = now or datetime.now(timezone.utc)
+    db_ts = _recent_alert_ts_for_user(db=db, user_id=user_id, now=now)
+    in_run_ts = (pending_in_run_alerts or {}).get(user_id)
+
+    candidates = [t for t in (db_ts, in_run_ts) if t is not None]
+    if not candidates:
+        return False  # no burst in window → pass
+
+    # Most recent across DB and in-run.
+    recent = max(candidates)
+    if (now - recent) >= timedelta(hours=BURST_WINDOW_HOURS):
+        return False  # outside window → pass (defensive; query already filters)
+
+    # Inside window. Apply the exception threshold.
+    threshold = (
+        BURST_EXCEPTION_DISCOUNT_LONG
+        if is_long_haul(destination)
+        else BURST_EXCEPTION_DISCOUNT_SHORT
+    )
+    return new_discount_pct < threshold

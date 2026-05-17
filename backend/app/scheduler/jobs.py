@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from app.config import settings, IATA_TO_CITY, iata_label
@@ -28,6 +29,7 @@ from app.notifications.telegram import (
     send_admin_report,
     send_admin_alert,
     send_admin_markdown,
+    send_admin_text,
 )
 from app.api.routes import _get_user_tier
 from app.scraper.scraper_health_agent import run_scraper_health_check
@@ -110,6 +112,14 @@ def get_scheduler_jobs() -> list[dict]:
             "day_of_week": "mon",
             "hour": 9,
             "minute": 5,
+        },
+        {
+            "id": "monthly_dormant_baselines_csv",
+            "func": job_monthly_dormant_baselines_csv,
+            "trigger": "cron",
+            "day": 1,
+            "hour": 9,
+            "minute": 30,
         },
         # ── TIER 1 : toutes les 20 min (CDG + ORY via endpoints directs LCC) ──
         # Ryanair + Transavia directs → données quasi temps-réel pour les routes chaudes.
@@ -676,6 +686,11 @@ async def _dispatch_grouped_flight_alerts(
     # the discount, so the guard can bin in-run alerts into short-haul
     # vs long-haul lanes (each has its own cap).
     dispatched_alerts_in_run_by_user: dict[str, list[dict]] = {}
+    # Levier 3 (burst): per-tick last-alert timestamp for each user, used
+    # to enforce the 3h spacing rule (with significant-discount exception)
+    # without re-querying the DB for alerts we're about to upsert later
+    # in the same loop.
+    dispatched_burst_ts_by_user: dict[str, datetime] = {}
 
     # V9 in-memory free-lane counters: (user_id) -> {"daily": int, "weekly": int}
     # Initialised from DB at sub-time, decremented as we accept candidates so
@@ -1081,6 +1096,7 @@ async def _dispatch_grouped_flight_alerts(
         from app.notifications.dispatch_guards import (
             levier_1_destination_cooldown_blocks,
             levier_2_daily_cap_blocks,
+            levier_3_burst_blocks,
         )
 
         best_offer = offers[0]  # already sorted: best discount first
@@ -1093,6 +1109,17 @@ async def _dispatch_grouped_flight_alerts(
             logger.info(
                 f"V10 dispatch blocked (L1 dest cooldown): "
                 f"user={uid} dest={grp_dest} price={best_price}€"
+            )
+            continue
+
+        if uid and levier_3_burst_blocks(
+            db=db, user_id=uid, destination=grp_dest,
+            new_discount_pct=best_discount,
+            pending_in_run_alerts=dispatched_burst_ts_by_user,
+        ):
+            logger.info(
+                f"V10 dispatch blocked (L3 burst 3h): "
+                f"user={uid} dest={grp_dest} discount={best_discount}%"
             )
             continue
 
@@ -1142,6 +1169,7 @@ async def _dispatch_grouped_flight_alerts(
                     dispatched_alerts_in_run_by_user.setdefault(uid, []).append(
                         {"discount_pct": best_discount, "destination": grp_dest}
                     )
+                    dispatched_burst_ts_by_user[uid] = datetime.now(timezone.utc)
         except Exception as e:
             logger.warning(f"V8.2 merged dispatch failed for {uid}/{grp_dest}: {e}")
             success = False
@@ -1153,6 +1181,7 @@ async def _dispatch_grouped_flight_alerts(
             # V10: persist price + discount_pct so the dispatch guards
             # (Levier 1 / Levier 2) on the next run can read history
             # without joining qualified_items.
+            message_id = str(uuid.uuid4())
             rows = []
             for k in keys_to_store:
                 lane = free_lane_by_key.get(k)
@@ -1165,6 +1194,7 @@ async def _dispatch_grouped_flight_alerts(
                     "alert_type": "flight",
                     "price": best_price,
                     "discount_pct": best_discount,
+                    "message_id": message_id,
                 })
             try:
                 db.table("sent_alerts").upsert(
@@ -1320,8 +1350,97 @@ async def job_weekly_baseline_maturity():
         logger.warning("baseline maturity: no data")
         return
     msg = format_maturity_for_telegram(report)
-    await send_admin_markdown(msg)
-    logger.info(f"baseline maturity score: {report.score}/100 — ETA {report.eta_date}")
+    await send_admin_text(msg)
+    # report is a dict (chantier 2 rewrite): coverage % + median cold ETA
+    # is what the operator wants in the log line.
+    cov = report.get("mature_coverage_pct", 0)
+    eta = report.get("median_cold_eta_days")
+    logger.info(
+        f"baseline maturity: coverage={cov:.1f}% median_cold_eta={eta}"
+    )
+
+
+async def job_monthly_dormant_baselines_csv():
+    """Export dormant baselines to a CSV, upload to Supabase storage,
+    and post the signed URL in the admin chat.
+
+    Runs on the 1st of each month so the operator can review which
+    routes to purge vs. which are off-season and will revive.
+    """
+    if not db:
+        return
+
+    from app.analysis.baseline_maturity import (
+        _fetch_baselines,
+        _fetch_samples_by_route,
+        _current_season,
+    )
+    from app.analysis.baseline_clusters import (
+        parse_route_key,
+        compute_rate_per_day,
+        build_dormants_csv,
+    )
+    from app.notifications.telegram import send_admin_markdown
+
+    baselines = _fetch_baselines()
+    if not baselines:
+        await send_admin_markdown("Dormants CSV: no baselines to report.")
+        return
+
+    samples_by_route, known_origins = _fetch_samples_by_route()
+
+    dormants: list[dict] = []
+    for b in baselines:
+        origin, dest = parse_route_key(b.get("route_key", ""))
+        if dest is None:
+            continue
+        samples = int(b.get("sample_count") or 0)
+        if samples >= 10:
+            continue
+        rate = compute_rate_per_day(
+            origin=origin, destination=dest,
+            samples_by_route=samples_by_route,
+            known_origins=known_origins,
+        )
+        if rate > 0.1:
+            continue  # cold, not dormant
+        dormants.append({
+            "route_key": b.get("route_key"),
+            "sample_count": samples,
+            # last_scrape_at not selected by _fetch_baselines; left as
+            # None so the CSV column renders empty. A future iteration
+            # can join scrape_logs if the operator needs that signal.
+            "last_scrape_at": None,
+            "rate_per_day_7d": round(rate, 3),
+        })
+
+    csv_text = build_dormants_csv(
+        dormants=dormants, current_season=_current_season()
+    )
+
+    # Upload to Supabase storage bucket "maturity-reports" (private).
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    path = f"dormants/{stamp}.csv"
+    try:
+        db.storage.from_("maturity-reports").upload(
+            path=path,
+            file=csv_text.encode("utf-8"),
+            file_options={"content-type": "text/csv", "upsert": "true"},
+        )
+        signed = db.storage.from_("maturity-reports").create_signed_url(
+            path=path, expires_in=86400 * 30
+        )
+        url = signed.get("signedURL") or signed.get("signed_url") or ""
+    except Exception as e:
+        logger.exception("Dormants CSV upload failed: %s", e)
+        await send_admin_markdown(f"⚠️ Dormants CSV upload failed: `{e}`")
+        return
+
+    await send_admin_markdown(
+        f"📄 *Dormant baselines (mensuel)* — {len(dormants)} routes\n"
+        f"[Télécharger le CSV]({url})\n"
+        f"_(lien valable 30 jours)_"
+    )
 
 
 async def job_scrape_tier1():
@@ -1617,6 +1736,8 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
     # 2026-05-05: stores destinations alongside discounts so the guard
     # can apply the short-haul vs long-haul caps independently.
     dispatched_alerts_in_run_by_user: dict[str, list[dict]] = {}
+    # Levier 3 (burst): per-tick last-alert timestamp per user.
+    dispatched_burst_ts_by_user: dict[str, datetime] = {}
 
     # Fetch users who opted in to one_way alerts (single round-trip).
     opt_in_subs: list[dict] = []
@@ -1764,11 +1885,23 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
             from app.notifications.dispatch_guards import (
                 levier_1_destination_cooldown_blocks,
                 levier_2_daily_cap_blocks,
+                levier_3_burst_blocks,
             )
             if sub_user_id and levier_1_destination_cooldown_blocks(
                 db=db, user_id=sub_user_id, destination=travel_dest,
                 new_price=float(qualification.price or 0),
             ):
+                continue
+            if sub_user_id and levier_3_burst_blocks(
+                db=db, user_id=sub_user_id, destination=travel_dest,
+                new_discount_pct=float(qualification.discount_pct or 0),
+                pending_in_run_alerts=dispatched_burst_ts_by_user,
+            ):
+                logger.info(
+                    f"One-way dispatch blocked (L3 burst): "
+                    f"user={sub_user_id} dest={travel_dest} "
+                    f"discount={float(qualification.discount_pct or 0)}%"
+                )
                 continue
             if sub_user_id and levier_2_daily_cap_blocks(
                 db=db, user_id=sub_user_id, destination=travel_dest,
@@ -1852,6 +1985,7 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                             "discount_pct": float(qualification.discount_pct or 0),
                             "destination": travel_dest,
                         })
+                        dispatched_burst_ts_by_user[sub_user_id] = datetime.now(timezone.utc)
             except Exception as e:
                 logger.warning(
                     f"One-way alert send failed user={sub_user_id}: {e}"
@@ -1862,6 +1996,7 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
             # exact same deal again, AND the audit can't tell whether
             # the dispatcher even ran.
             if sent_ok and sub_user_id and alert_key:
+                message_id = str(uuid.uuid4())
                 try:
                     db.table("sent_alerts").upsert(
                         {
@@ -1875,6 +2010,7 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                             "alert_type": "one_way",
                             "price": float(qualification.price or 0),
                             "discount_pct": float(qualification.discount_pct or 0),
+                            "message_id": message_id,
                         },
                         on_conflict="user_id,alert_key",
                     ).execute()
@@ -1911,6 +2047,8 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
     # 2026-05-05: stores destinations alongside discounts so the guard
     # can apply the short-haul vs long-haul caps independently.
     dispatched_alerts_in_run_by_user: dict[str, list[dict]] = {}
+    # Levier 3 (burst): per-tick last-alert timestamp per user.
+    dispatched_burst_ts_by_user: dict[str, datetime] = {}
 
     # Pre-fetch users who opted in to split-ticket combos.
     # A combo is conceptually an A/R (just sold as 2 separate tickets), so
@@ -2038,11 +2176,23 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                 from app.notifications.dispatch_guards import (
                     levier_1_destination_cooldown_blocks,
                     levier_2_daily_cap_blocks,
+                    levier_3_burst_blocks,
                 )
                 if sub_user_id and levier_1_destination_cooldown_blocks(
                     db=db, user_id=sub_user_id, destination=dest,
                     new_price=float(combo.total or 0),
                 ):
+                    continue
+                if sub_user_id and levier_3_burst_blocks(
+                    db=db, user_id=sub_user_id, destination=dest,
+                    new_discount_pct=float(combo_savings_pct or 0),
+                    pending_in_run_alerts=dispatched_burst_ts_by_user,
+                ):
+                    logger.info(
+                        f"Split-ticket dispatch blocked (L3 burst): "
+                        f"user={sub_user_id} dest={dest} "
+                        f"discount={float(combo_savings_pct or 0)}%"
+                    )
                     continue
                 if sub_user_id and levier_2_daily_cap_blocks(
                     db=db, user_id=sub_user_id, destination=dest,
@@ -2112,6 +2262,7 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                                 "discount_pct": float(combo_savings_pct or 0),
                                 "destination": dest,
                             })
+                            dispatched_burst_ts_by_user[sub_user_id] = datetime.now(timezone.utc)
                 except Exception as e:
                     logger.warning(
                         f"Split-ticket alert failed user={sub_user_id}: {e}"
@@ -2121,6 +2272,7 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                 # V10: also persist price + discount_pct so the dispatch
                 # guards on the next run can read history for L1 / L2.
                 if sent_ok and sub_user_id and alert_key:
+                    message_id = str(uuid.uuid4())
                     try:
                         db.table("sent_alerts").upsert(
                             {
@@ -2131,6 +2283,7 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                                 "alert_type": "split_ticket",
                                 "price": float(combo.total or 0),
                                 "discount_pct": float(combo_savings_pct or 0),
+                                "message_id": message_id,
                             },
                             on_conflict="user_id,alert_key",
                         ).execute()
