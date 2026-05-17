@@ -423,3 +423,30 @@ def test_l2_collapses_rows_sharing_message_id_not_just_bucket():
     assert levier_2_daily_cap_blocks(
         db=db, user_id="u", destination="OPO", new_discount_pct=30.0
     ) is False
+
+
+def test_l2_handles_mix_of_null_message_id_and_new_rows():
+    """A user with 3 messages in the last 24h:
+       - 1 legacy row (NULL message_id, handled by 5-min bucket)
+       - 1 new message with 3 offers (same message_id)
+       - 1 new message with 1 offer (different message_id)
+    L2 must count 3 messages, not 5. Short-haul cap is then hit
+    (DAILY_ALERT_CAP=3), so a 4th candidate at 30% must block."""
+    legacy_ts = "2026-05-01T08:00:00+00:00"
+    new_mid_a = "00000000-0000-0000-0000-00000000000A"
+    new_mid_b = "00000000-0000-0000-0000-00000000000B"
+    rows = [
+        # legacy single message via bucket
+        _row(40.0, "LIS", created_at=legacy_ts, message_id=None),
+        # new message A: 3 offers, same UUID, spread across times
+        _row(45.0, "BCN", created_at="2026-05-01T10:00:00+00:00", message_id=new_mid_a),
+        _row(45.0, "BCN", created_at="2026-05-01T10:30:00+00:00", message_id=new_mid_a),
+        _row(45.0, "BCN", created_at="2026-05-01T11:00:00+00:00", message_id=new_mid_a),
+        # new message B: 1 offer, distinct UUID
+        _row(50.0, "OPO", created_at="2026-05-01T12:00:00+00:00", message_id=new_mid_b),
+    ]
+    db = _make_db(rows)
+    # 5 rows total → 3 messages → short cap (3) hit → 4th candidate blocks.
+    assert levier_2_daily_cap_blocks(
+        db=db, user_id="u", destination="MAD", new_discount_pct=30.0
+    ) is True
