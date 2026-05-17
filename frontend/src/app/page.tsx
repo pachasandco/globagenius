@@ -40,13 +40,13 @@ async function fetchRecentDestinationGuides(): Promise<Array<{ iata: string; des
 }
 
 const faqs = [
-  { q: "Comment fonctionne Globe Genius ?", a: "On surveille en permanence les prix des vols au départ de 9 aéroports français. Dès qu’on détecte une baisse de prix significative, on vous envoie une alerte sur Telegram avec tous les détails pour réserver." },
-  { q: "Quelle est la différence entre Gratuit et Premium ?", a: "En Gratuit, vous recevez 1 deal aller-retour entre -20% et -40% chaque jour, plus 1 grosse promo (≥-40%) une fois par semaine. En Premium, vous choisissez votre seuil (-40, -50 ou -60%), vous accédez en plus aux aller simple et aux combos malins (2 billets séparés moins chers qu'un A/R), et les long-courriers ne sont jamais plafonnés." },
-  { q: "Combien d'alertes je reçois par jour ?", a: "On plafonne à 3 alertes par jour pour ne pas saturer votre Telegram. Les long-courriers (Asie, Amériques, océan Indien...) ne comptent pas dans ce plafond car ils sont rares et précieux. Vous pilotez le volume avec votre seuil de promo : -40% (~2-3/jour), -50% (~1-2/jour), -60% (0-1/jour, mais quand ça arrive c'est exceptionnel)." },
-  { q: "Comment fonctionne la garantie 30 jours ?", a: "Si Premium ne vous convient pas, contactez-nous dans les 30 jours suivant votre achat et on vous rembourse intégralement, sans question." },
-  { q: "Les prix incluent-ils les bagages ?", a: "Les prix affichés sont ceux des compagnies aériennes. Les bagages en soute sont parfois inclus selon la compagnie et le tarif. On le précise dans chaque alerte quand l’information est disponible." },
-  { q: "Combien de temps entre la publication du prix et votre alerte ?", a: "Les prix sont mis à jour toutes les 20 minutes au départ de Paris (Beauvais, CDG et Orly), et toutes les 2 heures sur les autres aéroports français. Dès qu'une bonne affaire est repérée, l'alerte Telegram part dans la foulée, généralement moins de 5 minutes après l'apparition du deal." },
-  { q: "Pourquoi certains deals disparaissent avant que j’aie pu réserver ?", a: "Les tarifs érronés (« erreurs de prix ») sont des oublis de configuration des compagnies. Dès qu’elles s’en rendent compte, elles corrigent le tarif — parfois en quelques heures. C’est pourquoi les alertes temps réel sont déterminantes : réserver dans l’heure qui suit l’alerte maximise vos chances d’obtenir le prix affiché. Passez commande rapidement et contactez la compagnie si le tarif change avant l’émission." },
+  { q: "C'est quoi GlobeGenius exactement ?", a: "On surveille en continu les prix des vols depuis 9 aéroports français vers l'Europe, la Méditerranée et l'Afrique du Nord. Quand un tarif chute significativement sous le prix habituel, on t'envoie une alerte Telegram avec dates, prix et lien direct pour réserver. On est en beta publique depuis mai 2026." },
+  { q: "Pourquoi c'est gratuit pendant la beta ?", a: "Parce que ce n'est pas encore un produit fini. La couverture est limitée à l'Europe et la Méditerranée — le long-courrier (Asie, Amériques) arrive cet été 2026. Les 100 premiers inscrits gardent un statut « Membre fondateur » à vie : ils restent gratuits même quand on lancera officiellement à 4,99€/mois." },
+  { q: "Combien d'alertes je reçois par jour ?", a: "Entre 1 et 3 alertes par jour selon ta config. On plafonne strictement à 5/24h, étalées dans le temps (jamais 4 notifs entre 2h et 4h du matin). Tu peux ajuster ton seuil à tout moment depuis ton profil." },
+  { q: "Comment sont vérifiés les deals ?", a: "Chaque deal détecté est re-vérifié sur une seconde source avant envoi (95% de couverture). Ça élimine les ghost fares — prix affichés mais qui n'existent pas vraiment au moment de réserver." },
+  { q: "Comment je gère mes préférences ?", a: "Depuis Telegram directement (commandes /destinations, /pause, ou bouton Masquer sur chaque alerte) ou depuis la page Profil sur le site." },
+  { q: "Et le long-courrier (Tokyo, New York, Bangkok) ?", a: "Pas encore. La baseline statistique sur ces routes n'est pas mature, on enverrait trop de faux positifs. Couverture long-courrier prévue été 2026 — les fondateurs y auront accès en priorité." },
+  { q: "Pourquoi certains deals disparaissent avant que j'aie pu réserver ?", a: "Les tarifs erronés (erreurs de prix) sont des oublis des compagnies. Elles corrigent en 1-4 heures dès qu'elles s'en rendent compte. C'est pourquoi on t'envoie l'alerte dans les minutes qui suivent la détection. Réserver dans l'heure maximise les chances." },
 ];
 
 const faqSchema = {
@@ -205,7 +205,7 @@ export default async function Landing() {
             </div>
           </div>
           <p className="text-center text-xs text-gray-400 mt-6 max-w-xl mx-auto">
-            💬 L&apos;aller simple et le combo malin sont réservés aux abonnés Premium et s&apos;activent dans votre profil.
+            💬 L&apos;aller simple et le combo malin s&apos;activent dans ton profil. Pendant la beta, tous les membres fondateurs y ont accès gratuitement.
           </p>
         </section>
 
