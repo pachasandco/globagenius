@@ -145,3 +145,98 @@ def _simulate(
         "per_user": dict(per_user),
         "classified": classified,
     }
+
+
+# Pass criteria thresholds (per the spec).
+MAX_BLOCKED_PCT = 20.0
+SHORT_EXCEPTION = 70.0
+LONG_EXCEPTION = 60.0
+
+
+def evaluate_criteria(
+    result: dict,
+    *,
+    long_haul_set: set[str],
+) -> dict:
+    """Run the two automatic pass criteria against the simulation
+    result. The third criterion (identified bursts broken) is
+    operator-inspected via the per-user breakdown."""
+    blocked_pct = result["blocked_pct"]
+    crit_1_pass = blocked_pct < MAX_BLOCKED_PCT
+    violators = [
+        c for c in result["classified"]
+        if c["verdict"] == "blocked_by_l3"
+        and c["discount_pct"] is not None
+        and (
+            (c["destination"] in long_haul_set and c["discount_pct"] >= LONG_EXCEPTION)
+            or (c["destination"] not in long_haul_set and c["discount_pct"] >= SHORT_EXCEPTION)
+        )
+    ]
+    crit_2_pass = not violators
+    return {
+        "crit_1_blocked_pct_under_20": crit_1_pass,
+        "crit_2_no_exception_violators": crit_2_pass,
+        "violators": violators[:5],
+        "blocked_pct": blocked_pct,
+        "crit_3_per_user_breakdown": result["per_user"],
+    }
+
+
+def _print_report(eval_: dict) -> None:
+    print(f"Blocked %: {eval_['blocked_pct']:.2f}%  (criterion 1 threshold: < {MAX_BLOCKED_PCT}%)")
+    print(f"  Criterion 1 (< {MAX_BLOCKED_PCT}% blocked): "
+          f"{'PASS' if eval_['crit_1_blocked_pct_under_20'] else 'FAIL'}")
+    print(f"  Criterion 2 (no high-discount blocks): "
+          f"{'PASS' if eval_['crit_2_no_exception_violators'] else 'FAIL'}")
+    if eval_["violators"]:
+        print("    Violators (high-discount alerts that L3 would block):")
+        for v in eval_["violators"]:
+            print(f"      user={v['user_id'][:8]} dest={v['destination']} "
+                  f"discount={v['discount_pct']}% ts={v['ts']}")
+    print("  Criterion 3 (per-user breakdown — inspect for known bursts):")
+    for uid, counts in eval_["crit_3_per_user_breakdown"].items():
+        print(f"    {uid[:8]}: pass={counts['pass']} blocked_by_l3={counts['blocked_by_l3']}")
+
+
+# Long-haul set hard-coded to avoid coupling the script to
+# app.analysis.route_selector (it's an ops tool, not a library).
+# Keep in sync with route_selector.LONG_HAUL_DESTINATIONS.
+LONG_HAUL_SET = {
+    "BKK","NRT","HND","CMN","RAK","TUN","DXB","HAN","SGN","SIN","KUL",
+    "DEL","BOM","CCU","HKG","TPE","ICN","PEK","PVG","JFK","LAX","SFO",
+    "YYZ","YUL","BOS","ORD","MIA","ATL","DFW","SEA","DEN","IAH","MEX",
+    "GIG","GRU","EZE","SCL","LIM","BOG","JNB","CPT","NBO","ADD","CAI",
+    "DOH","AUH","IST","TLV","KEF","RUH","JED","PTP","FDF",
+}
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Backtest L3 anti-burst over the last N days.")
+    parser.add_argument("--days", type=int, default=14)
+    args = parser.parse_args(argv)
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
+
+    from app.db import db
+    if db is None:
+        print("ERROR: Supabase DB not configured.", file=sys.stderr)
+        return 2
+
+    rows = _load_sent_alerts(db, days=args.days)
+    print(f"Loaded {len(rows)} rows from sent_alerts (last {args.days} days).")
+    messages = _dedup_to_messages(rows)
+    print(f"After message-level dedup: {len(messages)} events.")
+
+    sim = _simulate(messages, long_haul_set=LONG_HAUL_SET)
+    eval_ = evaluate_criteria(sim, long_haul_set=LONG_HAUL_SET)
+    _print_report(eval_)
+
+    if eval_["crit_1_blocked_pct_under_20"] and eval_["crit_2_no_exception_violators"]:
+        print("\n✅ Criteria 1 and 2 PASS. Verify criterion 3 (per-user breakdown) manually.")
+        return 0
+    print("\n❌ At least one criterion FAILED. Do NOT merge L3 yet.", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
