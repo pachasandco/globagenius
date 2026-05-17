@@ -429,3 +429,69 @@ def levier_3_burst_blocks(
         else BURST_EXCEPTION_DISCOUNT_SHORT
     )
     return new_discount_pct < threshold
+
+
+# ── Tier-aware caps (chantier 5, 2026-05-17) ───────────────────────────────
+#
+# Three tiers, three caps. The migration 041 added users.tier; this is
+# the read path: dispatcher calls get_user_caps(user_id) → reads the
+# caps dict → applies the right ceilings to L2 + L3.
+#
+# Stripe wiring is unchanged; the free → premium upgrade path will plug
+# into Stripe webhook handlers later (chantier 5 just establishes the
+# data model + lookup, not the payment flow).
+
+TIER_CAPS: dict[str, dict] = {
+    "free": {
+        "short_24h": 3,
+        "long_24h": 0,
+        "total_24h": 3,
+        # No burst exception for free users: every alert hitting a 3h
+        # window is blocked, regardless of discount. The "mistake-fare
+        # lane" is a premium feature.
+        "burst_exception_short": None,
+        "burst_exception_long": None,
+    },
+    "premium": {
+        "short_24h": DAILY_ALERT_CAP,        # 3
+        "long_24h": LONG_HAUL_DAILY_CAP,     # 2
+        "total_24h": TOTAL_DAILY_CAP,        # 5
+        "burst_exception_short": BURST_EXCEPTION_DISCOUNT_SHORT,  # 70
+        "burst_exception_long": BURST_EXCEPTION_DISCOUNT_LONG,    # 60
+    },
+}
+# Beta founders get the premium caps for life. Aliased rather than
+# duplicated so a future bump to premium thresholds carries forward
+# automatically.
+TIER_CAPS["premium_grandfathered"] = TIER_CAPS["premium"]
+
+
+def get_user_caps(*, db, user_id: str) -> dict:
+    """Look up the tier for `user_id` and return its caps dict.
+
+    Defensive fallbacks all map to 'free' (the strictest tier):
+      - missing user row (deleted, anon, race condition)
+      - DB error
+      - unknown tier value in DB (in-progress migration)
+
+    The opposite default (premium) would silently upgrade invalid
+    IDs and is too easy to abuse — fail strict, log loudly when
+    something is off.
+    """
+    if not db or not user_id:
+        return TIER_CAPS["free"]
+    try:
+        resp = (
+            db.table("users")
+            .select("tier")
+            .eq("id", user_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception:
+        return TIER_CAPS["free"]
+    rows = resp.data or []
+    if not rows:
+        return TIER_CAPS["free"]
+    tier = rows[0].get("tier") or "free"
+    return TIER_CAPS.get(tier, TIER_CAPS["free"])
