@@ -61,3 +61,87 @@ def _load_sent_alerts(db, days: int = 14) -> list[dict]:
             break
         offset += 1000
     return rows
+
+
+def _dedup_to_messages(rows: list[dict]) -> list[dict]:
+    """Collapse N rows of the same Telegram message into one event.
+
+    Prefers `message_id` (chantier 1). Falls back to
+    `(user_id, destination, created_at to the second)` for
+    pre-migration rows where message_id is NULL.
+    """
+    seen_mids: set[str] = set()
+    seen_buckets: set[tuple[str, str, str]] = set()
+    out: list[dict] = []
+    for r in rows:
+        mid = r.get("message_id")
+        if mid:
+            if mid in seen_mids:
+                continue
+            seen_mids.add(mid)
+            out.append(r)
+            continue
+        ts = r.get("created_at") or ""
+        bucket = (r.get("user_id") or "", r.get("destination") or "", ts[:19])
+        if bucket in seen_buckets:
+            continue
+        seen_buckets.add(bucket)
+        out.append(r)
+    return out
+
+
+def _simulate(
+    rows: list[dict],
+    *,
+    burst_hours: int = 3,
+    short_threshold: float = 70.0,
+    long_threshold: float = 60.0,
+    long_haul_set: set[str] | None = None,
+) -> dict:
+    """Replay `rows` in chronological order, applying L3 to each event.
+
+    Returns a dict with classified counts and per-user breakdown.
+    A row is `blocked_by_l3` iff a previous-event timestamp for the
+    same user is within `burst_hours` AND its discount is below the
+    applicable threshold.
+    """
+    long_haul_set = long_haul_set or set()
+    last_ts: dict[str, datetime] = {}
+    classified: list[dict] = []
+
+    for r in rows:
+        ts = _parse_ts(r.get("created_at"))
+        if ts is None:
+            continue
+        user = r.get("user_id") or ""
+        dest = r.get("destination") or ""
+        disc = r.get("discount_pct")
+        prev = last_ts.get(user)
+        verdict = "pass"
+        if prev is not None and (ts - prev) < timedelta(hours=burst_hours):
+            threshold = long_threshold if dest in long_haul_set else short_threshold
+            if disc is None or disc < threshold:
+                verdict = "blocked_by_l3"
+        if verdict == "pass":
+            last_ts[user] = ts
+        classified.append({
+            "user_id": user,
+            "destination": dest,
+            "discount_pct": disc,
+            "ts": ts,
+            "verdict": verdict,
+        })
+
+    total = len(classified)
+    blocked = sum(1 for c in classified if c["verdict"] == "blocked_by_l3")
+    per_user: dict[str, dict[str, int]] = defaultdict(lambda: {"pass": 0, "blocked_by_l3": 0})
+    for c in classified:
+        per_user[c["user_id"]][c["verdict"]] += 1
+
+    return {
+        "total_events": total,
+        "blocked_by_l3": blocked,
+        "blocked_pct": (100.0 * blocked / total) if total else 0.0,
+        "per_user": dict(per_user),
+        "classified": classified,
+    }
