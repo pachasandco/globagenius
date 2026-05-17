@@ -86,3 +86,36 @@ def build_dry_run_report(rows: Iterable[dict]) -> dict:
         "size_distribution": dict(size_distribution),
         "suspect_groups": suspect_groups,
     }
+
+
+def apply_backfill(*, db, batch_size: int = 500) -> int:
+    """Assign a message_id to every sent_alerts row that still has
+    NULL. Process in batches; each batch is committed independently
+    (no global transaction) so a crash mid-run leaves a partial but
+    consistent state — the next run resumes via `message_id IS NULL`.
+
+    Returns the total number of rows updated."""
+    table = db.table("sent_alerts")
+    total_updated = 0
+    while True:
+        # Pull next batch of un-backfilled rows.
+        resp = (
+            table.select("id,user_id,destination,alert_key,created_at,message_id")
+            .is_("message_id", "null")
+            .order("created_at")
+            .range(0, batch_size - 1)
+            .execute()
+        )
+        batch = resp.data or []
+        if not batch:
+            break
+
+        # Group and assign one UUID per group.
+        groups = group_rows_into_messages(batch)
+        for grp in groups:
+            new_id = str(uuid.uuid4())
+            ids = [r["id"] for r in grp]
+            table.update({"message_id": new_id}).in_("id", ids).execute()
+            total_updated += len(ids)
+
+    return total_updated
