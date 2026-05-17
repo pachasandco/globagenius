@@ -68,3 +68,29 @@ def cluster_baseline(samples: int, rate_per_day: float) -> str:
     if rate_per_day > COLD_MIN_RATE_PER_DAY:
         return "cold"
     return "dormant"
+
+
+WINDOW_DAYS = 7  # the rate query covers the last 7 days
+
+
+def compute_rate_per_day(
+    *,
+    origin: Optional[str],
+    destination: str,
+    samples_by_route: dict[tuple[str, str], int],
+    known_origins: set[str],
+) -> float:
+    """Convert a parsed (origin, dest) into a samples-per-day rate
+    over the 7-day window.
+
+    `samples_by_route` is the precomputed result of the single
+    `SELECT origin, destination, COUNT(*) GROUP BY ...` query.
+    `known_origins` is the set of distinct origins observed in
+    that same query — only used for wildcard expansion."""
+    if origin is None:
+        total = sum(
+            samples_by_route.get((o, destination), 0) for o in known_origins
+        )
+    else:
+        total = samples_by_route.get((origin, destination), 0)
+    return total / WINDOW_DAYS
