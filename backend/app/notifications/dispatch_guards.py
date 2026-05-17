@@ -308,3 +308,68 @@ def levier_2_daily_cap_blocks(
     if short_count >= DAILY_ALERT_CAP:
         return True
     return False
+
+
+# ── Levier 3 — anti-burst (3h spacing) ─────────────────────────────────────
+#
+# Spec 2026-05-17: don't let the user wake up to 4 notifications
+# between 00h and 04h. A 3h window blocks tightly-packed alerts;
+# an exception threshold lets through truly exceptional discounts
+# (the mistake-fare lane). Long-haul gets a more permissive
+# threshold because long-haul deals at high discount are rarer
+# and more precious.
+#
+# L3 / L2 separation of concerns (design decision, 2026-05-17):
+#   - L3 handles the EXCEPTION case for high-discount deals within
+#     the burst window (the "mistake-fare lane").
+#   - L2 stays STRICT (no bypass) to keep the "max 5/24h" promise.
+#   The L2 exceptional bypass that existed before 2026-05-16 is NOT
+#   reinstated here. Revisit at ~100 active users or 2026-08.
+
+BURST_WINDOW_HOURS = 3
+BURST_EXCEPTION_DISCOUNT_SHORT = 70.0  # short-haul: must beat p90 of typical alerts
+BURST_EXCEPTION_DISCOUNT_LONG = 60.0   # long-haul: lower bar, deals are rarer
+
+
+def _recent_alert_ts_for_user(
+    *,
+    db,
+    user_id: str,
+    now: datetime,
+) -> datetime | None:
+    """Return the most recent sent_alerts.created_at for this user
+    within the burst window, or None if no row is in the window.
+
+    Only counts actual deal alerts (alert_type in flight/one_way/
+    split_ticket) — system messages, teasers etc. don't consume a
+    burst slot.
+
+    Fails open (returns None, "pass") on DB error — better one
+    extra alert than radio silence.
+    """
+    if not db:
+        return None
+    cutoff = (now - timedelta(hours=BURST_WINDOW_HOURS)).isoformat()
+    try:
+        resp = (
+            db.table("sent_alerts")
+            .select("created_at")
+            .eq("user_id", user_id)
+            .in_("alert_type", ["flight", "one_way", "split_ticket"])
+            .gte("created_at", cutoff)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+    except Exception:
+        return None
+    rows = resp.data or []
+    if not rows:
+        return None
+    raw = rows[0].get("created_at")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
