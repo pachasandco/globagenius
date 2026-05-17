@@ -2047,6 +2047,8 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
     # 2026-05-05: stores destinations alongside discounts so the guard
     # can apply the short-haul vs long-haul caps independently.
     dispatched_alerts_in_run_by_user: dict[str, list[dict]] = {}
+    # Levier 3 (burst): per-tick last-alert timestamp per user.
+    dispatched_burst_ts_by_user: dict[str, datetime] = {}
 
     # Pre-fetch users who opted in to split-ticket combos.
     # A combo is conceptually an A/R (just sold as 2 separate tickets), so
@@ -2174,11 +2176,23 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                 from app.notifications.dispatch_guards import (
                     levier_1_destination_cooldown_blocks,
                     levier_2_daily_cap_blocks,
+                    levier_3_burst_blocks,
                 )
                 if sub_user_id and levier_1_destination_cooldown_blocks(
                     db=db, user_id=sub_user_id, destination=dest,
                     new_price=float(combo.total or 0),
                 ):
+                    continue
+                if sub_user_id and levier_3_burst_blocks(
+                    db=db, user_id=sub_user_id, destination=dest,
+                    new_discount_pct=float(combo_savings_pct or 0),
+                    pending_in_run_alerts=dispatched_burst_ts_by_user,
+                ):
+                    logger.info(
+                        f"Split-ticket dispatch blocked (L3 burst): "
+                        f"user={sub_user_id} dest={dest} "
+                        f"discount={float(combo_savings_pct or 0)}%"
+                    )
                     continue
                 if sub_user_id and levier_2_daily_cap_blocks(
                     db=db, user_id=sub_user_id, destination=dest,
@@ -2248,6 +2262,7 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                                 "discount_pct": float(combo_savings_pct or 0),
                                 "destination": dest,
                             })
+                            dispatched_burst_ts_by_user[sub_user_id] = datetime.now(timezone.utc)
                 except Exception as e:
                     logger.warning(
                         f"Split-ticket alert failed user={sub_user_id}: {e}"
