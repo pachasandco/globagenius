@@ -766,3 +766,77 @@ def test_get_user_caps_unknown_tier_value_falls_back_to_free():
     db = _mk_user_db("enterprise")  # not a known tier
     caps = get_user_caps(db=db, user_id="u")
     assert caps == TIER_CAPS["free"]
+
+
+# ── Tier-aware behaviour at L2 and L3 ──────────────────────────────────────
+
+
+def test_l2_with_free_tier_caps_blocks_long_haul_immediately():
+    """Free tier has long_24h=0. Even the FIRST long-haul attempt
+    of the day must be blocked (because the long-haul cap is zero)."""
+    db = _make_db([])  # no prior alerts
+    assert levier_2_daily_cap_blocks(
+        db=db, user_id="u", destination="NRT",  # long-haul
+        new_discount_pct=70.0, now=None,
+        caps=TIER_CAPS["free"],
+    ) is True
+
+
+def test_l2_with_free_tier_caps_blocks_4th_short_haul():
+    """Free tier short_24h=3. The 4th short-haul attempt blocks
+    regardless of discount."""
+    db = _make_db([_row(30.0), _row(30.0), _row(30.0)])  # 3 short already
+    assert levier_2_daily_cap_blocks(
+        db=db, user_id="u", destination="LIS",
+        new_discount_pct=99.0, now=None,
+        caps=TIER_CAPS["free"],
+    ) is True
+
+
+def test_l2_with_premium_caps_matches_existing_behaviour():
+    """Premium caps are exactly DAILY_ALERT_CAP / LONG_HAUL_DAILY_CAP
+    / TOTAL_DAILY_CAP — so the test exercising premium caps should
+    match the existing pool-cap behaviour."""
+    db = _make_db([])
+    # A long-haul candidate with empty history passes for premium.
+    assert levier_2_daily_cap_blocks(
+        db=db, user_id="u", destination="NRT",
+        new_discount_pct=50.0, now=None,
+        caps=TIER_CAPS["premium"],
+    ) is False
+
+
+def test_l3_with_free_tier_caps_blocks_burst_with_no_exception():
+    """Free tier has burst_exception_short=None: any short-haul
+    burst is blocked, even at 99% discount. This is the policy:
+    free users don't get the mistake-fare lane."""
+    now = datetime(2026, 5, 17, 12, 0, 0, tzinfo=timezone.utc)
+    db = _make_db([
+        {"created_at": "2026-05-17T10:30:00+00:00"},  # 1.5h ago
+    ])
+    # Even 99% discount blocks because exception is None.
+    assert levier_3_burst_blocks(
+        db=db, user_id="u", destination="LIS",
+        new_discount_pct=99.0, now=now,
+        caps=TIER_CAPS["free"],
+    ) is True
+
+
+def test_l3_with_premium_caps_allows_exceptional_burst():
+    """Premium tier keeps the 70/60 exception: a 75% short-haul
+    deal in burst passes."""
+    now = datetime(2026, 5, 17, 12, 0, 0, tzinfo=timezone.utc)
+    db = _make_db([
+        {"created_at": "2026-05-17T10:30:00+00:00"},
+    ])
+    assert levier_3_burst_blocks(
+        db=db, user_id="u", destination="LIS",
+        new_discount_pct=75.0, now=now,
+        caps=TIER_CAPS["premium"],
+    ) is False
+    # Same scenario with 60% short → blocks (60 < 70 threshold)
+    assert levier_3_burst_blocks(
+        db=db, user_id="u", destination="LIS",
+        new_discount_pct=60.0, now=now,
+        caps=TIER_CAPS["premium"],
+    ) is True

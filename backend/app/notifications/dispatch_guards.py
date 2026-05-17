@@ -158,6 +158,7 @@ def levier_2_daily_cap_blocks(
     new_discount_pct: float,
     pending_in_run_alerts: list[dict] | None = None,
     now: datetime | None = None,
+    caps: dict | None = None,
 ) -> bool:
     """Return True if levier 2 says this alert should NOT be pushed.
 
@@ -295,17 +296,25 @@ def levier_2_daily_cap_blocks(
     long_count = len(long_haul_discounts)
     total_count = short_count + long_count
 
+    # Read caps from the tier dict when provided. Falls back to the
+    # module-level constants (= premium caps) when caps=None — this
+    # preserves the pre-chantier-5 behaviour for any caller that
+    # hasn't been migrated yet.
+    short_cap = caps["short_24h"] if caps else DAILY_ALERT_CAP
+    long_cap = caps["long_24h"] if caps else LONG_HAUL_DAILY_CAP
+    total_cap = caps["total_24h"] if caps else TOTAL_DAILY_CAP
+
     # Hit the total pool first — the strictest of the three checks
     # whenever both lanes have already contributed.
-    if total_count >= TOTAL_DAILY_CAP:
+    if total_count >= total_cap:
         return True
 
     if new_is_long_haul:
-        if long_count >= LONG_HAUL_DAILY_CAP:
+        if long_count >= long_cap:
             return True
         return False
 
-    if short_count >= DAILY_ALERT_CAP:
+    if short_count >= short_cap:
         return True
     return False
 
@@ -383,6 +392,7 @@ def levier_3_burst_blocks(
     new_discount_pct: float,
     pending_in_run_alerts: dict[str, datetime] | None = None,
     now: datetime | None = None,
+    caps: dict | None = None,
 ) -> bool:
     """Return True iff levier 3 says this alert should NOT be pushed.
 
@@ -423,11 +433,25 @@ def levier_3_burst_blocks(
         return False  # outside window → pass (defensive; query already filters)
 
     # Inside window. Apply the exception threshold.
-    threshold = (
-        BURST_EXCEPTION_DISCOUNT_LONG
-        if is_long_haul(destination)
-        else BURST_EXCEPTION_DISCOUNT_SHORT
-    )
+    # Tier-aware (chantier 5): caps={"burst_exception_short": 70 or None,
+    # "burst_exception_long": 60 or None}. None means "no exception, always
+    # block in burst" (free tier). Falls back to the module-level
+    # constants (premium policy) when caps=None for backward compat.
+    new_is_long_haul = is_long_haul(destination)
+    if caps is not None:
+        threshold = (
+            caps["burst_exception_long"]
+            if new_is_long_haul
+            else caps["burst_exception_short"]
+        )
+        if threshold is None:
+            return True  # no exception path → block
+    else:
+        threshold = (
+            BURST_EXCEPTION_DISCOUNT_LONG
+            if new_is_long_haul
+            else BURST_EXCEPTION_DISCOUNT_SHORT
+        )
     return new_discount_pct < threshold
 
 
