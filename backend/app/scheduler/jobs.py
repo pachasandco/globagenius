@@ -1736,6 +1736,8 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
     # 2026-05-05: stores destinations alongside discounts so the guard
     # can apply the short-haul vs long-haul caps independently.
     dispatched_alerts_in_run_by_user: dict[str, list[dict]] = {}
+    # Levier 3 (burst): per-tick last-alert timestamp per user.
+    dispatched_burst_ts_by_user: dict[str, datetime] = {}
 
     # Fetch users who opted in to one_way alerts (single round-trip).
     opt_in_subs: list[dict] = []
@@ -1883,11 +1885,23 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
             from app.notifications.dispatch_guards import (
                 levier_1_destination_cooldown_blocks,
                 levier_2_daily_cap_blocks,
+                levier_3_burst_blocks,
             )
             if sub_user_id and levier_1_destination_cooldown_blocks(
                 db=db, user_id=sub_user_id, destination=travel_dest,
                 new_price=float(qualification.price or 0),
             ):
+                continue
+            if sub_user_id and levier_3_burst_blocks(
+                db=db, user_id=sub_user_id, destination=travel_dest,
+                new_discount_pct=float(qualification.discount_pct or 0),
+                pending_in_run_alerts=dispatched_burst_ts_by_user,
+            ):
+                logger.info(
+                    f"One-way dispatch blocked (L3 burst): "
+                    f"user={sub_user_id} dest={travel_dest} "
+                    f"discount={float(qualification.discount_pct or 0)}%"
+                )
                 continue
             if sub_user_id and levier_2_daily_cap_blocks(
                 db=db, user_id=sub_user_id, destination=travel_dest,
@@ -1971,6 +1985,7 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                             "discount_pct": float(qualification.discount_pct or 0),
                             "destination": travel_dest,
                         })
+                        dispatched_burst_ts_by_user[sub_user_id] = datetime.now(timezone.utc)
             except Exception as e:
                 logger.warning(
                     f"One-way alert send failed user={sub_user_id}: {e}"
