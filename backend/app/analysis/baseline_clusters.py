@@ -94,3 +94,19 @@ def compute_rate_per_day(
     else:
         total = samples_by_route.get((origin, destination), 0)
     return total / WINDOW_DAYS
+
+
+def mature_coverage_pct(counts: dict[str, int]) -> float:
+    """Headline maturity score: % of active baselines that are mature.
+
+    `counts` is a dict like {"hot": N, "warm": N, "cold": N, "dormant": N}.
+    The denominator excludes dormants on purpose — they don't
+    represent a failing pipeline, they represent abandoned routes,
+    and including them would punish the score for a state we already
+    surface separately (CSV export).
+    """
+    active = counts.get("hot", 0) + counts.get("warm", 0) + counts.get("cold", 0)
+    if active == 0:
+        return 0.0
+    mature = counts.get("hot", 0) + counts.get("warm", 0)
+    return 100.0 * mature / active
