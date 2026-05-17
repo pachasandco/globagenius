@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from app.config import settings, IATA_TO_CITY, iata_label
@@ -1153,6 +1154,7 @@ async def _dispatch_grouped_flight_alerts(
             # V10: persist price + discount_pct so the dispatch guards
             # (Levier 1 / Levier 2) on the next run can read history
             # without joining qualified_items.
+            message_id = str(uuid.uuid4())
             rows = []
             for k in keys_to_store:
                 lane = free_lane_by_key.get(k)
@@ -1165,6 +1167,7 @@ async def _dispatch_grouped_flight_alerts(
                     "alert_type": "flight",
                     "price": best_price,
                     "discount_pct": best_discount,
+                    "message_id": message_id,
                 })
             try:
                 db.table("sent_alerts").upsert(
