@@ -110,3 +110,31 @@ def mature_coverage_pct(counts: dict[str, int]) -> float:
         return 0.0
     mature = counts.get("hot", 0) + counts.get("warm", 0)
     return 100.0 * mature / active
+
+
+import statistics
+
+
+WARM_THRESHOLD = WARM_MIN_SAMPLES  # alias for readability in eta math
+MIN_COLD_SAMPLE_FOR_MEDIAN = 5  # below this, median is too noisy to report
+
+
+def eta_cold_to_warm(samples: int, rate_per_day: float) -> Optional[int]:
+    """Days until this baseline reaches the warm threshold (10 samples)
+    at its current acquisition rate. None if rate is 0."""
+    if rate_per_day <= 0:
+        return None
+    return int((WARM_THRESHOLD - samples) / rate_per_day)
+
+
+def median_cold_eta_days(etas: list[Optional[int]]) -> Optional[int]:
+    """Median ETA across a list of cold-baseline ETAs.
+
+    None entries (rate=0 baselines) are filtered out first. If fewer
+    than MIN_COLD_SAMPLE_FOR_MEDIAN remain, return None — too small
+    a sample to report a stable median. The Telegram template
+    renders None as '—'."""
+    defined = [e for e in etas if e is not None]
+    if len(defined) < MIN_COLD_SAMPLE_FOR_MEDIAN:
+        return None
+    return int(statistics.median(defined))
