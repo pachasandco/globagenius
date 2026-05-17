@@ -247,3 +247,38 @@ def format_cluster_report_for_telegram(
         f"⚠️ Parsing route_key : {parsed_ok}/{total} OK, {report['unknown_count']} unknown",
     ]
     return "\n".join(lines)
+
+
+import csv
+import io
+
+
+def build_dormants_csv(*, dormants: list[dict], current_season: str) -> str:
+    """Render the dormant baselines as CSV text.
+
+    Columns: route_key, sample_count, last_scrape_at,
+             rate_per_day_7d, last_seen_in_season
+
+    `last_scrape_at` of None renders as an empty string (not 'None'),
+    standard CSV convention. `current_season` is duplicated on every
+    row so the operator reading the file can correlate the dormant
+    label with the scheduler's current rotation.
+    """
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow([
+        "route_key",
+        "sample_count",
+        "last_scrape_at",
+        "rate_per_day_7d",
+        "last_seen_in_season",
+    ])
+    for d in dormants:
+        writer.writerow([
+            d.get("route_key", ""),
+            d.get("sample_count", 0),
+            d.get("last_scrape_at") or "",
+            d.get("rate_per_day_7d", 0.0),
+            current_season,
+        ])
+    return out.getvalue()
