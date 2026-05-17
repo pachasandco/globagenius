@@ -1865,6 +1865,7 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
             # exact same deal again, AND the audit can't tell whether
             # the dispatcher even ran.
             if sent_ok and sub_user_id and alert_key:
+                message_id = str(uuid.uuid4())
                 try:
                     db.table("sent_alerts").upsert(
                         {
@@ -1878,6 +1879,7 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                             "alert_type": "one_way",
                             "price": float(qualification.price or 0),
                             "discount_pct": float(qualification.discount_pct or 0),
+                            "message_id": message_id,
                         },
                         on_conflict="user_id,alert_key",
                     ).execute()
