@@ -89,19 +89,24 @@ def build_dry_run_report(rows: Iterable[dict]) -> dict:
 
 
 def apply_backfill(*, db, batch_size: int = 500) -> int:
-    """Assign a message_id to every sent_alerts row that still has
-    NULL. Process in batches; each batch is committed independently
-    (no global transaction) so a crash mid-run leaves a partial but
-    consistent state — the next run resumes via `message_id IS NULL`.
+    """Assign a message_id to eligible sent_alerts rows. Process in
+    batches; each batch is committed independently (no global
+    transaction) so a crash mid-run leaves a partial but consistent
+    state — the next run resumes via `message_id IS NULL`.
+
+    Eligibility: `message_id IS NULL AND price IS NOT NULL`. Pre-037
+    rows (price NULL) are intentionally left out — see
+    `_fetch_all_null_rows` for the rationale.
 
     Returns the total number of rows updated."""
     table = db.table("sent_alerts")
     total_updated = 0
     while True:
-        # Pull next batch of un-backfilled rows.
+        # Pull next batch of un-backfilled, post-037 rows.
         resp = (
             table.select("id,user_id,destination,alert_key,created_at,message_id")
             .is_("message_id", "null")
+            .not_.is_("price", "null")
             .order("created_at")
             .range(0, batch_size - 1)
             .execute()
@@ -136,7 +141,19 @@ def _print_report(report: dict) -> None:
 
 
 def _fetch_all_null_rows(db) -> list[dict]:
-    """Pull all rows with NULL message_id, paginating in 1000-row chunks."""
+    """Pull rows eligible for backfill: NULL message_id AND post-migration-037
+    (price IS NOT NULL).
+
+    Pre-037 rows have NULL price/discount_pct/departure_date because those
+    columns were added by migration 037. When 80+ such rows share the same
+    created_at microsecond, we can't distinguish "1 grouped message of 80
+    offers" from "80 separate one-offer messages" — historical telemetry
+    is lost. Skipping them keeps message_id semantics trustworthy: every
+    populated message_id corresponds to a verifiable grouped Telegram send.
+
+    Pre-037 rows remain message_id=NULL and are handled by L2's existing
+    5-min bucket fallback.
+    """
     all_rows: list[dict] = []
     offset = 0
     while True:
@@ -144,6 +161,7 @@ def _fetch_all_null_rows(db) -> list[dict]:
             db.table("sent_alerts")
             .select("id,user_id,destination,alert_key,created_at,message_id")
             .is_("message_id", "null")
+            .not_.is_("price", "null")
             .order("created_at")
             .range(offset, offset + 999)
             .execute()

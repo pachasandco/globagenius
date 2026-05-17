@@ -9,8 +9,14 @@ from datetime import datetime, timezone
 from scripts.backfill_message_id import group_rows_into_messages
 
 
-def _row(user_id: str, dest: str, ts: str, alert_key: str):
-    """Build a sent_alerts row fixture in the shape the grouper expects."""
+def _row(user_id: str, dest: str, ts: str, alert_key: str, price: float | None = 100.0):
+    """Build a sent_alerts row fixture in the shape the grouper expects.
+
+    `price` defaults to a non-NULL sentinel because the backfill script
+    intentionally skips pre-migration-037 rows where price IS NULL. Most
+    grouping tests are post-037 by default; tests that exercise the
+    skip-pre-037 behaviour can pass `price=None` explicitly.
+    """
     return {
         "id": f"id-{alert_key}",
         "user_id": user_id,
@@ -18,6 +24,7 @@ def _row(user_id: str, dest: str, ts: str, alert_key: str):
         "alert_key": alert_key,
         "created_at": ts,
         "message_id": None,
+        "price": price,
     }
 
 
@@ -90,24 +97,48 @@ def test_dry_run_report_counts_groups_and_distribution():
 from unittest.mock import MagicMock
 
 
+class _FakeNot:
+    """Implements the `.not_.is_(col, val)` postgrest filter shape.
+    Currently only `not_.is_('price', 'null')` is exercised."""
+
+    def __init__(self, parent: "_FakeTable"):
+        self._parent = parent
+
+    def is_(self, col, val):
+        assert col == "price" and val == "null", \
+            f"_FakeNot.is_ only supports ('price', 'null'); got ({col!r}, {val!r})"
+        self._parent._filtered = [
+            r for r in self._parent._filtered if r.get("price") is not None
+        ]
+        return self._parent
+
+
 class _FakeTable:
     """In-memory fake of the supabase-py table interface, scoped to
-    sent_alerts. Only implements the methods the backfill script uses
-    (select.is_/order/range, update.in_)."""
+    sent_alerts. Implements the subset of methods the backfill script
+    uses (select.is_/not_.is_/order/range, update.in_)."""
 
     def __init__(self, rows: list[dict]):
         self.rows = rows
         # Track update calls so tests can inspect them
         self.update_calls: list[tuple[dict, list[str]]] = []
+        self._filtered: list[dict] = list(rows)
 
     def select(self, _cols):  # noqa: D401
+        # Reset the filter chain on a new select call.
+        self._filtered = list(self.rows)
         return self
 
     def is_(self, col, val):
         # Only "is_('message_id', 'null')" is used by the script.
-        assert col == "message_id" and val == "null"
-        self._filtered = [r for r in self.rows if r.get("message_id") is None]
+        assert col == "message_id" and val == "null", \
+            f"_FakeTable.is_ only supports ('message_id', 'null'); got ({col!r}, {val!r})"
+        self._filtered = [r for r in self._filtered if r.get("message_id") is None]
         return self
+
+    @property
+    def not_(self) -> "_FakeNot":
+        return _FakeNot(self)
 
     def order(self, _col):
         return self
@@ -143,6 +174,34 @@ def _fake_db(rows):
     db.table.return_value = fake_table
     db._fake_table = fake_table
     return db
+
+
+def test_apply_backfill_skips_pre_migration_037_rows():
+    """Pre-migration-037 rows have NULL price and aren't groupable
+    safely (we can't reconstruct whether 80 rows at the same second
+    were 1 grouped message or 80 distinct messages). The backfill
+    must leave them alone — they keep message_id=NULL and L2's
+    5-min bucket fallback handles them at runtime."""
+    from scripts.backfill_message_id import apply_backfill
+
+    rows = [
+        # Two post-037 rows (price set) — should be backfilled together
+        _row("u1", "LIS", "2026-05-10T03:00:00.000+00:00", "ak_new1", price=100.0),
+        _row("u1", "LIS", "2026-05-10T03:00:00.000+00:00", "ak_new2", price=100.0),
+        # Two pre-037 rows (price NULL) — must be skipped
+        _row("u1", "MAD", "2026-04-01T03:00:00.000+00:00", "ak_old1", price=None),
+        _row("u1", "MAD", "2026-04-01T03:00:00.000+00:00", "ak_old2", price=None),
+    ]
+    db = _fake_db(rows)
+    updated = apply_backfill(db=db, batch_size=10)
+    assert updated == 2  # only the 2 post-037 rows
+    # Post-037 rows got a shared UUID
+    new_rows = [r for r in rows if r["alert_key"].startswith("ak_new")]
+    assert new_rows[0]["message_id"] is not None
+    assert new_rows[0]["message_id"] == new_rows[1]["message_id"]
+    # Pre-037 rows kept message_id=None
+    old_rows = [r for r in rows if r["alert_key"].startswith("ak_old")]
+    assert all(r["message_id"] is None for r in old_rows)
 
 
 def test_apply_backfill_is_idempotent():
