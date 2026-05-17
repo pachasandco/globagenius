@@ -46,3 +46,25 @@ def parse_route_key(route_key: str) -> tuple[Optional[str], Optional[str]]:
     origin = m.group("origin")
     dest = m.group("dest")
     return (None if origin == "*" else origin), dest
+
+
+# Cluster thresholds. The values come from classical stats:
+#   30 = central limit theorem comfort zone
+#   10 = z-score usable floor (n ≥ 10 makes the variance estimate stable)
+# Rate threshold 0.1 / day = roughly "at least one fresh sample per
+# 10-day window," below which the baseline is effectively abandoned.
+HOT_MIN_SAMPLES = 30
+WARM_MIN_SAMPLES = 10
+COLD_MIN_RATE_PER_DAY = 0.1  # strictly greater than, not ≥
+
+
+def cluster_baseline(samples: int, rate_per_day: float) -> str:
+    """Classify a single baseline. See module docstring for the
+    cluster definitions."""
+    if samples >= HOT_MIN_SAMPLES:
+        return "hot"
+    if samples >= WARM_MIN_SAMPLES:
+        return "warm"
+    if rate_per_day > COLD_MIN_RATE_PER_DAY:
+        return "cold"
+    return "dormant"
