@@ -32,3 +32,29 @@ def test_three_rows_same_message_grouped():
     groups = group_rows_into_messages(rows)
     assert len(groups) == 1
     assert {r["alert_key"] for r in groups[0]} == {"ak1", "ak2", "ak3"}
+
+
+def test_different_destinations_same_user_same_second_stay_distinct():
+    """If a dispatch tick fires two messages to the same user at the
+    exact same second but to different destinations (BCN and MAD),
+    they remain two distinct events."""
+    rows = [
+        _row("u1", "BCN", "2026-05-05T03:00:00.000111+00:00", "ak1"),
+        _row("u1", "MAD", "2026-05-05T03:00:00.000222+00:00", "ak2"),
+    ]
+    groups = group_rows_into_messages(rows)
+    assert len(groups) == 2
+    dests = {g[0]["destination"] for g in groups}
+    assert dests == {"BCN", "MAD"}
+
+
+def test_different_users_never_share_a_group():
+    """A row for user A at the same second/destination as user B
+    must never collapse into one message."""
+    rows = [
+        _row("uA", "LIS", "2026-05-05T03:00:00.000111+00:00", "ak1"),
+        _row("uB", "LIS", "2026-05-05T03:00:00.000222+00:00", "ak2"),
+    ]
+    groups = group_rows_into_messages(rows)
+    assert len(groups) == 2
+    assert {g[0]["user_id"] for g in groups} == {"uA", "uB"}
