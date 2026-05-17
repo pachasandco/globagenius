@@ -112,6 +112,14 @@ def get_scheduler_jobs() -> list[dict]:
             "hour": 9,
             "minute": 5,
         },
+        {
+            "id": "monthly_dormant_baselines_csv",
+            "func": job_monthly_dormant_baselines_csv,
+            "trigger": "cron",
+            "day": 1,
+            "hour": 9,
+            "minute": 30,
+        },
         # ── TIER 1 : toutes les 20 min (CDG + ORY via endpoints directs LCC) ──
         # Ryanair + Transavia directs → données quasi temps-réel pour les routes chaudes.
         # Polling intensif justifié : ces routes contiennent les mistake fares éphémères.
@@ -1325,6 +1333,89 @@ async def job_weekly_baseline_maturity():
     msg = format_maturity_for_telegram(report)
     await send_admin_markdown(msg)
     logger.info(f"baseline maturity score: {report.score}/100 — ETA {report.eta_date}")
+
+
+async def job_monthly_dormant_baselines_csv():
+    """Export dormant baselines to a CSV, upload to Supabase storage,
+    and post the signed URL in the admin chat.
+
+    Runs on the 1st of each month so the operator can review which
+    routes to purge vs. which are off-season and will revive.
+    """
+    if not db:
+        return
+
+    from app.analysis.baseline_maturity import (
+        _fetch_baselines,
+        _fetch_samples_by_route,
+        _current_season,
+    )
+    from app.analysis.baseline_clusters import (
+        parse_route_key,
+        compute_rate_per_day,
+        build_dormants_csv,
+    )
+    from app.notifications.telegram import send_admin_markdown
+
+    baselines = _fetch_baselines()
+    if not baselines:
+        await send_admin_markdown("Dormants CSV: no baselines to report.")
+        return
+
+    samples_by_route, known_origins = _fetch_samples_by_route()
+
+    dormants: list[dict] = []
+    for b in baselines:
+        origin, dest = parse_route_key(b.get("route_key", ""))
+        if dest is None:
+            continue
+        samples = int(b.get("sample_count") or 0)
+        if samples >= 10:
+            continue
+        rate = compute_rate_per_day(
+            origin=origin, destination=dest,
+            samples_by_route=samples_by_route,
+            known_origins=known_origins,
+        )
+        if rate > 0.1:
+            continue  # cold, not dormant
+        dormants.append({
+            "route_key": b.get("route_key"),
+            "sample_count": samples,
+            # last_scrape_at not selected by _fetch_baselines; left as
+            # None so the CSV column renders empty. A future iteration
+            # can join scrape_logs if the operator needs that signal.
+            "last_scrape_at": None,
+            "rate_per_day_7d": round(rate, 3),
+        })
+
+    csv_text = build_dormants_csv(
+        dormants=dormants, current_season=_current_season()
+    )
+
+    # Upload to Supabase storage bucket "maturity-reports" (private).
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    path = f"dormants/{stamp}.csv"
+    try:
+        db.storage.from_("maturity-reports").upload(
+            path=path,
+            file=csv_text.encode("utf-8"),
+            file_options={"content-type": "text/csv", "upsert": "true"},
+        )
+        signed = db.storage.from_("maturity-reports").create_signed_url(
+            path=path, expires_in=86400 * 30
+        )
+        url = signed.get("signedURL") or signed.get("signed_url") or ""
+    except Exception as e:
+        logger.exception("Dormants CSV upload failed: %s", e)
+        await send_admin_markdown(f"⚠️ Dormants CSV upload failed: `{e}`")
+        return
+
+    await send_admin_markdown(
+        f"📄 *Dormant baselines (mensuel)* — {len(dormants)} routes\n"
+        f"[Télécharger le CSV]({url})\n"
+        f"_(lien valable 30 jours)_"
+    )
 
 
 async def job_scrape_tier1():
