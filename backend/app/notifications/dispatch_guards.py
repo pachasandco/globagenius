@@ -221,7 +221,7 @@ def levier_2_daily_cap_blocks(
     try:
         resp = (
             db.table("sent_alerts")
-            .select("discount_pct,destination,created_at")
+            .select("discount_pct,destination,created_at,message_id")
             .eq("user_id", user_id)
             .in_("alert_type", allowed_alert_types)
             .gte("created_at", cutoff)
@@ -236,17 +236,28 @@ def levier_2_daily_cap_blocks(
     # entry. A grouped alert with 3 offers writes 3 rows, but L2
     # counts notification events, not rows. Rows missing created_at
     # or destination keep their own bucket (fail-open).
+    # Two dedup mechanisms, applied in order:
+    # 1. `message_id` (chantier 1, 2026-05-17): authoritative — rows
+    #    sharing a UUID belong to one Telegram message regardless of
+    #    timing.
+    # 2. `(destination, 5-min bucket)` fallback: kept for pre-migration
+    #    rows where message_id is NULL. Removed once the backfill +
+    #    CHECK constraint guarantee no NULL rows remain.
+    seen_message_ids: set[str] = set()
     seen_buckets: set[tuple[str, str]] = set()
     unique_messages: list[dict] = []
     for r in sent:
         if r.get("discount_pct") is None:
-            # Pre-migration 037 row, can't compare. Drop entirely so
-            # the guard becomes progressively effective as fresh rows
-            # land. (Pre-existing fail-open contract.)
+            continue
+        mid = r.get("message_id")
+        if mid is not None:
+            if mid in seen_message_ids:
+                continue
+            seen_message_ids.add(mid)
+            unique_messages.append(r)
             continue
         bucket = _message_bucket_key(r)
         if bucket is None:
-            # No usable created_at/destination → count this row alone.
             unique_messages.append(r)
             continue
         if bucket in seen_buckets:
