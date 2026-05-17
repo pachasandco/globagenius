@@ -450,3 +450,45 @@ def test_l2_handles_mix_of_null_message_id_and_new_rows():
     assert levier_2_daily_cap_blocks(
         db=db, user_id="u", destination="MAD", new_discount_pct=30.0
     ) is True
+
+
+# ── Levier 3 — anti-burst (3h spacing) ─────────────────────────────────────
+
+
+from datetime import timedelta  # already imported at top, but explicit here
+
+from app.notifications.dispatch_guards import (
+    BURST_WINDOW_HOURS,
+    BURST_EXCEPTION_DISCOUNT_SHORT,
+    BURST_EXCEPTION_DISCOUNT_LONG,
+    _recent_alert_ts_for_user,
+)
+
+
+def test_burst_constants_match_spec():
+    """The spec pins the burst rule at 3h window, 70% short / 60% long
+    exception thresholds. This test locks those numbers so a future
+    edit can't silently change the policy."""
+    assert BURST_WINDOW_HOURS == 3
+    assert BURST_EXCEPTION_DISCOUNT_SHORT == 70.0
+    assert BURST_EXCEPTION_DISCOUNT_LONG == 60.0
+
+
+def test_recent_alert_ts_returns_most_recent_within_window():
+    """Helper returns the most recent created_at within the burst
+    window (3h). Older rows are filtered out by the query's gte
+    clause, so the helper just unwraps the first result."""
+    now = datetime(2026, 5, 17, 12, 0, 0, tzinfo=timezone.utc)
+    db = _make_db([
+        # 2h ago — should be returned
+        {"created_at": "2026-05-17T10:00:00+00:00"},
+    ])
+    ts = _recent_alert_ts_for_user(db=db, user_id="u", now=now)
+    assert ts == datetime(2026, 5, 17, 10, 0, 0, tzinfo=timezone.utc)
+
+
+def test_recent_alert_ts_returns_none_when_no_row():
+    """No row in window → None (caller treats this as 'pass')."""
+    now = datetime(2026, 5, 17, 12, 0, 0, tzinfo=timezone.utc)
+    db = _make_db([])
+    assert _recent_alert_ts_for_user(db=db, user_id="u", now=now) is None
