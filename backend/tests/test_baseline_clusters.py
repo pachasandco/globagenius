@@ -41,3 +41,35 @@ def test_parse_malformed_route_key_returns_none_pair():
     assert parse_route_key("MALFORMED") == (None, None)
     assert parse_route_key("CDG-LIS") == (None, None)  # no third segment
     assert parse_route_key("cdg-lis-1m") == (None, None)  # lowercase rejected
+
+
+from app.analysis.baseline_clusters import cluster_baseline
+
+
+def test_cluster_hot_when_samples_at_or_above_30():
+    assert cluster_baseline(samples=30, rate_per_day=0.0) == "hot"
+    assert cluster_baseline(samples=150, rate_per_day=10.0) == "hot"
+
+
+def test_cluster_warm_when_samples_between_10_and_29():
+    assert cluster_baseline(samples=10, rate_per_day=0.0) == "warm"
+    assert cluster_baseline(samples=29, rate_per_day=0.0) == "warm"
+
+
+def test_cluster_cold_when_samples_below_10_and_rate_above_0_1():
+    assert cluster_baseline(samples=5, rate_per_day=0.5) == "cold"
+    assert cluster_baseline(samples=0, rate_per_day=5.0) == "cold"
+
+
+def test_cluster_dormant_when_samples_below_10_and_rate_at_or_below_0_1():
+    assert cluster_baseline(samples=5, rate_per_day=0.05) == "dormant"
+    assert cluster_baseline(samples=5, rate_per_day=0.0) == "dormant"
+
+
+def test_cluster_boundary_rate_exactly_0_1_is_dormant():
+    """rate_per_day == 0.1 exact → dormant (strict > 0.1 → cold).
+
+    This locks the boundary so a future refactor that changes >
+    to >= doesn't silently widen the cold population."""
+    assert cluster_baseline(samples=5, rate_per_day=0.1) == "dormant"
+    assert cluster_baseline(samples=5, rate_per_day=0.10001) == "cold"
