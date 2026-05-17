@@ -809,6 +809,38 @@ def format_grouped_flight_alerts(
     return msg
 
 
+# Threshold below which a user is considered "new" and shown feedback
+# buttons in place of the Pause menu. The first 30 alerts are when
+# preference calibration matters most — after that the user has
+# stabilised their config and is more likely to need Pause than the
+# feedback machine.
+FEEDBACK_ONBOARDING_ALERT_LIMIT = 30
+
+
+def _count_alerts_lifetime(user_id: str) -> int:
+    """How many sent_alerts rows exist for this user, ever. Used by
+    send_grouped_flight_alerts to decide whether to show feedback
+    buttons or the standard Pause menu. Fails open (returns a high
+    number) on DB error → fall back to Pause menu, which is the
+    safer default (we never strand the user without a way to pause).
+    """
+    from app.db import db
+    if not db or not user_id:
+        return 9999
+    try:
+        r = (
+            db.table("sent_alerts")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        return r.count or 0
+    except Exception as e:
+        logger.warning(f"_count_alerts_lifetime failed for {user_id}: {e}")
+        return 9999
+
+
 async def send_grouped_flight_alerts(
     chat_id: int,
     origin_city: str,
@@ -820,6 +852,7 @@ async def send_grouped_flight_alerts(
     alert_key: str | None = None,
     origin_iata: str | None = None,
     has_guide: bool = False,
+    message_id: str | None = None,
 ) -> bool:
     """Send a grouped Telegram alert containing multiple flight offers for one destination."""
     bot = _get_bot()
@@ -836,8 +869,13 @@ async def send_grouped_flight_alerts(
     #  - "Masquer <destination>": one-tap to hide future alerts for this
     #    specific destination (most-asked feature: users skim notifs and
     #    want to dismiss the city they're not interested in).
-    #  - "Pause": opens a sub-menu (7d / 30d / indefinite) on click; the
-    #    callback handler swaps in the duration buttons.
+    #  - Feedback row (only for the first FEEDBACK_ONBOARDING_ALERT_LIMIT
+    #    alerts of a user's lifetime, and only when message_id is set):
+    #    [👍 Bon] [👎 Faux] [⏱️ Trop tard]. The callback handler updates
+    #    sent_alerts.feedback (last click wins, editable). After the
+    #    onboarding window, this row is replaced by the standard "Pause"
+    #    menu — once the user has stabilised, the pause matters more
+    #    than another feedback opportunity.
     # 'Se désabonner' is intentionally absent — full opt-out is too easy
     # to fat-finger; users can disconnect from /profile if they really
     # want out.
@@ -846,13 +884,28 @@ async def send_grouped_flight_alerts(
         # Truncate the destination label to keep the button text short on
         # narrow screens (Telegram clips long button labels mid-word).
         short_dest = (dest_city or destination_iata)[:18]
-        reply_markup = InlineKeyboardMarkup([
+        rows = [
             [InlineKeyboardButton(
                 f"🚫 Masquer {short_dest}",
                 callback_data=f"block:{user_id}:{destination_iata}",
             )],
-            [InlineKeyboardButton("⏸ Pause les alertes", callback_data=f"pause_menu:{user_id}")],
-        ])
+        ]
+        # Choose between feedback row (onboarding) and pause row (mature).
+        show_feedback = (
+            message_id is not None
+            and _count_alerts_lifetime(user_id) < FEEDBACK_ONBOARDING_ALERT_LIMIT
+        )
+        if show_feedback:
+            rows.append([
+                InlineKeyboardButton("👍 Bon", callback_data=f"feedback:good:{message_id}"),
+                InlineKeyboardButton("👎 Faux", callback_data=f"feedback:bad:{message_id}"),
+                InlineKeyboardButton("⏱️ Trop tard", callback_data=f"feedback:late:{message_id}"),
+            ])
+        else:
+            rows.append([
+                InlineKeyboardButton("⏸ Pause les alertes", callback_data=f"pause_menu:{user_id}"),
+            ])
+        reply_markup = InlineKeyboardMarkup(rows)
 
     try:
         await bot.send_message(

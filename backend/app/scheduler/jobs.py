@@ -1188,6 +1188,12 @@ async def _dispatch_grouped_flight_alerts(
         except Exception as e:
             logger.warning(f"ensure_article_for_destination check crashed for {grp_dest}: {e}")
             has_guide = False
+        # Generate the message_id BEFORE the Telegram send so we can
+        # embed it in the feedback button callbacks (chantier feedback,
+        # 2026-05-17). The same UUID is reused below in the sent_alerts
+        # upsert, so every row of this grouped message and every
+        # callback they trigger point to the same identifier.
+        message_id = str(uuid.uuid4())
         success = False
         try:
             success = await send_grouped_flight_alerts(
@@ -1201,6 +1207,7 @@ async def _dispatch_grouped_flight_alerts(
                 alert_key=keys_to_store[0] if keys_to_store else None,
                 origin_iata=best_origin,
                 has_guide=has_guide,
+                message_id=message_id,
             )
             if success:
                 logger.info(
@@ -1225,7 +1232,8 @@ async def _dispatch_grouped_flight_alerts(
             # V10: persist price + discount_pct so the dispatch guards
             # (Levier 1 / Levier 2) on the next run can read history
             # without joining qualified_items.
-            message_id = str(uuid.uuid4())
+            # message_id was generated above before send_grouped_flight_alerts
+            # so the feedback button callbacks reference the same UUID.
             rows = []
             for k in keys_to_store:
                 lane = free_lane_by_key.get(k)

@@ -235,6 +235,13 @@ async def _handle_callback(callback: dict):
         user_id = data[len("unsub:"):]
         await _unsubscribe(bot, callback_id, chat_id, user_id)
 
+    elif data.startswith("feedback:"):
+        # Format: feedback:{good|bad|late}:{message_id}
+        rest = data[len("feedback:"):]
+        parts = rest.split(":", 1)
+        if len(parts) == 2:
+            await _record_feedback(bot, callback_id, chat_id, parts[0], parts[1])
+
     else:
         # Unknown callback — just ack it silently
         try:
@@ -625,6 +632,60 @@ async def _unsubscribe(bot, callback_id: str, chat_id: int, user_id: str):
         )
     except Exception as e:
         logger.warning(f"Failed to unsubscribe {user_id}: {e}")
+        try:
+            await bot.answer_callback_query(callback_query_id=callback_id, text="Erreur, réessaie.")
+        except Exception:
+            pass
+
+
+# Map the short callback codes back to the DB enum values that the
+# sent_alerts.feedback CHECK constraint enforces (migration 043).
+_FEEDBACK_CODES = {"good": "good", "bad": "bad", "late": "too_late"}
+
+# Toast confirmations — keep them short (≤ 50 chars for compact
+# rendering). Acknowledge the feedback without over-promising
+# behaviour change ("on resserre les seuils") — that's a separate
+# tuning decision the operator makes after looking at the data.
+_FEEDBACK_TOASTS = {
+    "good": "✓ Merci, ça nous aide à affiner !",
+    "bad": "✓ Note prise, retour utile.",
+    "late": "✓ Bien noté, on accélère.",
+}
+
+
+async def _record_feedback(
+    bot,
+    callback_id: str,
+    chat_id: int,
+    feedback_code: str,
+    message_id: str,
+):
+    """Persist a feedback click into sent_alerts.feedback for every
+    row of the message identified by message_id. Last click wins —
+    the column UPDATEs in place, so a user can change their mind
+    (click 👍 then 👎) and the most recent verdict is kept.
+
+    Fails silently with a generic toast if anything goes wrong —
+    we never want a Telegram callback to surface a stack trace."""
+    db_code = _FEEDBACK_CODES.get(feedback_code)
+    if not db_code:
+        try:
+            await bot.answer_callback_query(callback_query_id=callback_id)
+        except Exception:
+            pass
+        return
+    try:
+        db.table("sent_alerts").update({
+            "feedback": db_code,
+            "feedback_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("message_id", message_id).execute()
+        await bot.answer_callback_query(
+            callback_query_id=callback_id,
+            text=_FEEDBACK_TOASTS.get(feedback_code, "✓ Merci."),
+            show_alert=False,
+        )
+    except Exception as e:
+        logger.warning(f"Feedback record failed for message_id={message_id} code={feedback_code}: {e}")
         try:
             await bot.answer_callback_query(callback_query_id=callback_id, text="Erreur, réessaie.")
         except Exception:
