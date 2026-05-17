@@ -119,3 +119,76 @@ def apply_backfill(*, db, batch_size: int = 500) -> int:
             total_updated += len(ids)
 
     return total_updated
+
+
+def _print_report(report: dict) -> None:
+    print(f"Total rows missing message_id : {report['total_rows']}")
+    print(f"Total groups (= messages)      : {report['total_groups']}")
+    print("Size distribution:")
+    for size in sorted(report["size_distribution"].keys()):
+        print(f"  {size:>3} row(s) per group : {report['size_distribution'][size]} groups")
+    if report["suspect_groups"]:
+        print(f"\nSUSPECT groups (>{SUSPECT_GROUP_THRESHOLD} rows):")
+        for g in report["suspect_groups"]:
+            print(f"  user={g['user_id'][:8]} dest={g['destination']} ts={g['created_at']} size={g['size']}")
+    else:
+        print(f"\nNo suspect groups (threshold > {SUSPECT_GROUP_THRESHOLD}).")
+
+
+def _fetch_all_null_rows(db) -> list[dict]:
+    """Pull all rows with NULL message_id, paginating in 1000-row chunks."""
+    all_rows: list[dict] = []
+    offset = 0
+    while True:
+        resp = (
+            db.table("sent_alerts")
+            .select("id,user_id,destination,alert_key,created_at,message_id")
+            .is_("message_id", "null")
+            .order("created_at")
+            .range(offset, offset + 999)
+            .execute()
+        )
+        chunk = resp.data or []
+        all_rows.extend(chunk)
+        if len(chunk) < 1000:
+            break
+        offset += 1000
+    return all_rows
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Backfill sent_alerts.message_id")
+    parser.add_argument("--apply", action="store_true",
+                        help="Actually run the UPDATE. Without this flag, only a dry-run report is printed.")
+    parser.add_argument("--batch-size", type=int, default=500)
+    args = parser.parse_args(argv)
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
+
+    # Lazy import so `python -m scripts.backfill_message_id --help` works
+    # without DB credentials.
+    from app.db import db
+    if db is None:
+        print("ERROR: Supabase DB not configured (check .env).", file=sys.stderr)
+        return 2
+
+    rows = _fetch_all_null_rows(db)
+    report = build_dry_run_report(rows)
+    _print_report(report)
+
+    if not args.apply:
+        print("\nDRY-RUN. Re-run with --apply to perform the UPDATE.")
+        return 0
+
+    if report["suspect_groups"]:
+        # Refuse silently — operator must investigate first.
+        print("\nABORT: suspect groups present. Investigate before applying.", file=sys.stderr)
+        return 3
+
+    updated = apply_backfill(db=db, batch_size=args.batch_size)
+    print(f"\n✅ Updated {updated} rows.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
