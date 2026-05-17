@@ -58,3 +58,30 @@ def test_different_users_never_share_a_group():
     groups = group_rows_into_messages(rows)
     assert len(groups) == 2
     assert {g[0]["user_id"] for g in groups} == {"uA", "uB"}
+
+
+from scripts.backfill_message_id import build_dry_run_report
+
+
+def test_dry_run_report_counts_groups_and_distribution():
+    """The report tells the operator: how many groups, how rows are
+    distributed across group sizes, and which groups look suspect
+    (>10 rows = unusual)."""
+    rows = (
+        # 1 group of 3
+        [_row("u1", "LIS", "2026-05-05T03:00:00.000+00:00", f"ak{i}") for i in range(3)]
+        # 2 groups of 1 (one-off alerts)
+        + [_row("u1", "BCN", "2026-05-05T05:00:00.000+00:00", "ak4")]
+        + [_row("u2", "MAD", "2026-05-05T07:00:00.000+00:00", "ak5")]
+        # 1 suspect group of 12
+        + [_row("u3", "ROM", "2026-05-05T09:00:00.000+00:00", f"ak{i}") for i in range(10, 22)]
+    )
+    report = build_dry_run_report(rows)
+    assert report["total_rows"] == 17
+    assert report["total_groups"] == 4
+    # Distribution: 1 group of 3, 2 groups of 1, 1 group of 12
+    assert report["size_distribution"] == {1: 2, 3: 1, 12: 1}
+    # Only the >10 group is flagged as suspect
+    assert len(report["suspect_groups"]) == 1
+    assert report["suspect_groups"][0]["size"] == 12
+    assert report["suspect_groups"][0]["destination"] == "ROM"
