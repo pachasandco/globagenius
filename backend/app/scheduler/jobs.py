@@ -686,6 +686,11 @@ async def _dispatch_grouped_flight_alerts(
     # the discount, so the guard can bin in-run alerts into short-haul
     # vs long-haul lanes (each has its own cap).
     dispatched_alerts_in_run_by_user: dict[str, list[dict]] = {}
+    # Levier 3 (burst): per-tick last-alert timestamp for each user, used
+    # to enforce the 3h spacing rule (with significant-discount exception)
+    # without re-querying the DB for alerts we're about to upsert later
+    # in the same loop.
+    dispatched_burst_ts_by_user: dict[str, datetime] = {}
 
     # V9 in-memory free-lane counters: (user_id) -> {"daily": int, "weekly": int}
     # Initialised from DB at sub-time, decremented as we accept candidates so
@@ -1091,6 +1096,7 @@ async def _dispatch_grouped_flight_alerts(
         from app.notifications.dispatch_guards import (
             levier_1_destination_cooldown_blocks,
             levier_2_daily_cap_blocks,
+            levier_3_burst_blocks,
         )
 
         best_offer = offers[0]  # already sorted: best discount first
@@ -1103,6 +1109,17 @@ async def _dispatch_grouped_flight_alerts(
             logger.info(
                 f"V10 dispatch blocked (L1 dest cooldown): "
                 f"user={uid} dest={grp_dest} price={best_price}€"
+            )
+            continue
+
+        if uid and levier_3_burst_blocks(
+            db=db, user_id=uid, destination=grp_dest,
+            new_discount_pct=best_discount,
+            pending_in_run_alerts=dispatched_burst_ts_by_user,
+        ):
+            logger.info(
+                f"V10 dispatch blocked (L3 burst 3h): "
+                f"user={uid} dest={grp_dest} discount={best_discount}%"
             )
             continue
 
@@ -1152,6 +1169,7 @@ async def _dispatch_grouped_flight_alerts(
                     dispatched_alerts_in_run_by_user.setdefault(uid, []).append(
                         {"discount_pct": best_discount, "destination": grp_dest}
                     )
+                    dispatched_burst_ts_by_user[uid] = datetime.now(timezone.utc)
         except Exception as e:
             logger.warning(f"V8.2 merged dispatch failed for {uid}/{grp_dest}: {e}")
             success = False
