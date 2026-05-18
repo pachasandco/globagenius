@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import RedirectIfLoggedIn from "./_components/RedirectIfLoggedIn";
 import LandingAnimated, { HeroContent } from "./_components/LandingAnimated";
-import { LandingNotificationHero } from "./_components/LandingNotificationHero";
+import { LandingNotificationHero, LandingNotificationStackMobile } from "./_components/LandingNotificationHero";
 import { Wordmark } from "./_components/Wordmark";
 import { getBetaCount } from "@/lib/api";
 
@@ -98,13 +98,14 @@ export default async function Landing() {
           (round-trip, one-way, split-ticket combo). Shows the product in
           action: the user receives an alert and reads the price drop.
         */}
-        <section className="relative min-h-[520px] sm:min-h-[600px] flex items-center overflow-hidden">
+        <section className="relative md:min-h-[600px] flex items-center overflow-hidden">
           <LandingNotificationHero />
           <HeroContent
             foundersCount={betaCount.founders_count}
             maxFounders={betaCount.max_founders}
           />
         </section>
+        <LandingNotificationStackMobile />
 
         {/* ── 3 PILIERS DE POSITIONNEMENT ──
             Replaces the 4-numbers stats bar with the three differentiators

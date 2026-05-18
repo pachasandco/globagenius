@@ -95,18 +95,46 @@ export function LandingNotificationHero() {
       />
       <div className="absolute inset-0 bg-gradient-to-br from-[#082B78]/85 via-[#082B78]/55 to-[#082B78]/30" />
 
-      {/* Stack — positioned right of HeroContent on desktop */}
-      <div className="absolute inset-0 flex items-center justify-end pointer-events-none">
-        <div className="hidden md:block w-[440px] max-w-[44%] mr-12 lg:mr-20">
+      {/* Desktop stack — positioned right of HeroContent. Hidden on mobile
+          to avoid overlapping the headline + CTA; mobile uses the
+          in-flow <LandingNotificationStackMobile> placed below the hero. */}
+      <div className="absolute inset-0 hidden md:flex items-center justify-end pointer-events-none">
+        <div className="block w-[440px] max-w-[44%] mr-12 lg:mr-20">
           <NotifStack front={front} />
         </div>
       </div>
+    </div>
+  );
+}
 
-      {/* Mobile-only: stack sits at the bottom */}
-      <div className="md:hidden absolute inset-x-0 bottom-6 px-4 flex flex-col items-center pointer-events-none">
-        <div className="w-full max-w-sm">
-          <NotifStack front={front} compact />
-        </div>
+/**
+ * Mobile-only in-flow version. Rendered BELOW <HeroContent> on small
+ * screens so the stack never overlaps the headline or CTA. Wraps its
+ * own dark backdrop so it visually reads as part of the hero.
+ */
+export function LandingNotificationStackMobile() {
+  const [front, setFront] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setFront((i) => (i + 1) % NOTIFS.length);
+    }, ROTATION_MS);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div className="md:hidden relative w-full bg-[#082B78] px-6 pt-10 pb-12">
+      <div
+        className="absolute inset-0 bg-cover bg-center opacity-40"
+        style={{
+          backgroundImage:
+            "url('https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=1200&q=60')",
+          filter: "blur(14px) brightness(0.5) saturate(1.1)",
+        }}
+        aria-hidden="true"
+      />
+      <div className="relative max-w-sm mx-auto">
+        <NotifStack front={front} compact />
       </div>
     </div>
   );
