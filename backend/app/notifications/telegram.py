@@ -810,11 +810,18 @@ def format_grouped_flight_alerts(
 
 
 # Threshold below which a user is considered "new" and shown feedback
-# buttons in place of the Pause menu. The first 30 alerts are when
-# preference calibration matters most — after that the user has
-# stabilised their config and is more likely to need Pause than the
-# feedback machine.
-FEEDBACK_ONBOARDING_ALERT_LIMIT = 30
+# buttons in place of the Pause menu.
+#
+# Temporarily raised to 5000 during the beta phase (2026-05-18): we want
+# ALL founders to see the feedback row so the operator gets continuous
+# signal to calibrate seuils, not just the freshest 5 inscrits. Counting
+# rows (not messages) — 1 grouped alert = N rows, so 5000 ≈ 1000-1500
+# real Telegram messages, which covers every current founder.
+#
+# Once we've collected ~50 feedback clicks across the cohort, lower
+# this back to 30 so newly onboarded users keep the calibration window
+# but stabilised users get Pause back.
+FEEDBACK_ONBOARDING_ALERT_LIMIT = 5000
 
 
 def _count_alerts_lifetime(user_id: str) -> int:
