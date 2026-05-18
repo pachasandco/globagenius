@@ -41,11 +41,11 @@ async function fetchRecentDestinationGuides(): Promise<Array<{ iata: string; des
 
 const faqs = [
   { q: "C'est quoi GlobeGenius exactement ?", a: "On surveille en continu les prix des vols depuis 9 aéroports français vers l'Europe, la Méditerranée et l'Afrique du Nord. Quand un tarif chute significativement sous le prix habituel, on t'envoie une alerte Telegram avec dates, prix et lien direct pour réserver. On est en beta publique depuis mai 2026." },
-  { q: "Pourquoi c'est gratuit pendant la beta ?", a: "Parce que ce n'est pas encore un produit fini. La couverture est limitée à l'Europe et la Méditerranée — le long-courrier (Asie, Amériques) arrive cet été 2026. Les 100 premiers inscrits gardent un statut « Membre fondateur » à vie : ils restent gratuits même quand on lancera officiellement à 4,99€/mois." },
+  { q: "Pourquoi c'est gratuit pendant la beta ?", a: "Parce que ce n'est pas encore un produit fini. La couverture est limitée à l'Europe et la Méditerranée — le long-courrier (Asie, Amériques) arrive prochainement. Les 100 premiers inscrits gardent un statut « Membre fondateur » à vie : ils restent gratuits même quand on lancera officiellement à 4,99€/mois." },
   { q: "Combien d'alertes je reçois par jour ?", a: "Entre 1 et 3 alertes par jour selon ta config. On plafonne strictement à 5/24h, étalées dans le temps (jamais 4 notifs entre 2h et 4h du matin). Tu peux ajuster ton seuil à tout moment depuis ton profil." },
-  { q: "Comment sont vérifiés les deals ?", a: "Chaque deal détecté est re-vérifié sur une seconde source avant envoi (95% de couverture). Ça élimine les ghost fares — prix affichés mais qui n'existent pas vraiment au moment de réserver." },
+  { q: "Comment sont vérifiés les deals ?", a: "Cross-check 2-tier avant envoi (95% de couverture). Tier 1 : on re-requête directement l'API de la compagnie aérienne (Ryanair, Transavia, Vueling). Tier 2 : on confirme sur l'agrégateur Travelpayouts. Les deux sources doivent confirmer pour que l'alerte parte. Ça élimine les ghost fares (prix affiché mais qui n'existe pas au moment de réserver)." },
   { q: "Comment je gère mes préférences ?", a: "Depuis Telegram directement (commandes /destinations, /pause, ou bouton Masquer sur chaque alerte) ou depuis la page Profil sur le site." },
-  { q: "Et le long-courrier (Tokyo, New York, Bangkok) ?", a: "Pas encore. La baseline statistique sur ces routes n'est pas mature, on enverrait trop de faux positifs. Couverture long-courrier prévue été 2026 — les fondateurs y auront accès en priorité." },
+  { q: "Et le long-courrier (Tokyo, New York, Bangkok) ?", a: "Pas encore. La baseline statistique sur ces routes n'est pas mature, on enverrait trop de faux positifs. Couverture long-courrier prochainement en beta — les fondateurs y auront accès en priorité." },
   { q: "Pourquoi certains deals disparaissent avant que j'aie pu réserver ?", a: "Les tarifs erronés (erreurs de prix) sont des oublis des compagnies. Elles corrigent en 1-4 heures dès qu'elles s'en rendent compte. C'est pourquoi on t'envoie l'alerte dans les minutes qui suivent la détection. Réserver dans l'heure maximise les chances." },
 ];
 
@@ -267,13 +267,82 @@ export default async function Landing() {
           </p>
         </section>
 
+        {/* ── POURQUOI GG EXISTE — mot du fondateur ──
+            Materialises the "pensé en France" pillar with a human
+            voice. Short (3 short paragraphs), signed. The point isn't
+            biography, it's trust: a visitor knows a real person stands
+            behind the service, addressable by name and email.
+        */}
+        <section className="py-16 px-6 sm:px-12 bg-[var(--color-cream)] border-t border-[var(--color-sand)]">
+          <div className="max-w-2xl mx-auto">
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-[var(--color-ink)] text-center mb-8">
+              Pourquoi GlobeGenius existe
+            </h2>
+            <div className="bg-white rounded-2xl p-8 border border-[var(--color-sand)] space-y-4">
+              <p className="text-[var(--color-ink)]/85 leading-relaxed">
+                Salut, je suis <strong>Arthur</strong>, dev solo basé en région parisienne.
+              </p>
+              <p className="text-[var(--color-ink)]/85 leading-relaxed">
+                J&apos;ai construit GlobeGenius parce qu&apos;aucun service d&apos;alertes vols ne couvre vraiment la France hors-Paris. Going, Jack&apos;s Flight Club, Les Vols d&apos;Alexi — ils ignorent Lyon, Marseille, Toulouse, Bordeaux, Nantes, Nice.
+              </p>
+              <p className="text-[var(--color-ink)]/85 leading-relaxed">
+                Et je voulais un service qui <strong>ne gonfle pas les prix de référence</strong> pour faire croire à des deals exceptionnels. Ici, le prix &laquo;&nbsp;habituel&nbsp;&raquo; affiché dans chaque alerte est une médiane statistique réelle calculée sur 6 mois — pas un maximum théorique inventé pour faire briller le rabais.
+              </p>
+              <p className="text-sm text-gray-500 pt-4 border-t border-[var(--color-sand)]">
+                Arthur · <a href="mailto:arthur@globegenius.app" className="underline hover:text-[var(--color-coral)]">arthur@globegenius.app</a>
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* ── BETA TIMELINE ──
+            Three-step horizontal timeline summarising where we are vs
+            where we go. The point is to make the "beta" status concrete
+            and time-bounded without committing to a specific date that
+            could become a credibility liability if missed.
+        */}
+        <section className="py-12 px-6 sm:px-12 bg-white border-t border-[var(--color-sand)]">
+          <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl font-bold text-[var(--color-ink)] text-center mb-2">
+            Où on en est
+          </h2>
+          <p className="text-center text-gray-500 text-sm max-w-xl mx-auto mb-10">
+            Trois étapes, pas de date promise. La beta s&apos;ouvre par paliers — on avance quand chaque palier est prêt.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-coral)]/40 rounded-2xl p-5">
+              <div className="text-xs font-bold text-[var(--color-coral)] uppercase tracking-wide mb-2">Étape 1 · Maintenant</div>
+              <h3 className="font-bold text-[var(--color-ink)] mb-2">Beta publique</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                162 destinations Europe + Méditerranée matures.
+                9 aéroports français. Gratuit pour les 100 fondateurs.
+              </p>
+            </div>
+            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-sand)] rounded-2xl p-5">
+              <div className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Étape 2 · Prochainement</div>
+              <h3 className="font-bold text-[var(--color-ink)] mb-2">Long-courrier en beta</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                Asie, Amériques, Afrique sub-saharienne.
+                Détection stopover (visite 24-72h d&apos;une 2e ville).
+              </p>
+            </div>
+            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-sand)] rounded-2xl p-5">
+              <div className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Étape 3 · Lancement officiel</div>
+              <h3 className="font-bold text-[var(--color-ink)] mb-2">Premium à 4,99€/mois</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                Ouverture grand public. Les 100 fondateurs gardent
+                leur accès premium <strong>gratuit à vie</strong>.
+              </p>
+            </div>
+          </div>
+        </section>
+
         {/* ── BETA INVITE ──
             Replaces the Free vs Premium pricing block during the public
             beta. Stripe is still wired in the backend, but we don't
-            display a paid plan until the long-haul coverage lands
-            (target: summer 2026). The "founders for life" framing
-            converts curiosity into commitment without asking for a
-            payment that the product doesn't justify yet.
+            display a paid plan until the long-haul coverage lands.
+            The "founders for life" framing converts curiosity into
+            commitment without asking for a payment that the product
+            doesn't justify yet.
         */}
         <section id="tarifs" className="py-16 px-6 sm:px-12 bg-[var(--color-cream)] border-t border-[var(--color-sand)]">
           <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-[var(--color-ink)] text-center mb-2">
@@ -285,7 +354,7 @@ export default async function Landing() {
           </p>
           <div className="max-w-2xl mx-auto bg-[var(--color-ink)] rounded-2xl p-8 text-center">
             <div className="text-[var(--color-coral)] text-sm font-bold mb-2">
-              🚧 Beta publique · Lancement officiel été 2026
+              🚧 Beta publique · Lancement officiel prochainement
             </div>
             <div className="font-[family-name:var(--font-dm-serif)] text-4xl text-white mb-2">
               {betaCount.founders_count} / {betaCount.max_founders}
@@ -293,7 +362,7 @@ export default async function Landing() {
             <div className="text-gray-400 text-sm mb-6">places fondateurs prises</div>
             <div className="text-sm text-gray-300 leading-loose mb-8 text-left max-w-md mx-auto">
               ✓ <span className="text-white">Alertes premium gratuites à vie</span><br />
-              ✓ <span className="text-white">Accès au long-courrier dès l&apos;été 2026</span><br />
+              ✓ <span className="text-white">Accès au long-courrier dès son ouverture</span><br />
               ✓ <span className="text-white">Détection stopover dès qu&apos;elle sera livrée</span><br />
               ✓ <span className="text-white">Tes préférences personnalisées</span><br />
               ✓ <span className="text-white">Aucun engagement, désinscription en 1 clic</span>

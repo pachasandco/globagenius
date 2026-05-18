@@ -6,7 +6,7 @@ import { getBetaCount } from "@/lib/api";
 export const metadata: Metadata = {
   title: "Programme Beta Fondateur — GlobeGenius",
   description:
-    "100 places fondateurs disponibles. Statut premium gratuit à vie pendant la beta publique. Couverture Europe + Méditerranée + Afrique du Nord, long-courrier été 2026.",
+    "100 places fondateurs disponibles. Statut premium gratuit à vie pendant la beta publique. Couverture Europe + Méditerranée + Afrique du Nord, long-courrier bientôt en beta.",
   alternates: { canonical: "https://globegenius.app/beta" },
   openGraph: {
     title: "Programme Beta Fondateur · GlobeGenius",
@@ -46,7 +46,7 @@ export default async function BetaPage() {
         {/* ── HERO ── */}
         <header className="text-center mb-12">
           <span className="inline-block bg-[var(--color-coral)]/15 border border-[var(--color-coral)]/30 text-[var(--color-coral)] px-3 py-1 rounded-full text-xs font-bold mb-6">
-            🚧 Beta publique · Lancement officiel été 2026
+            🚧 Beta publique · Lancement officiel prochainement
           </span>
           <h1 className="font-[family-name:var(--font-dm-serif)] text-4xl sm:text-5xl font-bold text-[var(--color-ink)] leading-tight mb-4">
             Programme Beta Fondateur
@@ -90,7 +90,7 @@ export default async function BetaPage() {
               ✓ <strong>Alertes premium</strong> (jusqu&apos;à 5 par jour, étalées dans le temps — jamais de réveil avec 4 notifs d&apos;un coup)
             </li>
             <li>
-              ✓ <strong>Accès aux destinations long-courrier</strong> dès leur déploiement (été 2026)
+              ✓ <strong>Accès aux destinations long-courrier</strong> dès leur déploiement (prochainement)
             </li>
             <li>
               ✓ <strong>Détection stopover</strong> (visite gratuite d&apos;une 2e ville pendant ton vol) dès qu&apos;elle est livrée
@@ -120,7 +120,7 @@ export default async function BetaPage() {
               — Que tu nous signales les faux deals via le bouton <strong>⏱️ « Trop tard »</strong>
             </li>
             <li>
-              — Que tu sois patient pendant qu&apos;on étend la couverture sur l&apos;Asie et les Amériques (été 2026)
+              — Que tu sois patient pendant qu&apos;on étend la couverture sur l&apos;Asie et les Amériques (déploiement progressif)
             </li>
           </ul>
           <p className="text-sm text-gray-500 mt-6">
@@ -135,24 +135,24 @@ export default async function BetaPage() {
           </h2>
           <div className="space-y-6">
             <div>
-              <div className="font-semibold text-[var(--color-ink)] mb-2">Mai 2026 (actuel)</div>
+              <div className="font-semibold text-[var(--color-ink)] mb-2">Maintenant (beta publique)</div>
               <ul className="space-y-1 text-sm text-gray-600">
                 <li>✓ 162 destinations Europe &amp; Méditerranée matures</li>
-                <li>✓ Reverification 95% avant envoi</li>
+                <li>✓ Re-vérification 95% avant envoi (cross-check 2-tier)</li>
                 <li>✓ Pool 5 alertes/jour, étalées dans le temps</li>
               </ul>
             </div>
             <div>
-              <div className="font-semibold text-[var(--color-ink)] mb-2">Été 2026</div>
+              <div className="font-semibold text-[var(--color-ink)] mb-2">Prochaine étape</div>
               <ul className="space-y-1 text-sm text-gray-600">
                 <li>○ Couverture long-courrier (Asie, Amériques, Afrique sub-saharienne)</li>
                 <li>○ Détection stopover (visite 24-72h d&apos;une 2e ville)</li>
-                <li>○ Lancement officiel à 4,99€/mois (les fondateurs restent gratuits à vie)</li>
               </ul>
             </div>
             <div>
-              <div className="font-semibold text-[var(--color-ink)] mb-2">Automne 2026</div>
+              <div className="font-semibold text-[var(--color-ink)] mb-2">Lancement officiel</div>
               <ul className="space-y-1 text-sm text-gray-600">
+                <li>○ Premium à 4,99€/mois (les 100 fondateurs restent gratuits à vie)</li>
                 <li>○ Extension Belgique francophone, Suisse romande, Luxembourg</li>
                 <li>○ App PWA installable</li>
               </ul>
@@ -166,7 +166,7 @@ export default async function BetaPage() {
             Mot du fondateur
           </h2>
           <p className="text-[var(--color-ink)]/85 leading-relaxed mb-4">
-            Salut, je suis Moussa, dev solo basé en région parisienne.
+            Salut, je suis Arthur, dev solo basé en région parisienne.
           </p>
           <p className="text-[var(--color-ink)]/85 leading-relaxed mb-4">
             J&apos;ai construit GlobeGenius parce qu&apos;aucun service d&apos;alertes

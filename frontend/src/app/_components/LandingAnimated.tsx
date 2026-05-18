@@ -13,20 +13,20 @@ const PAST_DEALS = [
 ];
 
 const STEPS = [
-  { num: "1", title: "On surveille les vols depuis 9 aéroports français", desc: "CDG, Orly, Beauvais, Lyon, Marseille, Toulouse, Bordeaux, Nantes, Nice. Couverture actuelle : Europe, Méditerranée et Afrique du Nord. Long-courrier (Asie, Amériques) cet été 2026." },
+  { num: "1", title: "On surveille les vols depuis 9 aéroports français", desc: "CDG, Orly, Beauvais, Lyon, Marseille, Toulouse, Bordeaux, Nantes, Nice. Couverture actuelle : Europe, Méditerranée et Afrique du Nord. Long-courrier (Asie, Amériques) bientôt en beta." },
   { num: "2", title: "On repère les anomalies de prix", desc: "Dès qu'un tarif chute sous le prix habituel (calculé à partir d'historiques de plusieurs semaines), on le marque comme un deal. Au départ de Paris, les prix sont rafraîchis toutes les 20 minutes. Sur les autres aéroports, toutes les 2 heures." },
-  { num: "3", title: "On vérifie chaque deal avant de te l'envoyer", desc: "95% des deals sont re-vérifiés sur une seconde source pour éliminer les ghost fares (prix affiché qui n'existe pas vraiment). Tu reçois moins de bruit." },
+  { num: "3", title: "On vérifie chaque deal avant de te l'envoyer", desc: "95% des deals sont re-vérifiés via un cross-check 2-tier — d'abord sur l'API directe de la compagnie aérienne (Ryanair, Transavia, Vueling), puis sur une source agrégateur indépendante (Travelpayouts). Si les deux confirment, l'alerte part. Sinon, on l'écarte. C'est ce qui élimine les ghost fares (prix affiché mais qui n'existe pas vraiment au moment de réserver)." },
   { num: "4", title: "Notification Telegram, 1 à 3 par jour max", desc: "Prix, dates, lien direct pour réserver. On plafonne à 3 alertes/jour étalées dans le temps — jamais 4 notifs entre 2h et 4h du matin. Les erreurs de prix disparaissent souvent en 1-4h, donc l'avance compte." },
 ];
 
 const faqs = [
   { q: "C'est quoi GlobeGenius exactement ?", a: "On surveille en continu les prix des vols depuis 9 aéroports français vers l'Europe, la Méditerranée et l'Afrique du Nord. Quand un tarif chute significativement sous le prix habituel, on t'envoie une alerte Telegram avec dates, prix et lien direct pour réserver. On est en beta publique depuis mai 2026." },
-  { q: "Pourquoi c'est gratuit pendant la beta ?", a: "Parce que ce n'est pas encore un produit fini. La couverture est limitée à l'Europe et la Méditerranée — le long-courrier (Asie, Amériques) arrive cet été 2026. Les 100 premiers inscrits gardent un statut « Membre fondateur » à vie : ils restent gratuits même quand on lancera officiellement à 4,99€/mois." },
+  { q: "Pourquoi c'est gratuit pendant la beta ?", a: "Parce que ce n'est pas encore un produit fini. La couverture est limitée à l'Europe et la Méditerranée — le long-courrier (Asie, Amériques) arrive prochainement. Les 100 premiers inscrits gardent un statut « Membre fondateur » à vie : ils restent gratuits même quand on lancera officiellement à 4,99€/mois." },
   { q: "Combien d'alertes je reçois par jour ?", a: "Entre 1 et 3 alertes par jour selon ta config (aéroports + seuil de réduction minimum). On plafonne strictement à 5/24h, étalées dans le temps (jamais 4 notifs entre 2h et 4h du matin). Tu peux ajuster ton seuil à tout moment depuis ton profil." },
-  { q: "Comment sont vérifiés les deals ?", a: "Chaque deal détecté est re-vérifié sur une seconde source avant envoi (95% de couverture). Ça élimine les « ghost fares » — les prix affichés mais qui n'existent pas vraiment au moment de réserver. Tu reçois moins de bruit que sur un comparateur classique." },
+  { q: "Comment sont vérifiés les deals ?", a: "Cross-check 2-tier avant envoi (95% de couverture). Tier 1 : on re-requête directement l'API de la compagnie aérienne (Ryanair, Transavia, Vueling…) avec une tolérance de 5% d'écart de prix. Tier 2 : on confirme sur l'agrégateur Travelpayouts. Si les deux sources disent oui, l'alerte part. Sinon on écarte. Ça élimine les ghost fares — prix affichés mais qui n'existent pas vraiment au moment de réserver. Tu reçois moins de bruit qu'un comparateur classique." },
   { q: "Comment je gère mes préférences ?", a: "Depuis Telegram directement (commande /destinations pour bloquer une ville, /pause pour suspendre les alertes 7/30 jours, ou bouton « Masquer » sur chaque alerte) ou depuis la page Profil sur le site (aéroports, seuil de réduction minimum, destinations bloquées)." },
   { q: "Pourquoi certains deals disparaissent avant que j'aie pu réserver ?", a: "Les tarifs erronés (« erreurs de prix ») sont des oublis de configuration des compagnies. Dès qu'elles s'en rendent compte, elles corrigent — parfois en 1-4 heures. C'est pourquoi on t'envoie l'alerte dans les minutes qui suivent la détection. Réserver dans l'heure maximise les chances d'obtenir le prix." },
-  { q: "Et le long-courrier (Tokyo, New York, Bangkok) ?", a: "Pas encore. La baseline statistique sur ces routes n'est pas mature, on enverrait trop de faux positifs. Couverture long-courrier prévue été 2026 — les fondateurs y auront accès en priorité." },
+  { q: "Et le long-courrier (Tokyo, New York, Bangkok) ?", a: "Pas encore. La baseline statistique sur ces routes n'est pas mature, on enverrait trop de faux positifs. Couverture long-courrier prochainement en beta — les fondateurs y auront accès en priorité." },
 ];
 
 function FAQItem({ q, a, i }: { q: string; a: string; i: number }) {
@@ -79,7 +79,7 @@ export function HeroContent({ foundersCount = 0, maxFounders = 100 }: HeroConten
         <br />
         Une à trois notifications Telegram par jour, jamais plus.
         <br />
-        Long-courrier (Asie, Amériques) cet été 2026.
+        Long-courrier (Asie, Amériques) bientôt en beta.
       </p>
       <Link
         href="/signup"
