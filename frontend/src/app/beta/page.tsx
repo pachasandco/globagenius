@@ -166,7 +166,7 @@ export default async function BetaPage() {
             Mot du fondateur
           </h2>
           <p className="text-[var(--color-ink)]/85 leading-relaxed mb-4">
-            Salut, je suis Arthur, dev solo basé en région parisienne.
+            Salut, je suis Fodé, dev solo basé en région parisienne.
           </p>
           <p className="text-[var(--color-ink)]/85 leading-relaxed mb-4">
             J&apos;ai construit GlobeGenius parce qu&apos;aucun service d&apos;alertes

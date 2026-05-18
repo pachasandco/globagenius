@@ -281,7 +281,7 @@ export default async function Landing() {
             </h2>
             <div className="bg-white rounded-2xl p-8 border border-[var(--color-sand)] space-y-4">
               <p className="text-[var(--color-ink)]/85 leading-relaxed">
-                Salut, je suis <strong>Arthur</strong>, dev solo basé en région parisienne.
+                Salut, je suis <strong>Fodé</strong>, dev solo basé en région parisienne.
               </p>
               <p className="text-[var(--color-ink)]/85 leading-relaxed">
                 J&apos;ai construit GlobeGenius parce qu&apos;aucun service d&apos;alertes vols ne couvre vraiment la France hors-Paris. Going, Jack&apos;s Flight Club, Les Vols d&apos;Alexi — ils ignorent Lyon, Marseille, Toulouse, Bordeaux, Nantes, Nice.
@@ -290,7 +290,7 @@ export default async function Landing() {
                 Et je voulais un service qui <strong>ne gonfle pas les prix de référence</strong> pour faire croire à des deals exceptionnels. Ici, le prix &laquo;&nbsp;habituel&nbsp;&raquo; affiché dans chaque alerte est une médiane statistique réelle calculée sur 6 mois — pas un maximum théorique inventé pour faire briller le rabais.
               </p>
               <p className="text-sm text-gray-500 pt-4 border-t border-[var(--color-sand)]">
-                Arthur · <a href="mailto:arthur@globegenius.app" className="underline hover:text-[var(--color-coral)]">arthur@globegenius.app</a>
+                Fodé · <a href="mailto:fode@globegenius.app" className="underline hover:text-[var(--color-coral)]">fode@globegenius.app</a>
               </p>
             </div>
           </div>

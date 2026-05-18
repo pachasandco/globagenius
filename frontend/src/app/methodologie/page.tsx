@@ -318,14 +318,14 @@ export default function MethodologiePage() {
             GlobeGenius est un projet français, indépendant, lancé en 2026.
           </p>
           <p className="text-[var(--color-ink)]/85 leading-relaxed mb-4">
-            <strong>Fondateur</strong> : Arthur, basé en région parisienne.
+            <strong>Fondateur</strong> : Fodé, basé en région parisienne.
           </p>
           <p className="text-[var(--color-ink)]/85 leading-relaxed mb-4">
             <strong>Pas d&apos;investisseurs externes.</strong> Pas de pression de croissance forcée par un VC. <strong>Le rythme est celui de la qualité, pas du burn rate.</strong>
           </p>
           <p className="text-[var(--color-ink)]/85 leading-relaxed mb-2">Tu peux nous contacter directement :</p>
           <ul className="space-y-1 text-[var(--color-ink)]/85 list-disc list-inside">
-            <li>Par email : <a href="mailto:arthur@globegenius.app" className="text-[var(--color-coral)] hover:underline">arthur@globegenius.app</a></li>
+            <li>Par email : <a href="mailto:fode@globegenius.app" className="text-[var(--color-coral)] hover:underline">fode@globegenius.app</a></li>
             <li>Via le bot Telegram (réponse directe au support)</li>
           </ul>
         </section>
@@ -414,7 +414,7 @@ export default function MethodologiePage() {
           <p className="mb-2">Cette méthodologie n&apos;est pas figée. Elle s&apos;améliore en continu grâce aux feedbacks, aux nouvelles données et aux retours utilisateurs.</p>
           <p>
             Une question ou une suggestion ?{" "}
-            <a href="mailto:arthur@globegenius.app" className="text-[var(--color-coral)] hover:underline">arthur@globegenius.app</a>
+            <a href="mailto:fode@globegenius.app" className="text-[var(--color-coral)] hover:underline">fode@globegenius.app</a>
           </p>
         </section>
       </main>
