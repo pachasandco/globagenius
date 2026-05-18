@@ -135,7 +135,7 @@ function NotifStack({ front, compact = false }: { front: number; compact?: boole
         // Reserve enough vertical room so the receded cards aren't clipped.
         // Back card translates up by 54px above the front card's top edge,
         // so the container is sized for: card height + back-card offset.
-        height: compact ? 240 : 260,
+        height: compact ? 256 : 272,
         perspective: 1400,
       }}
     >
@@ -162,7 +162,7 @@ function NotifStack({ front, compact = false }: { front: number; compact?: boole
               left: 0,
               right: 0,
               bottom: 0,
-              height: compact ? 180 : 200,
+              height: compact ? 196 : 212,
               zIndex: c.zIndex,
               boxShadow: c.shadow,
               transformOrigin: "50% 100%",
@@ -225,9 +225,6 @@ function NotificationCard({
         {/* Header row */}
         <div className="flex items-center justify-between mb-2.5">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-md bg-[#082B78] flex items-center justify-center text-white text-[10px] font-bold">
-              ✈
-            </div>
             <span className="text-[12px] font-semibold tracking-tight">
               <Wordmark />
             </span>
@@ -280,12 +277,12 @@ function NotificationCard({
         </div>
 
         {/* Meta line */}
-        <div className="flex items-center gap-1.5 text-[11px] text-gray-500 leading-snug">
-          <span>{notif.dates}</span>
+        <div className="flex items-center gap-1.5 text-[11px] text-gray-500 leading-snug flex-wrap">
+          <span className="whitespace-nowrap">{notif.dates}</span>
           <span className="text-gray-300">·</span>
-          <span>{notif.duration}</span>
+          <span className="whitespace-nowrap">{notif.duration}</span>
           <span className="text-gray-300">·</span>
-          <span className="font-medium">{notif.airline}</span>
+          <span className="font-medium whitespace-nowrap">{notif.airline}</span>
         </div>
       </div>
     </div>
