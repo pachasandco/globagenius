@@ -154,7 +154,7 @@ async def telegram_webhook(request: Request):
         else:
             await _send_welcome(chat_id)
 
-    elif text == "/help":
+    elif text == "/help" or text == "/aide":
         await _send_help(chat_id)
 
     elif text == "/status":
@@ -736,15 +736,20 @@ async def _link_account(chat_id: int, token: str, chat: dict):
         await bot.send_message(
             chat_id=chat_id,
             text=(
-                f"✅ Compte lie avec succes !\n\n"
-                f"Bonjour {name} ! Votre compte Globe Genius est maintenant connecte.\n\n"
-                f"Vous recevrez ici :\n"
-                f"🔥 Les alertes de deals (score ≥ 70) en temps reel\n"
-                f"📬 Un digest quotidien des meilleurs deals a 8h\n\n"
-                f"Commandes disponibles :\n"
-                f"/status — Voir l'etat du pipeline\n"
-                f"/help — Aide\n\n"
-                f"Bon voyage ! ✈️"
+                f"✅ Compte lié !\n\n"
+                f"Salut {name} 👋 Bienvenue parmi les fondateurs.\n\n"
+                f"À partir de maintenant tu reçois ici les alertes vols "
+                f"vérifiées depuis tes aéroports — 1 à 3 par jour max, "
+                f"étalées dans le temps.\n\n"
+                f"📋 Tes commandes :\n"
+                f"/pause — Mettre en pause les alertes (7j / 30j / illimité)\n"
+                f"/destinations — Voir / bloquer des destinations\n"
+                f"/status — État du pipeline en direct\n"
+                f"/help — Cette aide\n\n"
+                f"💡 Sur chaque alerte, 3 boutons : 👍 / 👎 / ⏱️ pour me dire "
+                f"si le deal est bon, faux ou déjà parti. Plus tu cliques, "
+                f"mieux je calibre.\n\n"
+                f"Bon voyage ✈️"
             ),
         )
     else:
@@ -752,6 +757,9 @@ async def _link_account(chat_id: int, token: str, chat: dict):
 
 
 async def _send_welcome(chat_id: int):
+    """First contact — user just hit /start without a link token.
+    They haven't connected a GlobeGenius account yet. Point them to
+    the website to sign up + link Telegram from /profile."""
     from app.notifications.telegram import _get_bot
 
     bot = _get_bot()
@@ -761,21 +769,25 @@ async def _send_welcome(chat_id: int):
     await bot.send_message(
         chat_id=chat_id,
         text=(
-            "✈️ Bienvenue sur Globe Genius !\n\n"
-            "Je detecte les packages voyage a prix casses "
-            "(-40% minimum sur le marche).\n\n"
-            "Pour recevoir des alertes personnalisees :\n"
-            "1. Inscrivez-vous sur globegenius.com\n"
-            "2. Configurez vos preferences (aeroports, destinations)\n"
-            "3. Connectez votre compte Telegram depuis l'onboarding\n\n"
-            "Commandes :\n"
-            "/status — Etat du pipeline\n"
-            "/help — Aide"
+            "✈️ Bienvenue sur GlobeGenius\n\n"
+            "On surveille les vols vérifiés depuis 9 aéroports français "
+            "(Paris, Lyon, Marseille, Toulouse, Bordeaux, Nantes, Nice, "
+            "Bastia, Beauvais) vers l'Europe et la Méditerranée.\n\n"
+            "Pour recevoir tes alertes ici :\n"
+            "1️⃣ Inscris-toi sur https://globegenius.app\n"
+            "2️⃣ Configure tes préférences (aéroports, seuil de réduction)\n"
+            "3️⃣ Lie ton Telegram depuis ton profil\n\n"
+            "💡 On est en beta publique — gratuit à vie pour les 100 "
+            "premiers fondateurs."
         ),
     )
 
 
 async def _send_help(chat_id: int):
+    """Help command — show every available command + the feedback
+    convention. Used for `/help` and `/aide` as well as the menu
+    button (setMyCommands registers this command for the hamburger
+    menu)."""
     from app.notifications.telegram import _get_bot
 
     bot = _get_bot()
@@ -785,14 +797,19 @@ async def _send_help(chat_id: int):
     await bot.send_message(
         chat_id=chat_id,
         text=(
-            "🆘 Aide Globe Genius\n\n"
-            "/start — Demarrer / lier votre compte\n"
-            "/status — Voir les stats du pipeline\n"
+            "📋 Commandes GlobeGenius\n\n"
+            "/pause — Mettre en pause les alertes (7j / 30j / illimité)\n"
+            "/destinations — Voir et bloquer des destinations\n"
+            "/status — État du pipeline (dernier scrape, derniers deals)\n"
             "/help — Cette aide\n\n"
-            "Les alertes sont envoyees automatiquement :\n"
-            "🔥 Instantane si score ≥ 70\n"
-            "📬 Digest quotidien a 8h si score ≥ 50\n\n"
-            "Questions ? Contactez-nous sur globegenius.com"
+            "💬 Sur chaque alerte, 3 boutons :\n"
+            "👍 Bon — le deal est réel et pertinent\n"
+            "👎 Faux — erreur de détection (faux positif)\n"
+            "⏱️ Trop tard — deal réel mais déjà parti\n\n"
+            "Chaque clic nous aide à affiner les seuils. Tu peux "
+            "changer d'avis : le dernier clic compte.\n\n"
+            "Tu peux aussi gérer tes préférences sur "
+            "https://globegenius.app/profile"
         ),
     )
 

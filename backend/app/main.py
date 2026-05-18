@@ -122,6 +122,26 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"RAG retriever init failed: {e}")
 
+    # Register the bot's command list with Telegram so the hamburger
+    # menu (and "/" typeahead) shows them. setMyCommands is idempotent,
+    # so it's safe to call on every startup. We don't fail the boot
+    # if the call breaks — the commands still work via the handler,
+    # the menu would just stay empty.
+    try:
+        from app.notifications.telegram import _get_bot
+        bot = _get_bot()
+        if bot:
+            from telegram import BotCommand
+            await bot.set_my_commands([
+                BotCommand("pause", "Mettre en pause les alertes"),
+                BotCommand("destinations", "Voir / bloquer des destinations"),
+                BotCommand("status", "État du pipeline"),
+                BotCommand("help", "Aide et commandes"),
+            ])
+            logger.info("Telegram bot commands registered ✓")
+    except Exception as e:
+        logger.warning(f"setMyCommands failed (menu may be empty): {e}")
+
     yield
 
     if _RUN_SCHEDULER and scheduler.running:
