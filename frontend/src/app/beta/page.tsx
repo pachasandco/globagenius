@@ -192,7 +192,8 @@ export default async function BetaPage() {
       {/* ── FOOTER ── */}
       <footer className="py-6 px-6 sm:px-12 bg-[#050e1a] flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-gray-500">
         <span>© 2026 Globe Genius</span>
-        <div className="flex gap-4">
+        <div className="flex gap-4 flex-wrap justify-center">
+          <Link href="/methodologie" className="hover:text-gray-300 transition-colors">Méthodologie</Link>
           <Link href="/conditions" className="hover:text-gray-300 transition-colors">Conditions</Link>
           <Link href="/confidentialite" className="hover:text-gray-300 transition-colors">Confidentialité</Link>
           <Link href="/mentions-legales" className="hover:text-gray-300 transition-colors">Mentions légales</Link>
