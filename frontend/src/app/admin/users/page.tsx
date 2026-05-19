@@ -12,6 +12,16 @@ import {
   type AdminUser,
 } from "@/lib/admin";
 
+function formatSignupDate(iso: string): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = String(d.getFullYear()).slice(-2);
+  return `${day}/${month}/${year}`;
+}
+
 export default function AdminUsersPage() {
   const [authed, setAuthed] = useState(false);
   const [keyInput, setKeyInput] = useState("");
@@ -163,9 +173,12 @@ export default function AdminUsersPage() {
     );
   }
 
-  const filtered = users.filter(
-    (u) => !filter || u.email.toLowerCase().includes(filter.toLowerCase())
-  );
+  const filtered = users
+    .filter(
+      (u) => !filter || u.email.toLowerCase().includes(filter.toLowerCase())
+    )
+    .slice()
+    .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
 
   return (
     <div className="min-h-screen bg-[#FFF8F0] p-4 md:p-8">
@@ -204,6 +217,7 @@ export default function AdminUsersPage() {
             <thead className="border-b border-gray-100 text-left text-gray-500">
               <tr>
                 <th className="p-3">Email</th>
+                <th className="p-3">Inscrit</th>
                 <th className="p-3">Tier</th>
                 <th className="p-3">Stripe</th>
                 <th className="p-3">TG</th>
@@ -224,6 +238,9 @@ export default function AdminUsersPage() {
                         admin
                       </span>
                     )}
+                  </td>
+                  <td className="p-3 text-xs text-gray-500 tabular-nums whitespace-nowrap">
+                    {formatSignupDate(u.created_at)}
                   </td>
                   <td className="p-3">
                     <span

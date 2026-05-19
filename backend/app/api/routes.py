@@ -20,6 +20,11 @@ from app.stripe_helpers import stripe_subscription_period_end
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Beta cohort cap. The first MAX_FOUNDERS signups get lifetime premium
+# (auto-granted at /api/auth/signup). The hero card and /beta page also
+# render "founders_count / MAX_FOUNDERS" as a scarcity signal.
+MAX_FOUNDERS = 100
 security = HTTPBearer(auto_error=False)
 
 VALID_AIRPORTS = settings.MVP_AIRPORTS
@@ -774,6 +779,38 @@ async def signup(req: SignupRequest, request: Request, bg_tasks: BackgroundTasks
             "offer_types": ["package", "flight", "accommodation"],
         }).execute(),
     )
+
+    # Founder beta program: the first MAX_FOUNDERS signups get
+    # lifetime premium so they can stress-test every feature. We write
+    # both layers so the dispatcher (users.tier) and the API
+    # (premium_grants) agree — see _get_user_tier + get_user_caps.
+    try:
+        total_users_resp = await loop.run_in_executor(
+            None,
+            lambda: db.table("users").select("id", count="exact").execute(),
+        )
+        total_users = total_users_resp.count or len(total_users_resp.data or [])
+        if total_users <= MAX_FOUNDERS:
+            await loop.run_in_executor(
+                None,
+                lambda: db.table("users").update({"tier": "premium_grandfathered"}).eq("id", user_id).execute(),
+            )
+            await loop.run_in_executor(
+                None,
+                lambda: db.table("premium_grants").upsert({
+                    "user_id": user_id,
+                    "expires_at": None,
+                    "revoked": False,
+                    "granted_by": "auto_founder_beta",
+                    "reason": f"founder_beta #{total_users}",
+                }, on_conflict="user_id").execute(),
+            )
+            logger.info(f"[founder_beta] Auto-granted lifetime premium to #{total_users}: {req.email}")
+    except Exception as e:
+        # A grant failure must never block signup — the user can still
+        # use the product on the free tier, and the admin can grant
+        # manually from the dashboard.
+        logger.error(f"[founder_beta] Auto-grant failed for {req.email}: {e}")
 
     # Send welcome email out-of-band so the user gets their token immediately
     # instead of waiting on the Brevo HTTP call (up to 10s).
@@ -2531,11 +2568,9 @@ def admin_ctr(request: Request, days: int = 30):
 # ── PUBLIC stats for the landing page ──────────────────────────────────────
 
 
-# Beta cohort cap. The hero card and /beta page render "founders_count /
-# MAX_FOUNDERS" as a scarcity signal. The actual gating (refuse signup
-# above this count) is not enforced — early users self-select via the
-# Telegram link step, which already filters out the curious.
-MAX_FOUNDERS = 100
+# MAX_FOUNDERS is defined at module top so the signup auto-grant can
+# reference it. The hero card and /beta page render "founders_count /
+# MAX_FOUNDERS" as a scarcity signal.
 
 
 @router.get("/api/stats/beta-count")
