@@ -63,6 +63,8 @@ def detect_split_tickets_for_route(origin: str, destination: str) -> list[dict]:
 
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)).isoformat()
 
+    # passive=false everywhere so the francophone-expansion rows
+    # (BRU/GVA/ZRH origins) never trigger split-ticket alerts.
     try:
         out_resp = (
             db.table("raw_flights")
@@ -70,6 +72,7 @@ def detect_split_tickets_for_route(origin: str, destination: str) -> list[dict]:
             .eq("origin", origin)
             .eq("destination", destination)
             .eq("trip_type", "oneway")
+            .eq("passive", False)
             .gte("scraped_at", cutoff)
             .execute()
         )
@@ -79,6 +82,7 @@ def detect_split_tickets_for_route(origin: str, destination: str) -> list[dict]:
             .eq("origin", destination)
             .eq("destination", origin)
             .eq("trip_type", "oneway")
+            .eq("passive", False)
             .gte("scraped_at", cutoff)
             .execute()
         )
@@ -88,6 +92,7 @@ def detect_split_tickets_for_route(origin: str, destination: str) -> list[dict]:
             .eq("origin", origin)
             .eq("destination", destination)
             .eq("trip_type", "roundtrip")
+            .eq("passive", False)
             .gte("scraped_at", cutoff)
             .execute()
         )

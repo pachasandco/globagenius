@@ -254,6 +254,12 @@ async def _analyze_new_flights(flights: list[dict]):
     if not db:
         return
 
+    # Passive rows (PASSIVE_ORIGINS: BRU, GVA, ZRH) feed the baseline only;
+    # they must never reach the alert pipeline. Strip them here so every
+    # downstream step (Vueling-source guard, bucket selection, qualifier,
+    # reverify, dispatcher) is unaware they exist.
+    flights = [f for f in flights if not f.get("passive")]
+
     # Temporary instrumentation: count rejections at each filter step
     counters = {
         "total": len(flights),
@@ -1989,11 +1995,14 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
 
     # Pull the freshest one-way candidates of the last 24h. We cap at 200 to
     # avoid scanning the entire one-way table on each run.
+    # passive=false filters out PASSIVE_ORIGINS (BRU/GVA/ZRH) so the
+    # alert path never sees francophone-expansion baselines.
     try:
         cand_resp = (
             db.table("raw_flights")
             .select("id,origin,destination,departure_date,direction,price,airline,source_url,scraped_at")
             .eq("trip_type", "one_way")
+            .eq("passive", False)
             .gte("scraped_at", fresh_cutoff)
             .order("price")
             .limit(200)
@@ -2021,6 +2030,8 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
     dispatched = 0
     for (origin, destination, direction), candidate in cells.items():
         # Pull the 30-day history for this exact (origin, destination, direction).
+        # passive=false: don't let francophone-expansion data leak into
+        # the active alert baseline (and vice-versa).
         try:
             hist_resp = (
                 db.table("raw_flights")
@@ -2029,6 +2040,7 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                 .eq("destination", destination)
                 .eq("direction", direction)
                 .eq("trip_type", "one_way")
+                .eq("passive", False)
                 .gte("scraped_at", history_cutoff)
                 .execute()
             )

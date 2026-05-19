@@ -2094,19 +2094,28 @@ def admin_routes(request: Request):
             if not existing or b.get("updated_at", "") > existing.get("updated_at", ""):
                 baseline_by_route[key] = b
 
-    # Travelpayouts routes: fetch distinct (origin, destination) from raw_flights
-    # that are NOT in tier1_map
-    tp_resp = db.table("raw_flights").select("origin,destination").execute()
-    tp_routes: set[tuple[str, str]] = set()
+    # Travelpayouts routes: fetch distinct (origin, destination, passive)
+    # from raw_flights that are NOT in tier1_map. The passive flag lets
+    # the admin UI render BRU/GVA/ZRH rows as 'collecte passive' (no
+    # alerts) instead of mixing them with the active alert routes.
+    tp_resp = db.table("raw_flights").select("origin,destination,passive").execute()
+    tp_routes: dict[tuple[str, str], bool] = {}
     for r in (tp_resp.data or []):
         if isinstance(r, dict) and r.get("origin") and r.get("destination"):
             key = (r["origin"], r["destination"])
             if key not in tier1_map:
-                tp_routes.add(key)
+                # A (o,d) is "passive" only if EVERY row we have for it
+                # is flagged passive. Mixed rows fall back to active.
+                is_passive = bool(r.get("passive"))
+                if key in tp_routes:
+                    tp_routes[key] = tp_routes[key] and is_passive
+                else:
+                    tp_routes[key] = is_passive
 
     rows = []
 
-    # Tier 1 routes
+    # Tier 1 routes (always active — Tier 1 scraper does not run on
+    # passive origins).
     for (o, d), airlines in tier1_map.items():
         bl = baseline_by_route.get((o, d))
         rows.append({
@@ -2114,6 +2123,7 @@ def admin_routes(request: Request):
             "destination": d,
             "sources": airlines,
             "tier": "tier1",
+            "passive": False,
             "has_baseline": bl is not None,
             "baseline_avg": round(bl["avg_price"]) if bl and bl.get("avg_price") else None,
             "baseline_samples": bl["sample_count"] if bl else 0,
@@ -2121,13 +2131,14 @@ def admin_routes(request: Request):
         })
 
     # Travelpayouts-only routes
-    for (o, d) in sorted(tp_routes):
+    for (o, d), is_passive in sorted(tp_routes.items()):
         bl = baseline_by_route.get((o, d))
         rows.append({
             "origin": o,
             "destination": d,
             "sources": ["travelpayouts"],
             "tier": "tier2",
+            "passive": is_passive,
             "has_baseline": bl is not None,
             "baseline_avg": round(bl["avg_price"]) if bl and bl.get("avg_price") else None,
             "baseline_samples": bl["sample_count"] if bl else 0,

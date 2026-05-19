@@ -93,11 +93,15 @@ def scrape_oneway_for_route(origin: str, destination: str) -> list[dict]:
     return flights
 
 
-def scrape_oneway_for_airport(origin: str) -> list[dict]:
+def scrape_oneway_for_airport(origin: str, passive: bool = False) -> list[dict]:
     """Scrape one-way fares for one origin to all priority destinations.
 
     Skips long-haul destinations from non-CDG origins (same rule as the
-    round-trip scraper)."""
+    round-trip scraper).
+
+    passive=True flags every fare so the alert dispatcher leaves them
+    untouched — used for francophone-expansion origins (BRU, GVA, ZRH).
+    """
     destinations = get_priority_destinations(max_count=40)
     out: list[dict] = []
     for dest in destinations:
@@ -107,9 +111,12 @@ def scrape_oneway_for_airport(origin: str) -> list[dict]:
             continue
         try:
             flights = scrape_oneway_for_route(origin, dest)
+            if passive:
+                for f in flights:
+                    f["passive"] = True
             out.extend(flights)
             if flights:
-                logger.info(f"  oneway {origin}->{dest}: {len(flights)} fares")
+                logger.info(f"  oneway {origin}->{dest}: {len(flights)} fares{' (passive)' if passive else ''}")
         except Exception as e:
             logger.warning(f"Failed oneway scrape {origin}->{dest}: {e}")
     return out
@@ -117,12 +124,16 @@ def scrape_oneway_for_airport(origin: str) -> list[dict]:
 
 async def scrape_all_oneway_flights() -> tuple[list[dict], int]:
     """Top-level one-way scraper. Returns (flights, errors)."""
-    airports = list(settings.MVP_AIRPORTS)
-    logger.info(f"One-way scrape across {len(airports)} airports: {airports}")
+    active = list(settings.MVP_AIRPORTS)
+    passive = list(getattr(settings, "PASSIVE_ORIGINS", []))
+    logger.info(
+        f"One-way scrape across {len(active)} active + {len(passive)} passive airports: "
+        f"active={active} passive={passive}"
+    )
 
     all_flights: list[dict] = []
     errors = 0
-    for airport in airports:
+    for airport in active:
         try:
             flights = scrape_oneway_for_airport(airport)
             all_flights.extend(flights)
@@ -130,4 +141,12 @@ async def scrape_all_oneway_flights() -> tuple[list[dict], int]:
         except Exception as e:
             errors += 1
             logger.error(f"Failed one-way scrape from {airport}: {e}")
+    for airport in passive:
+        try:
+            flights = scrape_oneway_for_airport(airport, passive=True)
+            all_flights.extend(flights)
+            logger.info(f"One-way: {len(flights)} passive fares from {airport}")
+        except Exception as e:
+            errors += 1
+            logger.error(f"Failed passive one-way scrape from {airport}: {e}")
     return all_flights, errors

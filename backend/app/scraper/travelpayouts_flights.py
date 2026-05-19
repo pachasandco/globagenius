@@ -120,11 +120,16 @@ def scrape_flights_for_route(origin: str, destination: str) -> list[dict]:
     return flights
 
 
-def scrape_flights_for_airport(origin: str) -> list[dict]:
+def scrape_flights_for_airport(origin: str, passive: bool = False) -> list[dict]:
     """Scrape all priority destinations for one origin airport.
 
     Long-haul destinations are only scraped from CDG — the only French hub
-    with direct transatlantic/long-haul service."""
+    with direct transatlantic/long-haul service.
+
+    passive=True tags every row with passive=true so the alert dispatcher
+    never reads them. Used for francophone-expansion origins (BRU, GVA,
+    ZRH) where we are building baselines silently in the background.
+    """
     destinations = get_priority_destinations(max_count=80)
     all_flights = []
     for dest in destinations:
@@ -134,9 +139,12 @@ def scrape_flights_for_airport(origin: str) -> list[dict]:
             continue
         try:
             flights = scrape_flights_for_route(origin, dest)
+            if passive:
+                for f in flights:
+                    f["passive"] = True
             all_flights.extend(flights)
             if flights:
-                logger.info(f"  {origin}->{dest}: {len(flights)} flights")
+                logger.info(f"  {origin}->{dest}: {len(flights)} flights{' (passive)' if passive else ''}")
         except Exception as e:
             logger.warning(f"Failed to scrape {origin}->{dest}: {e}")
     return all_flights
@@ -153,13 +161,17 @@ async def scrape_all_flights() -> tuple[list[dict], int, list[dict]]:
     Signature kept compatible with the legacy flights.py module:
     returns (flights, errors, baselines). Baselines are always empty
     here — they are populated by job_travelpayouts_enrichment instead."""
-    airports = list(settings.MVP_AIRPORTS)
+    active = list(settings.MVP_AIRPORTS)
+    passive = list(getattr(settings, "PASSIVE_ORIGINS", []))
 
-    logger.info(f"Scraping all {len(airports)} airports: {airports}")
+    logger.info(
+        f"Scraping {len(active)} active + {len(passive)} passive airports: "
+        f"active={active} passive={passive}"
+    )
 
     all_flights = []
     errors = 0
-    for airport in airports:
+    for airport in active:
         try:
             flights = scrape_flights_for_airport(airport)
             all_flights.extend(flights)
@@ -167,5 +179,13 @@ async def scrape_all_flights() -> tuple[list[dict], int, list[dict]]:
         except Exception as e:
             errors += 1
             logger.error(f"Failed to scrape flights from {airport}: {e}")
+    for airport in passive:
+        try:
+            flights = scrape_flights_for_airport(airport, passive=True)
+            all_flights.extend(flights)
+            logger.info(f"Scraped {len(flights)} passive flights from {airport}")
+        except Exception as e:
+            errors += 1
+            logger.error(f"Failed to scrape passive flights from {airport}: {e}")
 
     return all_flights, errors, []

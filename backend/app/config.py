@@ -56,6 +56,15 @@ class Settings:
     MVP_AIRPORTS: list = field(default_factory=lambda: os.getenv(
         "MVP_AIRPORTS", "CDG,ORY,LYS,MRS,NCE,BOD,NTE,TLS,BVA"
     ).split(","))
+    # Origins scraped for *future* expansion. Rows from these origins are
+    # written to raw_flights with passive=true so the alert dispatcher
+    # never touches them — we are just building 6 months of price history
+    # so a Brussels / Geneva / Zurich launch ships with a mature baseline
+    # from day one. The dispatcher, qualifier, baseline maturity report
+    # and split-ticket detector all filter passive rows out.
+    PASSIVE_ORIGINS: list = field(default_factory=lambda: [
+        o for o in os.getenv("PASSIVE_ORIGINS", "BRU,GVA,ZRH").split(",") if o.strip()
+    ])
     ADMIN_EMAILS: list = field(default_factory=lambda: [
         e.strip() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()
     ])
