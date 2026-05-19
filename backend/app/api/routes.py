@@ -697,6 +697,7 @@ async def trigger_job(job_name: str, request: Request):
         job_expire_stale_data,
         job_travelpayouts_enrichment,
         job_update_destinations,
+        job_send_onboarding_emails,
     )
 
     jobs = {
@@ -705,10 +706,23 @@ async def trigger_job(job_name: str, request: Request):
         "expire_stale_data": job_expire_stale_data,
         "travelpayouts_enrichment": job_travelpayouts_enrichment,
         "update_destinations": job_update_destinations,
+        "daily_onboarding_emails": job_send_onboarding_emails,
     }
 
     if job_name not in jobs:
         raise HTTPException(status_code=404, detail=f"Unknown job: {job_name}")
+
+    # daily_onboarding_emails is short (~seconds) and we want to surface
+    # any error in the HTTP response when triggered manually — without
+    # this, fire-and-forget hides the stack trace and the operator has
+    # to dig into Railway logs to learn why nothing got sent.
+    if job_name == "daily_onboarding_emails":
+        try:
+            await jobs[job_name]()
+            return {"status": "completed", "job": job_name}
+        except Exception as e:
+            logger.exception(f"Manual trigger of {job_name} failed")
+            raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
 
     asyncio.create_task(jobs[job_name]())
     return {"status": "triggered", "job": job_name}
