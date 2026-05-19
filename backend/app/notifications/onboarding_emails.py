@@ -61,14 +61,15 @@ async def _send_brevo_template(
             bool(settings.BREVO_API_KEY), template_id, to_email,
         )
         return False
+    # No `sender` override — Brevo uses the sender attached to the
+    # template (Fodé id 5 for templates 8 and 9). Forcing the env-driven
+    # BREVO_SENDER_EMAIL would shadow the template and ship emails from
+    # `contact@` instead of `fode@`, even though the templates were
+    # patched on Brevo's side.
     payload = {
         "to": [{"email": to_email}],
         "templateId": template_id,
         "params": params or {},
-        "sender": {
-            "email": settings.BREVO_SENDER_EMAIL,
-            "name": settings.BREVO_SENDER_NAME,
-        },
     }
     headers = {
         "api-key": settings.BREVO_API_KEY,

@@ -18,14 +18,16 @@ async def _send_via_brevo_template(to_email: str, prenom: str | None) -> bool:
     if not settings.BREVO_API_KEY or not settings.BREVO_WELCOME_TEMPLATE_ID:
         return False
 
+    # No `sender` override in the payload — Brevo will use the sender
+    # configured ON the template itself (currently Fodé - Globe Genius,
+    # id 5). Passing a sender here would shadow the template's value,
+    # which is what caused new signups to receive "contact@globegenius.app"
+    # after we switched the template to Fodé (the env-driven default of
+    # BREVO_SENDER_EMAIL is still `contact@`).
     payload = {
         "to": [{"email": to_email}],
         "templateId": settings.BREVO_WELCOME_TEMPLATE_ID,
         "params": {"PRENOM": prenom or "toi"},
-        "sender": {
-            "email": settings.BREVO_SENDER_EMAIL,
-            "name": settings.BREVO_SENDER_NAME,
-        },
     }
     headers = {
         "api-key": settings.BREVO_API_KEY,
