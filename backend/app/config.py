@@ -232,6 +232,36 @@ IATA_TO_CITY = {
     "PPT": "Papeete",
     "GVA": "Genève",
     "SYD": "Sydney",
+    # ── Long-courrier — pack complété 2026-05-19 pour ne plus afficher
+    # de code IATA brut dans les alertes Telegram. Lorsqu'un IATA absent
+    # se retrouve dans une alerte split_ticket / oneway, l'utilisateur
+    # voit "YVR" au lieu de "Vancouver" — pour éviter ça, on enrichit
+    # ici dès qu'on découvre un trou (cf. sent_alerts table).
+    "YVR": "Vancouver",
+    "YYZ": "Toronto",
+    "YOW": "Ottawa",
+    "ATL": "Atlanta",
+    "ORD": "Chicago",
+    "DFW": "Dallas",
+    "SEA": "Seattle",
+    "BOS": "Boston",
+    "IAD": "Washington",
+    "ANC": "Anchorage",
+    "DPS": "Bali",
+    "HKT": "Phuket",
+    "CMB": "Colombo",
+    "MNL": "Manille",
+    "ADD": "Addis-Abeba",
+    "NBO": "Nairobi",
+    "AUH": "Abu Dhabi",
+    "DOH": "Doha",
+    "AMM": "Amman",
+    "BEY": "Beyrouth",
+    "RUH": "Riyad",
+    "JED": "Djeddah",
+    "LOS": "Lagos",
+    "ABV": "Abuja",
+    "GRU": "São Paulo",
 }
 
 

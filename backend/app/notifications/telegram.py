@@ -527,11 +527,14 @@ async def send_oneway_deal_alert(
     user_id: str | None = None,
     alert_key: str | None = None,
     has_guide: bool = False,
+    message_id: str | None = None,
 ) -> bool:
     """V5: send a Telegram alert for a one-way flight deal.
 
     When user_id+alert_key are provided, the booking link is wrapped in a
     /r/:token redirect for per-user click tracking. Otherwise UTMs only.
+    message_id (when set) enables the [👍/👎/⏱️] feedback row, shared with
+    the grouped + split-ticket flows.
     """
     bot = _get_bot()
     if not bot:
@@ -541,8 +544,19 @@ async def send_oneway_deal_alert(
         flight, discount_pct, baseline_price, return_estimate,
         user_id=user_id, alert_key=alert_key, has_guide=has_guide,
     )
+    reply_markup = _build_alert_keyboard(
+        user_id=user_id,
+        destination_iata=flight.get("destination", ""),
+        dest_label=_city_for_iata(flight.get("destination", "")),
+        message_id=message_id,
+    )
     try:
-        await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+        await bot.send_message(
+            chat_id=chat_id,
+            text=msg,
+            parse_mode="Markdown",
+            reply_markup=reply_markup,
+        )
         return True
     except Exception as e:
         logger.error(f"Failed to send one-way alert to {chat_id}: {e}")
@@ -557,11 +571,14 @@ async def send_split_ticket_alert(
     user_id: str | None = None,
     alert_key: str | None = None,
     has_guide: bool = False,
+    message_id: str | None = None,
 ) -> bool:
     """V5: send a Telegram alert for a 2x one-way (split-ticket) combo.
 
     user_id+alert_key enable /r/:token tracking on both legs (clicks on
     either leg count as engagement on the combo, per product decision).
+    message_id (when set) enables the [👍/👎/⏱️] feedback row, shared with
+    the grouped + one-way flows.
     """
     bot = _get_bot()
     if not bot:
@@ -571,8 +588,22 @@ async def send_split_ticket_alert(
         outbound, inbound, roundtrip_baseline,
         user_id=user_id, alert_key=alert_key, has_guide=has_guide,
     )
+    # Combo destination = outbound destination (where the user actually
+    # ends up — the inbound is just the way back).
+    dest_iata = outbound.get("destination", "")
+    reply_markup = _build_alert_keyboard(
+        user_id=user_id,
+        destination_iata=dest_iata,
+        dest_label=_city_for_iata(dest_iata),
+        message_id=message_id,
+    )
     try:
-        await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+        await bot.send_message(
+            chat_id=chat_id,
+            text=msg,
+            parse_mode="Markdown",
+            reply_markup=reply_markup,
+        )
         return True
     except Exception as e:
         logger.error(f"Failed to send split-ticket alert to {chat_id}: {e}")
@@ -824,6 +855,51 @@ def format_grouped_flight_alerts(
 FEEDBACK_ONBOARDING_ALERT_LIMIT = 5000
 
 
+def _build_alert_keyboard(
+    *,
+    user_id: str | None,
+    destination_iata: str,
+    dest_label: str | None,
+    message_id: str | None,
+) -> InlineKeyboardMarkup | None:
+    """Shared inline-keyboard builder for all alert types (grouped flight,
+    one-way, split-ticket combo). Three responsibilities:
+
+      1. "Masquer <destination>" — one-tap dismiss for the destination.
+      2. Feedback row [👍][👎][⏱️] for the first FEEDBACK_ONBOARDING_ALERT_LIMIT
+         alerts of a user's lifetime, when message_id is set. The callback
+         handler writes to sent_alerts.feedback (last click wins).
+      3. Otherwise, the Pause-menu button.
+
+    Returns None when user_id is missing — alerts sent in test contexts
+    (no DB user) skip the buttons entirely.
+    """
+    if not user_id:
+        return None
+    short_dest = (dest_label or destination_iata)[:18]
+    rows: list[list[InlineKeyboardButton]] = [
+        [InlineKeyboardButton(
+            f"🚫 Masquer {short_dest}",
+            callback_data=f"block:{user_id}:{destination_iata}",
+        )],
+    ]
+    show_feedback = (
+        message_id is not None
+        and _count_alerts_lifetime(user_id) < FEEDBACK_ONBOARDING_ALERT_LIMIT
+    )
+    if show_feedback:
+        rows.append([
+            InlineKeyboardButton("👍 Bon", callback_data=f"feedback:good:{message_id}"),
+            InlineKeyboardButton("👎 Faux", callback_data=f"feedback:bad:{message_id}"),
+            InlineKeyboardButton("⏱️ Trop tard", callback_data=f"feedback:late:{message_id}"),
+        ])
+    else:
+        rows.append([
+            InlineKeyboardButton("⏸ Pause les alertes", callback_data=f"pause_menu:{user_id}"),
+        ])
+    return InlineKeyboardMarkup(rows)
+
+
 def _count_alerts_lifetime(user_id: str) -> int:
     """How many sent_alerts rows exist for this user, ever. Used by
     send_grouped_flight_alerts to decide whether to show feedback
@@ -872,47 +948,12 @@ async def send_grouped_flight_alerts(
         has_guide=has_guide,
     )
 
-    # Inline keyboard — quick actions without leaving Telegram:
-    #  - "Masquer <destination>": one-tap to hide future alerts for this
-    #    specific destination (most-asked feature: users skim notifs and
-    #    want to dismiss the city they're not interested in).
-    #  - Feedback row (only for the first FEEDBACK_ONBOARDING_ALERT_LIMIT
-    #    alerts of a user's lifetime, and only when message_id is set):
-    #    [👍 Bon] [👎 Faux] [⏱️ Trop tard]. The callback handler updates
-    #    sent_alerts.feedback (last click wins, editable). After the
-    #    onboarding window, this row is replaced by the standard "Pause"
-    #    menu — once the user has stabilised, the pause matters more
-    #    than another feedback opportunity.
-    # 'Se désabonner' is intentionally absent — full opt-out is too easy
-    # to fat-finger; users can disconnect from /profile if they really
-    # want out.
-    reply_markup = None
-    if user_id:
-        # Truncate the destination label to keep the button text short on
-        # narrow screens (Telegram clips long button labels mid-word).
-        short_dest = (dest_city or destination_iata)[:18]
-        rows = [
-            [InlineKeyboardButton(
-                f"🚫 Masquer {short_dest}",
-                callback_data=f"block:{user_id}:{destination_iata}",
-            )],
-        ]
-        # Choose between feedback row (onboarding) and pause row (mature).
-        show_feedback = (
-            message_id is not None
-            and _count_alerts_lifetime(user_id) < FEEDBACK_ONBOARDING_ALERT_LIMIT
-        )
-        if show_feedback:
-            rows.append([
-                InlineKeyboardButton("👍 Bon", callback_data=f"feedback:good:{message_id}"),
-                InlineKeyboardButton("👎 Faux", callback_data=f"feedback:bad:{message_id}"),
-                InlineKeyboardButton("⏱️ Trop tard", callback_data=f"feedback:late:{message_id}"),
-            ])
-        else:
-            rows.append([
-                InlineKeyboardButton("⏸ Pause les alertes", callback_data=f"pause_menu:{user_id}"),
-            ])
-        reply_markup = InlineKeyboardMarkup(rows)
+    reply_markup = _build_alert_keyboard(
+        user_id=user_id,
+        destination_iata=destination_iata,
+        dest_label=dest_city,
+        message_id=message_id,
+    )
 
     try:
         await bot.send_message(

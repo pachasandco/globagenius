@@ -2196,6 +2196,10 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                 logger.warning(f"ensure_article_for_destination check crashed for {article_dest}: {e}")
                 has_guide = False
             sent_ok = False
+            # Pre-generate the message_id so the inline keyboard's feedback
+            # callbacks point to the same UUID that we upsert below into
+            # sent_alerts. Mirrors the grouped-alert flow (see chantier 1).
+            message_id = str(uuid.uuid4())
             try:
                 sent_ok = await send_oneway_deal_alert(
                     chat_id=chat_id,
@@ -2213,6 +2217,7 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                     user_id=sub_user_id,
                     alert_key=alert_key,
                     has_guide=has_guide,
+                    message_id=message_id,
                 )
                 if sent_ok:
                     dispatched += 1
@@ -2230,9 +2235,9 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
             # V9: persist a sent_alerts row when the Telegram send went
             # through. Without this, the next 4h pass would alert the
             # exact same deal again, AND the audit can't tell whether
-            # the dispatcher even ran.
+            # the dispatcher even ran. message_id was generated above
+            # before the send so the feedback callback can resolve it.
             if sent_ok and sub_user_id and alert_key:
-                message_id = str(uuid.uuid4())
                 try:
                     db.table("sent_alerts").upsert(
                         {
@@ -2492,6 +2497,9 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                     logger.warning(f"ensure_article_for_destination check crashed for combo dest {combo_dest}: {e}")
                     has_guide = False
                 sent_ok = False
+                # Pre-generate message_id so the inline keyboard's feedback
+                # callbacks point to the same UUID we upsert below.
+                message_id = str(uuid.uuid4())
                 try:
                     sent_ok = await send_split_ticket_alert(
                         chat_id=chat_id,
@@ -2501,6 +2509,7 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                         user_id=sub_user_id,
                         alert_key=alert_key,
                         has_guide=has_guide,
+                        message_id=message_id,
                     )
                     if sent_ok:
                         combos_dispatched += 1
@@ -2518,8 +2527,9 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                 # V9: persist sent_alerts row to power dedup + audit.
                 # V10: also persist price + discount_pct so the dispatch
                 # guards on the next run can read history for L1 / L2.
+                # message_id was generated above before the send so the
+                # feedback callback can resolve it.
                 if sent_ok and sub_user_id and alert_key:
-                    message_id = str(uuid.uuid4())
                     try:
                         db.table("sent_alerts").upsert(
                             {
