@@ -57,26 +57,9 @@ const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
   travelpayouts:{ label: "Agrégateur",color: "bg-purple-100 text-purple-800" },
 };
 
-// ── Coverage recap (static — mirrors tier1_routes.py) ──────────────────────
-const TIER1_ROUTES_ADMIN: [string, string][] = [
-  ["CDG","RAK"],["CDG","CMN"],["CDG","AGA"],["CDG","FEZ"],["CDG","TNG"],
-  ["ORY","RAK"],["ORY","CMN"],["ORY","AGA"],
-  ["CDG","LIS"],["CDG","OPO"],["CDG","FAO"],
-  ["ORY","LIS"],["ORY","OPO"],
-  ["CDG","BCN"],["CDG","MAD"],["CDG","SVQ"],["CDG","VLC"],["CDG","AGP"],
-  ["CDG","IBZ"],["CDG","PMI"],["CDG","ALC"],
-  ["ORY","BCN"],["ORY","MAD"],["ORY","AGP"],["ORY","PMI"],["ORY","IBZ"],["ORY","ALC"],
-  ["CDG","FCO"],["CDG","CIA"],["CDG","BGY"],["CDG","NAP"],["CDG","BRI"],["CDG","PMO"],
-  ["ORY","FCO"],["ORY","NAP"],
-  ["CDG","ATH"],["CDG","HER"],["CDG","RHO"],["CDG","SKG"],
-  ["ORY","ATH"],["ORY","HER"],
-  ["CDG","TFS"],["CDG","LPA"],["CDG","ACE"],["CDG","FUE"],
-  ["ORY","TFS"],["ORY","LPA"],
-  ["CDG","TUN"],["CDG","MIR"],["ORY","TUN"],["ORY","ALG"],
-  ["CDG","DUB"],["CDG","STN"],
-  ["CDG","KRK"],["CDG","WRO"],["CDG","BUD"],
-];
-const TIER1_SET_ADMIN = new Set(TIER1_ROUTES_ADMIN.map(([o, d]) => `${o}:${d}`));
+// IATA → ville. Sert au rendu lisible des codes IATA dans le panneau
+// 'Destinations surveillées par aéroport'. Liste indicative, complétée
+// au fur et à mesure — un code absent affiche juste son IATA brut.
 const IATA_CITY: Record<string, string> = {
   RAK:"Marrakech",CMN:"Casablanca",AGA:"Agadir",FEZ:"Fès",TNG:"Tanger",
   LIS:"Lisbonne",OPO:"Porto",FAO:"Faro",
@@ -92,15 +75,8 @@ const IATA_CITY: Record<string, string> = {
   MRU:"Maurice",RUN:"La Réunion",PPT:"Papeete",GIG:"Rio",MIA:"Miami",LAX:"Los Angeles",HKG:"Hong Kong",
   IST:"Istanbul",TLV:"Tel Aviv",CAI:"Le Caire",
   AMS:"Amsterdam",BER:"Berlin",PRG:"Prague",VIE:"Vienne",WAW:"Varsovie",CPH:"Copenhague",ZRH:"Zurich",BRU:"Bruxelles",
+  BIO:"Bilbao",
 };
-const TP_DESTS_ADMIN = [
-  "RAK","CMN","AGA","LIS","OPO","BCN","MAD","AGP","FCO","NAP","ATH","HER",
-  "TFS","LPA","TUN","DUB","BUD","KRK","IST","TLV","CAI",
-  "IBZ","PMI","ALC",
-  "JFK","YUL","CUN","PUJ","BKK","NRT","DXB","MLE","MRU","RUN","GIG","MIA","LAX","HKG",
-  "AMS","BER","PRG","VIE","WAW","CPH","ZRH","BRU",
-];
-const MVP_AIRPORTS = ["CDG","ORY","LYS","MRS","NCE","BOD","NTE","TLS","BVA"];
 
 export default function AdminPage() {
   const [adminKey, setAdminKey] = useState("");
@@ -385,39 +361,70 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Destinations surveillées par aéroport */}
+        {/* Destinations surveillées par aéroport — dérivé du endpoint
+            live /api/admin/routes pour ne jamais drifter vs le backend. */}
         <div className="bg-white rounded-xl border border-gray-100 p-4 mb-6">
-          <h2 className="font-semibold mb-4">Destinations surveillées par aéroport</h2>
-          <div className="space-y-3">
-            {MVP_AIRPORTS.map((ap) => {
-              const realtime = TIER1_ROUTES_ADMIN.filter(([o]) => o === ap).map(([, d]) => d);
-              const tpOnly = TP_DESTS_ADMIN.filter((d) => !TIER1_SET_ADMIN.has(`${ap}:${d}`));
+          <h2 className="font-semibold mb-1">Destinations surveillées par aéroport</h2>
+          <p className="text-xs text-gray-400 mb-4">
+            Source : <code>tier1_routes.py</code> + <code>raw_flights</code> live.
+            ⚡ = scraping direct (~20 min) · sinon = agrégateur Travelpayouts (~2 h).
+          </p>
+          {routes === null ? (
+            <p className="text-sm text-gray-400">Chargement…</p>
+          ) : (
+            (() => {
+              const airports = Array.from(new Set(routes.map((r) => r.origin))).sort();
               return (
-                <div key={ap} className="border border-gray-100 rounded-xl overflow-hidden">
-                  <div className="px-4 py-2 bg-gray-50 flex items-center gap-2">
-                    <span className="font-bold text-sm">{ap}</span>
-                    <span className="text-xs text-gray-400">
-                      {realtime.length > 0 && <span className="text-green-600 font-medium">{realtime.length} temps réel</span>}
-                      {realtime.length > 0 && " · "}
-                      {tpOnly.length} agrégateur
-                    </span>
-                  </div>
-                  <div className="px-4 py-3 flex flex-wrap gap-1.5">
-                    {realtime.map((d) => (
-                      <span key={`rt-${d}`} className="px-2 py-0.5 bg-green-50 border border-green-100 rounded-full text-[10px] font-medium text-green-800">
-                        ⚡ {d} {IATA_CITY[d] ? `· ${IATA_CITY[d]}` : ""}
-                      </span>
-                    ))}
-                    {tpOnly.map((d) => (
-                      <span key={`tp-${d}`} className="px-2 py-0.5 bg-gray-50 border border-gray-200 rounded-full text-[10px] text-gray-600">
-                        {d} {IATA_CITY[d] ? `· ${IATA_CITY[d]}` : ""}
-                      </span>
-                    ))}
-                  </div>
+                <div className="space-y-3">
+                  {airports.map((ap) => {
+                    const apRoutes = routes.filter((r) => r.origin === ap);
+                    const realtime = apRoutes.filter((r) => r.tier === "tier1");
+                    const tpOnly = apRoutes.filter((r) => r.tier === "tier2");
+                    return (
+                      <div key={ap} className="border border-gray-100 rounded-xl overflow-hidden">
+                        <div className="px-4 py-2 bg-gray-50 flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-sm">{ap}</span>
+                          <span className="text-xs text-gray-400">
+                            {realtime.length > 0 && (
+                              <span className="text-green-600 font-medium">
+                                {realtime.length} temps réel
+                              </span>
+                            )}
+                            {realtime.length > 0 && tpOnly.length > 0 && " · "}
+                            {tpOnly.length > 0 && `${tpOnly.length} agrégateur`}
+                          </span>
+                        </div>
+                        <div className="px-4 py-3 flex flex-wrap gap-1.5">
+                          {realtime.map((r) => (
+                            <span
+                              key={`rt-${r.destination}`}
+                              className="px-2 py-0.5 bg-green-50 border border-green-100 rounded-full text-[10px] font-medium text-green-800"
+                              title={r.sources.join(", ")}
+                            >
+                              ⚡ {r.destination}
+                              {IATA_CITY[r.destination] ? ` · ${IATA_CITY[r.destination]}` : ""}
+                            </span>
+                          ))}
+                          {tpOnly.map((r) => (
+                            <span
+                              key={`tp-${r.destination}`}
+                              className="px-2 py-0.5 bg-gray-50 border border-gray-200 rounded-full text-[10px] text-gray-600"
+                            >
+                              {r.destination}
+                              {IATA_CITY[r.destination] ? ` · ${IATA_CITY[r.destination]}` : ""}
+                            </span>
+                          ))}
+                          {apRoutes.length === 0 && (
+                            <span className="text-xs text-gray-300 italic">aucune route surveillée</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               );
-            })}
-          </div>
+            })()
+          )}
         </div>
 
         {/* Debug data */}
