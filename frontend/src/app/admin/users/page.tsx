@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   listUsers,
@@ -183,20 +184,34 @@ export default function AdminUsersPage() {
   return (
     <div className="min-h-screen bg-[#FFF8F0] p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
           <h1 className="text-2xl font-semibold">
             Admin — Users ({users.length})
           </h1>
-          <button
-            onClick={() => {
-              localStorage.removeItem("gg_admin_key");
-              setAuthed(false);
-              setUsers([]);
-            }}
-            className="text-xs text-gray-500 hover:text-gray-700"
-          >
-            Logout
-          </button>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/admin"
+              className="text-xs text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-white transition-colors"
+            >
+              ← Admin
+            </Link>
+            <Link
+              href="/admin/feedback"
+              className="text-xs text-cyan-600 hover:text-cyan-700 px-3 py-1.5 rounded-lg border border-cyan-200 hover:bg-cyan-50 transition-colors"
+            >
+              💬 Feedback
+            </Link>
+            <button
+              onClick={() => {
+                localStorage.removeItem("gg_admin_key");
+                setAuthed(false);
+                setUsers([]);
+              }}
+              className="text-xs text-gray-500 hover:text-gray-700"
+            >
+              Logout
+            </button>
+          </div>
         </div>
 
         <input

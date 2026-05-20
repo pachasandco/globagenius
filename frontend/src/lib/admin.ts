@@ -72,6 +72,30 @@ export const deleteUser = (id: string, confirmEmail: string) =>
     }
   );
 
+export interface FeedbackItem {
+  user_email: string;
+  user_id: string | null;
+  destination: string | null;
+  alert_type: string | null;
+  price: number | null;
+  discount_pct: number | null;
+  feedback: "good" | "bad" | "too_late";
+  feedback_at: string;
+  message_id: string;
+  sent_at: string;
+}
+
+export interface FeedbackResponse {
+  items: FeedbackItem[];
+  total_clicks: number;
+  distinct_users: number;
+  by_type: Record<string, number>;
+  days_window: number;
+}
+
+export const listFeedback = (days = 30, limit = 200) =>
+  adminFetch<FeedbackResponse>(`/api/admin/feedback?days=${days}&limit=${limit}`);
+
 export function setAdminKey(key: string) {
   localStorage.setItem("gg_admin_key", key);
 }

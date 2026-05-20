@@ -167,6 +167,7 @@ export default function AdminPage() {
           </div>
           <div className="flex items-center gap-3">
             <Link href="/admin/users" className="text-sm text-cyan-600 hover:text-cyan-700 font-medium">👥 Users</Link>
+            <Link href="/admin/feedback" className="text-sm text-cyan-600 hover:text-cyan-700 font-medium">💬 Feedback</Link>
             <Link href="/home" className="text-sm text-gray-500 hover:text-gray-900">Home</Link>
             <button onClick={() => loadData(adminKey)} className="text-sm text-cyan-600 font-medium">Refresh</button>
           </div>

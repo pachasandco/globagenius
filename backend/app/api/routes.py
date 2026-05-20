@@ -2498,6 +2498,83 @@ def redirect_tracking(token: str):
     return RedirectResponse(url=url, status_code=302)
 
 
+@router.get("/api/admin/feedback")
+def admin_feedback(request: Request, days: int = 30, limit: int = 200):
+    """Recent Telegram feedback clicks (👍 good / 👎 bad / ⏱️ too_late).
+
+    Grouped alerts produce N rows of sent_alerts per Telegram message
+    (one per offer) — a single click writes feedback to all N rows.
+    We dedupe by message_id so the UI shows one line per real click.
+    """
+    _require_admin(request)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    rows = (
+        db.table("sent_alerts")
+        .select(
+            "user_id,destination,alert_type,price,discount_pct,"
+            "feedback,feedback_at,message_id,sent_at"
+        )
+        .not_.is_("feedback", "null")
+        .gte("feedback_at", since)
+        .order("feedback_at", desc=True)
+        .limit(limit * 8)  # over-fetch: grouped alerts inflate row count
+        .execute()
+        .data
+        or []
+    )
+
+    # Dedupe by message_id (keep the first row per message — they share
+    # the same feedback value by design of the callback handler).
+    seen: set[str] = set()
+    deduped = []
+    for r in rows:
+        mid = r.get("message_id") or ""
+        if not mid or mid in seen:
+            continue
+        seen.add(mid)
+        deduped.append(r)
+        if len(deduped) >= limit:
+            break
+
+    # Hydrate emails
+    uids = list({r["user_id"] for r in deduped if r.get("user_id")})
+    emails_by_uid: dict[str, str] = {}
+    if uids:
+        users_resp = db.table("users").select("id,email").in_("id", uids).execute()
+        emails_by_uid = {u["id"]: u["email"] for u in (users_resp.data or [])}
+
+    items = []
+    for r in deduped:
+        items.append({
+            "user_email": emails_by_uid.get(r.get("user_id", ""), "?"),
+            "user_id": r.get("user_id"),
+            "destination": r.get("destination"),
+            "alert_type": r.get("alert_type"),
+            "price": r.get("price"),
+            "discount_pct": r.get("discount_pct"),
+            "feedback": r.get("feedback"),
+            "feedback_at": r.get("feedback_at"),
+            "message_id": r.get("message_id"),
+            "sent_at": r.get("sent_at"),
+        })
+
+    # Aggregate counters
+    from collections import Counter
+    by_type = dict(Counter(r["feedback"] for r in deduped))
+    distinct_users = len({r.get("user_id") for r in deduped if r.get("user_id")})
+
+    return {
+        "items": items,
+        "total_clicks": len(items),
+        "distinct_users": distinct_users,
+        "by_type": by_type,
+        "days_window": days,
+    }
+
+
 @router.get("/api/admin/ctr")
 def admin_ctr(request: Request, days: int = 30):
     """Click-through rate dashboard for Telegram alerts."""
