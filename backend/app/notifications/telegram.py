@@ -372,6 +372,22 @@ def format_oneway_deal_alert(
         route_line = f"🛬 *Retour de {origin_label} → {dest_label}*"
         direction_label = "Retour simple"
 
+    # 2026-05-21: surface the operating carrier on one-way alerts too,
+    # with a 🎒 link to its baggage policy. Hidden when the source name
+    # is actually an OTA / meta-search agency rather than the airline.
+    from app.notifications.airlines import (
+        normalize_airline_name as _norm_air,
+        is_agency as _is_agency,
+        baggage_url as _baggage_url,
+    )
+    carrier = _norm_air(flight.get("airline"))
+    carrier_line: str | None = None
+    if carrier and not _is_agency(carrier):
+        bag = _baggage_url(carrier)
+        carrier_line = (
+            f"✈️ {carrier} · [🎒]({bag})" if bag else f"✈️ {carrier}"
+        )
+
     lines = [
         f"*{badge}*",
         "",
@@ -379,8 +395,10 @@ def format_oneway_deal_alert(
         "",
         f"💰 *{price} € · {direction_label} · -{disc} %*",
         f"📅 {dep_str}",
-        f"Prix habituel : ~{baseline} €~",
     ]
+    if carrier_line:
+        lines.append(carrier_line)
+    lines.append(f"Prix habituel : ~{baseline} €~")
     if return_estimate is not None:
         lines.append(f"↩️ Retour estimé : ~{int(round(return_estimate))} €")
     lines.append("✅ Vol vérifié")
@@ -427,7 +445,11 @@ def format_split_ticket_alert(
     departure_date, price, source_url, airline.
     """
     from app.config import iata_label
-    from app.notifications.airlines import normalize_airline_name
+    from app.notifications.airlines import (
+        normalize_airline_name,
+        is_agency,
+        baggage_url,
+    )
 
     origin = outbound["origin"]
     dest = outbound["destination"]
@@ -442,8 +464,21 @@ def format_split_ticket_alert(
     out_dep = _fmt_date_fr(outbound["departure_date"])
     in_dep = _fmt_date_fr(inbound["departure_date"])
 
-    out_carrier = normalize_airline_name(outbound.get("airline")) or "—"
-    in_carrier = normalize_airline_name(inbound.get("airline")) or "—"
+    # 2026-05-21: hide agency names (Trip.com, Kiwi) — they're not the
+    # operating carrier. Append a 🎒 link to the airline's baggage
+    # policy when we know it; LCC fares often exclude any luggage so
+    # this is critical info before booking.
+    def _carrier_label(raw: str | None) -> str:
+        name = normalize_airline_name(raw)
+        if not name or is_agency(name):
+            return "—"
+        bag = baggage_url(name)
+        if bag:
+            return f"{name} · [🎒]({bag})"
+        return name
+
+    out_carrier = _carrier_label(outbound.get("airline"))
+    in_carrier = _carrier_label(inbound.get("airline"))
     out_price = int(round(outbound["price"]))
     in_price = int(round(inbound["price"]))
 
@@ -752,6 +787,12 @@ def format_grouped_flight_alerts(
         lines.append("")
         lines.append(f"📅 *{_FR_MONTHS_LONG[month]} {year}*")
 
+        from app.notifications.airlines import (
+            normalize_airline_name as _norm_air,
+            is_agency as _is_agency,
+            baggage_url as _baggage_url,
+        )
+
         for o in month_offers:
             dep = datetime.strptime(o["departure_date"], "%Y-%m-%d")
             ret = datetime.strptime(o["return_date"], "%Y-%m-%d")
@@ -791,9 +832,25 @@ def format_grouped_flight_alerts(
                 if show_discount_pct
                 else f"\n💰 *{price} € A/R*{origin_tag}"
             )
+
+            # 2026-05-21: surface the operating carrier + a 🎒 link to
+            # its baggage policy. We deliberately hide names that
+            # resolve to OTA / meta-search agencies (Trip.com, Kiwi…)
+            # because they're not the airline operating the flight —
+            # see app.notifications.airlines.is_agency().
+            carrier = _norm_air(o.get("airline"))
+            carrier_line = ""
+            if carrier and not _is_agency(carrier):
+                bag = _baggage_url(carrier)
+                if bag:
+                    carrier_line = f"\n   ✈️ {carrier} · [🎒]({bag})"
+                else:
+                    carrier_line = f"\n   ✈️ {carrier}"
+
             lines.append(
                 f"{price_line}\n"
                 f"   {dep_str} – {ret_str} · {duration} jours"
+                f"{carrier_line}"
                 f"{baseline_str}\n"
                 f"   {verification_line}"
             )

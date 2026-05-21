@@ -103,3 +103,79 @@ def normalize_airline_name(raw: str | None) -> str:
     if lower in _AGENCY_FIXUPS:
         return _AGENCY_FIXUPS[lower]
     return cleaned
+
+
+# Names that map to a meta-search agency / OTA, NOT to the airline that
+# actually operates the flight. When the raw `airline` field on a deal
+# resolves to one of these, we deliberately hide it from the user-facing
+# alert — showing "Trip.com" or "Kiwi" as if it were the carrier is
+# misleading.
+_AGENCY_DISPLAY_NAMES: set[str] = {
+    "aviasales", "kupibilet", "trip.com", "ozon travel", "travelata",
+    "onlinetours", "clickavia", "kayak", "skyscanner", "kiwi",
+    "kiwi.com", "kupi.com", "farera", "city.travel", "onetwotrip",
+    "mego.travel", "mytrip.com", "tickets", "tickets.com",
+}
+
+
+def is_agency(name: str | None) -> bool:
+    """True when `name` (already normalised) refers to an OTA / meta-search
+    agency rather than the airline operating the flight. The Telegram
+    alert formatter uses this to decide whether to surface the carrier
+    or stay silent."""
+    if not name:
+        return False
+    return name.strip().lower() in _AGENCY_DISPLAY_NAMES
+
+
+# Official baggage-policy URLs per airline. Keyed by the brand name AFTER
+# normalisation by normalize_airline_name(). Linked from a discreet 🎒
+# icon next to the carrier in the Telegram alert so users can check
+# fees / dimensions before booking — critical for LCC where the
+# advertised fare excludes any cabin/hold luggage.
+_BAGGAGE_URLS: dict[str, str] = {
+    "Ryanair": "https://www.ryanair.com/fr/fr/utile/aide/baggages",
+    "easyJet": "https://www.easyjet.com/fr/aide/bagages",
+    "Vueling": "https://www.vueling.com/fr/services-vueling/avant-votre-vol/bagages",
+    "Transavia": "https://www.transavia.com/fr-FR/preparer-mon-voyage/bagages/",
+    "Wizz Air": "https://wizzair.com/fr-fr/informations-et-services/voyager/bagages",
+    "Pegasus": "https://www.flypgs.com/fr/services-en-vol/bagages",
+    "Norwegian": "https://www.norwegian.com/fr/voyage/information-de-voyage/bagages/",
+    "Air France": "https://www.airfrance.fr/FR/fr/local/process/standardbooking/baggageinformation.htm",
+    "KLM": "https://www.klm.fr/information/preparation-voyage/bagages",
+    "Lufthansa": "https://www.lufthansa.com/fr/fr/bagages",
+    "British Airways": "https://www.britishairways.com/fr-fr/information/baggage-essentials",
+    "Iberia": "https://www.iberia.com/fr/bagages/",
+    "TAP Portugal": "https://www.flytap.com/fr-fr/bagages",
+    "Swiss": "https://www.swiss.com/fr/fr/prepare/baggage",
+    "Austrian": "https://www.austrian.com/fr/fr/baggage",
+    "Brussels Airlines": "https://www.brusselsairlines.com/fr-be/prepare/baggage",
+    "SAS": "https://www.flysas.com/fr-fr/voyager-avec-sas/bagages/",
+    "Finnair": "https://www.finnair.com/fr-fr/bagages",
+    "Aegean": "https://en.aegeanair.com/travel-information/baggage/",
+    "Turkish Airlines": "https://www.turkishairlines.com/fr-fr/voler-avec-nous/baggage/",
+    "Royal Air Maroc": "https://www.royalairmaroc.com/fr-fr/voyage-confort/bagages",
+    "Emirates": "https://www.emirates.com/fr/french/before-you-fly/baggage/",
+    "Qatar Airways": "https://www.qatarairways.com/fr-fr/baggage.html",
+    "Etihad": "https://www.etihad.com/fr-fr/fly-etihad/baggage",
+    "Air Canada": "https://www.aircanada.com/fr-ca/travel-information/baggage",
+    "WestJet": "https://www.westjet.com/fr-ca/voyage/bagages",
+    "JetBlue": "https://www.jetblue.com/help/baggage",
+    "American Airlines": "https://www.aa.com/i18n/travel-info/baggage/baggage.jsp",
+    "Delta": "https://www.delta.com/us/en/baggage/overview",
+    "United": "https://www.united.com/ual/fr/fr/fly/travel/baggage.html",
+    "Iberia Express": "https://www.iberia.com/fr/bagages/",
+    "Virgin Atlantic": "https://www.virginatlantic.com/gb/en/baggage.html",
+}
+
+
+def baggage_url(airline_name: str | None) -> str | None:
+    """Look up the official baggage-policy URL for an airline. Returns
+    None when the carrier is unknown OR when the input is actually an
+    agency name (Trip.com, Kiwi…). Caller should not render a 🎒 link
+    when this returns None."""
+    if not airline_name:
+        return None
+    if is_agency(airline_name):
+        return None
+    return _BAGGAGE_URLS.get(airline_name.strip())
