@@ -43,6 +43,15 @@ class Settings:
     # until the templates are designed in Brevo.
     BREVO_RELANCE_TELEGRAM_TEMPLATE_ID: int = int(os.getenv("BREVO_RELANCE_TELEGRAM_TEMPLATE_ID", "0") or 0)
     BREVO_INACTIVITY_TEMPLATE_ID: int = int(os.getenv("BREVO_INACTIVITY_TEMPLATE_ID", "0") or 0)
+    # Feedback nurturing (2026-05-21).
+    # J+7 / J+14 since first alert received, sent only when user has
+    # received >=3 alerts but clicked 0 feedback buttons. Soft tone,
+    # no premium revocation — see /tmp/brevo_t10_*.html for content.
+    # J+15 (since signup) is a separate open-ended feedback ask sent
+    # to every user regardless of clicks.
+    BREVO_FEEDBACK_NURTURE_J7_TEMPLATE_ID: int = int(os.getenv("BREVO_FEEDBACK_NURTURE_J7_TEMPLATE_ID", "10") or 0)
+    BREVO_FEEDBACK_NURTURE_J14_TEMPLATE_ID: int = int(os.getenv("BREVO_FEEDBACK_NURTURE_J14_TEMPLATE_ID", "11") or 0)
+    BREVO_OPEN_FEEDBACK_J15_TEMPLATE_ID: int = int(os.getenv("BREVO_OPEN_FEEDBACK_J15_TEMPLATE_ID", "12") or 0)
     BREVO_SENDER_EMAIL: str = os.getenv("BREVO_SENDER_EMAIL", "contact@globegenius.app")
     BREVO_SENDER_NAME: str = os.getenv("BREVO_SENDER_NAME", "Globe Genius")
     SCRAPE_FLIGHTS_INTERVAL_HOURS: int = int(os.getenv("SCRAPE_FLIGHTS_INTERVAL_HOURS", "6"))

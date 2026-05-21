@@ -242,17 +242,147 @@ def _users_linked_telegram_but_no_alerts_7d() -> list[dict]:
     return result
 
 
+# ── Feedback nurturing cohorts (2026-05-21) ────────────────────────────────
+
+
+# Minimum alerts received before we bug a user about feedback. Sending a
+# nurture mail to someone who only got 1 alert in 7 days would be unfair —
+# they have barely any material to evaluate.
+FEEDBACK_NURTURE_MIN_ALERTS = 3
+
+
+def _users_no_feedback_since_first_alert(days_since_first: int) -> list[dict]:
+    """Users whose FIRST sent_alerts row is exactly `days_since_first`
+    days old, have received at least FEEDBACK_NURTURE_MIN_ALERTS alerts,
+    and have clicked ZERO feedback buttons. Used by J+7 and J+14 nurturing.
+    """
+    if not db:
+        return []
+    now = datetime.now(timezone.utc)
+    end = (now - timedelta(days=days_since_first)).isoformat()
+    start = (now - timedelta(days=days_since_first + 1)).isoformat()
+
+    # Pull every user's first alert timestamp via a min() aggregation —
+    # the supabase-py SDK doesn't support GROUP BY directly so we fetch
+    # rows in the window and de-duplicate by user_id, then verify the
+    # earliest row really falls in the target window.
+    try:
+        rows = (
+            db.table("sent_alerts")
+            .select("user_id,sent_at,feedback")
+            .order("sent_at")
+            .execute()
+            .data
+            or []
+        )
+    except Exception as e:
+        logger.error("sent_alerts scan for feedback nurture failed: %s", e)
+        return []
+
+    first_alert_at: dict[str, str] = {}
+    alert_count: dict[str, int] = {}
+    feedback_count: dict[str, int] = {}
+    for r in rows:
+        uid = r.get("user_id")
+        if not uid:
+            continue
+        sa = r.get("sent_at") or ""
+        if uid not in first_alert_at or sa < first_alert_at[uid]:
+            first_alert_at[uid] = sa
+        alert_count[uid] = alert_count.get(uid, 0) + 1
+        if r.get("feedback"):
+            feedback_count[uid] = feedback_count.get(uid, 0) + 1
+
+    targets = [
+        uid
+        for uid, fa in first_alert_at.items()
+        if start <= fa < end
+        and alert_count.get(uid, 0) >= FEEDBACK_NURTURE_MIN_ALERTS
+        and feedback_count.get(uid, 0) == 0
+    ]
+    if not targets:
+        return []
+
+    try:
+        users_resp = (
+            db.table("users")
+            .select("id,email")
+            .in_("id", targets)
+            .execute()
+        )
+    except Exception as e:
+        logger.error("users hydration for feedback nurture failed: %s", e)
+        return []
+
+    return [
+        {
+            "id": u["id"],
+            "email": u["email"],
+            "alerts_count": alert_count.get(u["id"], 0),
+        }
+        for u in (users_resp.data or [])
+    ]
+
+
+def _users_for_open_feedback_15d() -> list[dict]:
+    """Users who signed up 15+ days ago and have never received the
+    open-feedback email. Unlike the J+7/J+14 nurtures, this one is sent
+    to EVERY user regardless of their feedback activity — it's a single
+    shot ("raconte-moi") and we never re-send (idempotent via the
+    onboarding_email_log).
+
+    The cron runs daily and uses the log to skip users already mailed —
+    so the first run sweeps every eligible user from the past 15+ days
+    (catch-up), and subsequent runs only catch newly-eligible ones.
+    """
+    if not db:
+        return []
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(days=15)).isoformat()
+    try:
+        u = (
+            db.table("users")
+            .select("id,email,created_at")
+            .lt("created_at", cutoff)
+            .order("created_at", desc=True)
+            .execute()
+        )
+    except Exception as e:
+        logger.error("users J+15 open-feedback cohort query failed: %s", e)
+        return []
+    return u.data or []
+
+
 # ── Public entry point used by the daily cron ──────────────────────────────
 
 
 async def send_onboarding_emails_once() -> dict:
-    """Run one pass of the J+1 and J+7 cohorts. Returns counts so the
-    caller can log or send a summary to the admin chat."""
+    """Run one pass of every onboarding/feedback cohort:
+
+    - J+1 (since signup): Telegram link reminder for users who haven't
+      linked yet.
+    - J+7 (since signup): inactivity nudge for users who linked but never
+      got an alert.
+    - J+7 (since FIRST alert): feedback nurture — user got alerts but
+      clicked no 👍/👎/⏱️ button.
+    - J+14 (since first alert): feedback relance — second and last ask.
+    - J+15 (since signup): open-ended feedback — sent once to every user.
+
+    Idempotence is enforced by onboarding_email_log: each user receives
+    at most one email per email_type.
+
+    Returns counts so the caller can log or send a summary."""
     counts = {
         "j1_relance_sent": 0,
         "j1_relance_skipped": 0,
         "j7_inactivity_sent": 0,
         "j7_inactivity_skipped": 0,
+        "j7_feedback_nurture_sent": 0,
+        "j7_feedback_nurture_skipped": 0,
+        "j14_feedback_relance_sent": 0,
+        "j14_feedback_relance_skipped": 0,
+        "j15_open_feedback_sent": 0,
+        "j15_open_feedback_skipped": 0,
     }
 
     # J+1
@@ -274,7 +404,7 @@ async def send_onboarding_emails_once() -> dict:
         else:
             counts["j1_relance_skipped"] += 1
 
-    # J+7
+    # J+7 inactivity (linked Telegram, never alerted)
     for user in _users_linked_telegram_but_no_alerts_7d():
         uid = user["id"]
         if _already_sent(uid, "j7_inactivity"):
@@ -296,5 +426,56 @@ async def send_onboarding_emails_once() -> dict:
             counts["j7_inactivity_sent"] += 1
         else:
             counts["j7_inactivity_skipped"] += 1
+
+    # J+7 feedback nurture (got alerts, clicked 0)
+    for user in _users_no_feedback_since_first_alert(days_since_first=7):
+        uid = user["id"]
+        if _already_sent(uid, "j7_feedback_nurture"):
+            counts["j7_feedback_nurture_skipped"] += 1
+            continue
+        ok = await _send_brevo_template(
+            to_email=user["email"],
+            template_id=settings.BREVO_FEEDBACK_NURTURE_J7_TEMPLATE_ID,
+            params={"ALERTS_COUNT": user.get("alerts_count", 0)},
+        )
+        if ok:
+            _mark_sent(uid, "j7_feedback_nurture")
+            counts["j7_feedback_nurture_sent"] += 1
+        else:
+            counts["j7_feedback_nurture_skipped"] += 1
+
+    # J+14 feedback relance (still no click after the J+7 ping)
+    for user in _users_no_feedback_since_first_alert(days_since_first=14):
+        uid = user["id"]
+        if _already_sent(uid, "j14_feedback_relance"):
+            counts["j14_feedback_relance_skipped"] += 1
+            continue
+        ok = await _send_brevo_template(
+            to_email=user["email"],
+            template_id=settings.BREVO_FEEDBACK_NURTURE_J14_TEMPLATE_ID,
+            params={"ALERTS_COUNT": user.get("alerts_count", 0)},
+        )
+        if ok:
+            _mark_sent(uid, "j14_feedback_relance")
+            counts["j14_feedback_relance_sent"] += 1
+        else:
+            counts["j14_feedback_relance_skipped"] += 1
+
+    # J+15 open-ended feedback (every user, once in their lifetime)
+    for user in _users_for_open_feedback_15d():
+        uid = user["id"]
+        if _already_sent(uid, "j15_open_feedback"):
+            counts["j15_open_feedback_skipped"] += 1
+            continue
+        ok = await _send_brevo_template(
+            to_email=user["email"],
+            template_id=settings.BREVO_OPEN_FEEDBACK_J15_TEMPLATE_ID,
+            params={},
+        )
+        if ok:
+            _mark_sent(uid, "j15_open_feedback")
+            counts["j15_open_feedback_sent"] += 1
+        else:
+            counts["j15_open_feedback_skipped"] += 1
 
     return counts
