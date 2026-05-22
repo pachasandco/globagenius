@@ -72,7 +72,15 @@ class Settings:
     # from day one. The dispatcher, qualifier, baseline maturity report
     # and split-ticket detector all filter passive rows out.
     PASSIVE_ORIGINS: list = field(default_factory=lambda: [
-        o for o in os.getenv("PASSIVE_ORIGINS", "BRU,GVA,ZRH").split(",") if o.strip()
+        o for o in os.getenv(
+            "PASSIVE_ORIGINS",
+            # BSL/MLH/EAP are three IATA codes for the same tri-national
+            # airport (Bâle-Mulhouse-Freiburg). We track all three because
+            # different OTAs publish fares under different codes; once
+            # baselines are mature (~4 weeks), we'll flip them to MVP and
+            # accept BSL as a user-selectable origin.
+            "BRU,GVA,ZRH,BSL,MLH,EAP",
+        ).split(",") if o.strip()
     ])
     ADMIN_EMAILS: list = field(default_factory=lambda: [
         e.strip() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()
@@ -140,6 +148,13 @@ IATA_TO_CITY = {
     "TMP": "Tampere",
     "BRN": "Berne",
     "BSL": "Bâle-Mulhouse",
+    # MLH and EAP are alternate IATA codes for the same tri-national
+    # airport (BSL = Swiss side, MLH = French side / Mulhouse, EAP =
+    # joint EuroAirport code). Different OTAs publish fares under
+    # different codes, so we surface a friendly label for all three
+    # to avoid raw codes leaking into Telegram alerts.
+    "MLH": "Bâle-Mulhouse",
+    "EAP": "Bâle-Mulhouse",
     "LUX": "Luxembourg",
     "LJU": "Ljubljana",
     "BTS": "Bratislava",
