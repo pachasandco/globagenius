@@ -2098,19 +2098,43 @@ def admin_routes(request: Request):
     # from raw_flights that are NOT in tier1_map. The passive flag lets
     # the admin UI render BRU/GVA/ZRH rows as 'collecte passive' (no
     # alerts) instead of mixing them with the active alert routes.
-    tp_resp = db.table("raw_flights").select("origin,destination,passive").execute()
+    #
+    # 2026-05-22: the unbounded .select() used to fetch ~100k rows per
+    # request and hit the PostgREST 8s statement timeout in prod
+    # (admin dashboard stuck on "loading"). We now restrict to rows
+    # scraped in the last 30 days — recent enough to capture every
+    # active route, small enough to fit in one query — and paginate
+    # in 1000-row chunks defensively in case the window grows.
     tp_routes: dict[tuple[str, str], bool] = {}
-    for r in (tp_resp.data or []):
-        if isinstance(r, dict) and r.get("origin") and r.get("destination"):
-            key = (r["origin"], r["destination"])
-            if key not in tier1_map:
-                # A (o,d) is "passive" only if EVERY row we have for it
-                # is flagged passive. Mixed rows fall back to active.
-                is_passive = bool(r.get("passive"))
-                if key in tp_routes:
-                    tp_routes[key] = tp_routes[key] and is_passive
-                else:
-                    tp_routes[key] = is_passive
+    since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    page_size = 1000
+    offset = 0
+    while True:
+        chunk = (
+            db.table("raw_flights")
+            .select("origin,destination,passive")
+            .gte("scraped_at", since)
+            .range(offset, offset + page_size - 1)
+            .execute()
+            .data
+            or []
+        )
+        if not chunk:
+            break
+        for r in chunk:
+            if isinstance(r, dict) and r.get("origin") and r.get("destination"):
+                key = (r["origin"], r["destination"])
+                if key not in tier1_map:
+                    # A (o,d) is "passive" only if EVERY row we have for
+                    # it is flagged passive. Mixed rows fall back to active.
+                    is_passive = bool(r.get("passive"))
+                    if key in tp_routes:
+                        tp_routes[key] = tp_routes[key] and is_passive
+                    else:
+                        tp_routes[key] = is_passive
+        if len(chunk) < page_size:
+            break
+        offset += page_size
 
     rows = []
 
