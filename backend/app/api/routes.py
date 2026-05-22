@@ -2099,26 +2099,37 @@ def admin_routes(request: Request):
     # the admin UI render BRU/GVA/ZRH rows as 'collecte passive' (no
     # alerts) instead of mixing them with the active alert routes.
     #
-    # 2026-05-22: the unbounded .select() used to fetch ~100k rows per
-    # request and hit the PostgREST 8s statement timeout in prod
-    # (admin dashboard stuck on "loading"). We now restrict to rows
-    # scraped in the last 30 days — recent enough to capture every
-    # active route, small enough to fit in one query — and paginate
-    # in 1000-row chunks defensively in case the window grows.
+    # 2026-05-22 (v2): the 30-day window still hit the PostgREST 8s
+    # statement timeout because Postgres has to scan the index on
+    # scraped_at over ~3M rows before returning. We tighten to 24h
+    # AND cap the scan at 30 pages × 1000 rows (~30k of the most
+    # recent rows), ordered DESC so the most active routes are caught
+    # first. Local benchmark: ~919/1062 distinct routes captured
+    # (87 % of the 24h universe) in ~5s — acceptable latency for an
+    # admin-only endpoint hit once per dashboard load.
+    #
+    # Long-term: materialised view refreshed every 5 min would solve
+    # this cleanly. Tracked for later.
     tp_routes: dict[tuple[str, str], bool] = {}
-    since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     page_size = 1000
-    offset = 0
-    while True:
-        chunk = (
-            db.table("raw_flights")
-            .select("origin,destination,passive")
-            .gte("scraped_at", since)
-            .range(offset, offset + page_size - 1)
-            .execute()
-            .data
-            or []
-        )
+    max_pages = 30
+    for page_idx in range(max_pages):
+        offset = page_idx * page_size
+        try:
+            chunk = (
+                db.table("raw_flights")
+                .select("origin,destination,passive")
+                .gte("scraped_at", since)
+                .order("scraped_at", desc=True)
+                .range(offset, offset + page_size - 1)
+                .execute()
+                .data
+                or []
+            )
+        except Exception as e:
+            logger.warning(f"admin_routes: tp scan aborted at offset {offset}: {e}")
+            break
         if not chunk:
             break
         for r in chunk:
@@ -2134,7 +2145,6 @@ def admin_routes(request: Request):
                         tp_routes[key] = is_passive
         if len(chunk) < page_size:
             break
-        offset += page_size
 
     rows = []
 
