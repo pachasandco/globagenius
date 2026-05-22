@@ -14,10 +14,37 @@ _FR_MONTHS_LONG = ["", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
                    "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
 
 
-def _add_utms(url: str, origin: str, dest: str) -> str:
-    """Append UTM parameters to a URL without clobbering existing query params."""
+def _apply_aviasales_locale(url: str) -> str:
+    """Force EUR + French locale on Aviasales links.
+
+    Aviasales defaults to USD + English on www.aviasales.com when the
+    visitor has no prior session cookie — so French users landing from
+    a Telegram click saw their fare in dollars. Append `currency=eur`
+    and `locale=fr` (the documented Travelpayouts query params) so the
+    booking page renders in the right currency and language regardless
+    of geo / cookie state. Non-Aviasales URLs pass through unchanged.
+    """
     if not url or url == "N/A":
         return url
+    parsed = urlparse(url)
+    host = (parsed.netloc or "").lower()
+    if "aviasales" not in host:
+        return url
+    existing = parse_qs(parsed.query, keep_blank_values=True)
+    # Don't clobber an explicit value already set upstream.
+    existing.setdefault("currency", ["eur"])
+    existing.setdefault("locale", ["fr"])
+    new_query = urlencode({k: v[0] for k, v in existing.items()})
+    return urlunparse(parsed._replace(query=new_query))
+
+
+def _add_utms(url: str, origin: str, dest: str) -> str:
+    """Append UTM parameters to a URL without clobbering existing query params.
+    Also forces EUR + French locale on Aviasales links so prices never
+    render in dollars."""
+    if not url or url == "N/A":
+        return url
+    url = _apply_aviasales_locale(url)
     parsed = urlparse(url)
     existing = parse_qs(parsed.query, keep_blank_values=True)
     existing.update({
@@ -47,6 +74,10 @@ def _make_redirect_token(
     Falls back to UTM-tagged URL on insert failure to never block the alert.
     """
     from app.db import db
+    # Bake the EUR + locale params into the stored URL so the 302 from
+    # /r/{token} lands the user on the right-currency booking page
+    # without an extra hop.
+    url = _apply_aviasales_locale(url)
     token = f"{dest}-{secrets.token_urlsafe(6)}"
     if db:
         row = {

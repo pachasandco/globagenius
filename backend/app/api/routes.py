@@ -2495,6 +2495,15 @@ def redirect_tracking(token: str):
         pass
 
     url = row["url"]
+    # Defensive: tokens persisted before 2026-05-22 don't carry the
+    # currency=eur / locale=fr query params on Aviasales links. Apply
+    # them at redirect time so users who click an old Telegram alert
+    # still land on the EUR page.
+    try:
+        from app.notifications.telegram import _apply_aviasales_locale
+        url = _apply_aviasales_locale(url)
+    except Exception:
+        pass
     return RedirectResponse(url=url, status_code=302)
 
 
