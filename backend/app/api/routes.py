@@ -2082,17 +2082,38 @@ def admin_routes(request: Request):
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
 
+    # price_baselines stores one row per (origin, destination, horizon)
+    # keyed as route_key = "CDG-BCN-1m" / "CDG-BCN-3m" / "CDG-BCN-6m".
+    # There are no origin/destination/updated_at columns — the real
+    # schema is (route_key, type, avg_price, std_dev, sample_count,
+    # calculated_at). We parse origin+dest out of route_key and keep the
+    # row with the highest sample_count per route as the representative
+    # baseline for the admin view.
     baselines_resp = db.table("price_baselines").select(
-        "origin,destination,avg_price,sample_count,updated_at"
+        "route_key,avg_price,sample_count,calculated_at"
     ).execute()
     baseline_by_route: dict[tuple[str, str], dict] = {}
     for b in (baselines_resp.data or []):
-        if isinstance(b, dict) and b.get("origin") and b.get("destination"):
-            key = (b["origin"], b["destination"])
-            # Keep the most recently updated baseline per route
-            existing = baseline_by_route.get(key)
-            if not existing or b.get("updated_at", "") > existing.get("updated_at", ""):
-                baseline_by_route[key] = b
+        if not isinstance(b, dict):
+            continue
+        rk = b.get("route_key") or ""
+        parts = rk.split("-")
+        # Need at least origin-dest; the trailing "-1m"/"-3m"/"-6m" is
+        # optional but present for flight baselines.
+        if len(parts) < 2:
+            continue
+        origin_code, dest_code = parts[0], parts[1]
+        if not origin_code or not dest_code:
+            continue
+        key = (origin_code, dest_code)
+        existing = baseline_by_route.get(key)
+        # Keep the baseline backed by the most observations.
+        if not existing or (b.get("sample_count") or 0) > (existing.get("sample_count") or 0):
+            baseline_by_route[key] = {
+                "avg_price": b.get("avg_price"),
+                "sample_count": b.get("sample_count"),
+                "updated_at": b.get("calculated_at"),
+            }
 
     # Travelpayouts routes: distinct (origin, destination, passive) from
     # raw_flights that are NOT in tier1_map. The passive flag lets the
@@ -2105,17 +2126,17 @@ def admin_routes(request: Request):
     # 045) — one indexed GROUP BY. A route is "passive" iff
     # bool_and(passive) over the window.
     #
-    # Window = 6h, not 24h: the Tier-2 scraper runs every 2h so a 6h
-    # window already covers the entire active route catalogue (~1000
-    # distinct routes), and at 24h the GROUP BY occasionally tips over
-    # the statement timeout under DB load. 6h returns in <0.5s.
+    # Window = 3h: the Tier-2 scraper runs every 2h so a 3h window
+    # already covers the entire active route catalogue, and the GROUP
+    # BY over ~3h of rows is consistently <0.2s. At 6h+ the aggregation
+    # occasionally tips over the 8s statement timeout under DB load.
     #
     # Fallback: if the RPC isn't deployed yet (deploy window between
-    # code push and migration apply), fall back to a capped scan
-    # (10 pages × 1000 rows) so the endpoint degrades gracefully
-    # rather than 500-ing.
+    # code push and migration apply) OR it times out, fall back to a
+    # capped scan (10 pages × 1000 rows) so the endpoint degrades
+    # gracefully rather than 500-ing.
     tp_routes: dict[tuple[str, str], bool] = {}
-    since = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
+    since = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
     used_rpc = False
     try:
         rpc_rows = db.rpc("monitored_tp_routes", {"since_ts": since}).execute().data or []
