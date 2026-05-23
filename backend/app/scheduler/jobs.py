@@ -151,8 +151,12 @@ def get_scheduler_jobs() -> list[dict]:
             "id": "daily_onboarding_emails",
             "func": job_send_onboarding_emails,
             "trigger": "cron",
+            # 10:00 Europe/Paris, stable across DST (so users always get
+            # the relance mid-morning French time, not 12:00 in summer /
+            # 11:00 in winter as a UTC anchor would drift).
             "hour": 10,
             "minute": 0,
+            "timezone": "Europe/Paris",
         },
         # ── TIER 1 : toutes les 20 min (CDG + ORY via endpoints directs LCC) ──
         # Ryanair + Transavia directs → données quasi temps-réel pour les routes chaudes.

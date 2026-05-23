@@ -100,6 +100,14 @@ async def lifespan(app: FastAPI):
                 cron_kwargs["minute"] = job_def["minute"]
             if "day_of_week" in job_def:
                 cron_kwargs["day_of_week"] = job_def["day_of_week"]
+            # Per-job timezone override. The scheduler defaults to the
+            # container TZ (UTC on Railway), which is what every
+            # maintenance/scrape job wants. User-facing jobs that should
+            # fire at a fixed *local* French time (e.g. onboarding
+            # relances at 10:00 Paris, stable across DST) set
+            # "timezone": "Europe/Paris" in their job_def.
+            if "timezone" in job_def:
+                cron_kwargs["timezone"] = job_def["timezone"]
             scheduler.add_job(
                 func, "cron", id=job_id,
                 misfire_grace_time=DEFAULT_MISFIRE_GRACE_SECONDS,
