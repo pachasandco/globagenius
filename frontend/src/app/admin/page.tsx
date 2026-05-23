@@ -44,10 +44,46 @@ interface RouteRow {
   destination: string;
   sources: string[];
   tier: "tier1" | "tier2";
+  passive?: boolean;
   has_baseline: boolean;
   baseline_avg: number | null;
   baseline_samples: number;
   baseline_updated_at: string | null;
+}
+
+// ── CSV export helpers ──────────────────────────────────────────────
+// Pure client-side: builds CSV strings from data already loaded on the
+// page and triggers a download via a Blob URL. No server round-trip.
+
+function csvEscape(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  const s = String(value);
+  // Quote if the value contains a comma, quote, or newline.
+  if (/[",\n]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+function toCsv(headers: string[], rows: (unknown[])[]): string {
+  const lines = [headers.map(csvEscape).join(",")];
+  for (const row of rows) {
+    lines.push(row.map(csvEscape).join(","));
+  }
+  return lines.join("\n");
+}
+
+function downloadCsv(filename: string, content: string): void {
+  // Prepend a UTF-8 BOM so Excel opens accented French labels correctly.
+  const blob = new Blob(["﻿" + content], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
@@ -122,6 +158,86 @@ export default function AdminPage() {
     loadData(adminKey);
   }
 
+  // Export every table currently loaded on the page into a single CSV.
+  // Each section is delimited by a "## <section>" marker so one file
+  // holds routes + CTR + scrape logs + baselines without needing a zip.
+  function exportAll() {
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    const blocks: string[] = [];
+
+    if (routes && routes.length) {
+      const rows = routes.map((r) => [
+        r.origin,
+        r.destination,
+        IATA_CITY[r.destination] || "",
+        r.tier === "tier1" ? "temps réel" : "agrégateur",
+        r.passive ? "oui" : "non",
+        r.sources.join(" / "),
+        r.has_baseline ? "oui" : "non",
+        r.baseline_avg ?? "",
+        r.baseline_samples ?? 0,
+        r.baseline_updated_at ?? "",
+      ]);
+      blocks.push(
+        "## Destinations surveillées\n" +
+          toCsv(
+            ["origine", "destination", "ville", "tier", "passive", "sources", "baseline", "prix_moyen", "samples", "maj"],
+            rows
+          )
+      );
+    }
+
+    if (ctr?.top_destinations?.length) {
+      const rows = ctr.top_destinations.map((d) => [
+        d.destination,
+        d.tokens,
+        d.clicked,
+        d.clicks,
+        d.ctr,
+      ]);
+      blocks.push(
+        "## Top destinations CTR (30j)\n" +
+          toCsv(["destination", "liens_generes", "liens_cliques", "clics_totaux", "ctr_pct"], rows)
+      );
+    }
+
+    if (status?.recent_scrapes?.length) {
+      const rows = status.recent_scrapes.map((s) => [
+        s.started_at,
+        s.source,
+        s.type,
+        s.items_count,
+        s.errors_count,
+        s.status,
+        s.duration_ms,
+      ]);
+      blocks.push(
+        "## Scrape logs\n" +
+          toCsv(["started_at", "source", "type", "items", "errors", "status", "duration_ms"], rows)
+      );
+    }
+
+    if (debug?.baselines_sample?.length) {
+      const rows = debug.baselines_sample.map((b) => [
+        b.route_key,
+        b.avg_price,
+        b.std_dev,
+        b.sample_count,
+      ]);
+      blocks.push(
+        "## Baselines (échantillon)\n" +
+          toCsv(["route_key", "prix_moyen", "ecart_type", "samples"], rows)
+      );
+    }
+
+    if (!blocks.length) {
+      alert("Aucune donnée chargée à exporter — clique sur Refresh d'abord.");
+      return;
+    }
+
+    downloadCsv(`globegenius-admin-${stamp}.csv`, blocks.join("\n\n"));
+  }
+
   async function triggerJob(job: string) {
     setTriggerResult(`Triggering ${job}...`);
     try {
@@ -169,6 +285,7 @@ export default function AdminPage() {
             <Link href="/admin/users" className="text-sm text-cyan-600 hover:text-cyan-700 font-medium">👥 Users</Link>
             <Link href="/admin/feedback" className="text-sm text-cyan-600 hover:text-cyan-700 font-medium">💬 Feedback</Link>
             <Link href="/home" className="text-sm text-gray-500 hover:text-gray-900">Home</Link>
+            <button onClick={exportAll} className="text-sm text-emerald-600 hover:text-emerald-700 font-medium">⬇ CSV</button>
             <button onClick={() => loadData(adminKey)} className="text-sm text-cyan-600 font-medium">Refresh</button>
           </div>
         </div>
