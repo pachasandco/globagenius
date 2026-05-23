@@ -1907,7 +1907,14 @@ def admin_get_user(user_id: str, request: Request):
     _require_admin(request)
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
-    user_resp = db.table("users").select("*").eq("id", user_id).execute()
+    # Explicit column list — never ship password_hash (or any future
+    # secret column) to the admin frontend. Mirrors admin_list_users.
+    user_resp = (
+        db.table("users")
+        .select("id,email,created_at,tier")
+        .eq("id", user_id)
+        .execute()
+    )
     if not user_resp.data:
         raise HTTPException(status_code=404, detail="User not found")
     prefs_resp = db.table("user_preferences").select("*").eq("user_id", user_id).execute()

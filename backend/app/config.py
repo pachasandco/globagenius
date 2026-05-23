@@ -88,16 +88,33 @@ class Settings:
     TRAVELPAYOUTS_MARKER: str = os.getenv("TRAVELPAYOUTS_MARKER", "")
 
     def __post_init__(self):
-        if self.APP_ENV == "production":
+        # 2026-05-23: the guard used to fire only when APP_ENV was the
+        # exact string "production". Any other value (a typo like "prod",
+        # "Production", or the unchanged default "development" on a real
+        # deploy) silently shipped with the public default JWT secret —
+        # forgeable tokens = full account impersonation. We now treat
+        # everything EXCEPT explicit local/dev/test markers as a
+        # production-grade environment that must have real secrets.
+        dev_envs = {"development", "dev", "local", "test", "testing", "ci"}
+        is_production_grade = self.APP_ENV.strip().lower() not in dev_envs
+        if is_production_grade:
             missing = []
-            if self.JWT_SECRET == "globegenius-dev-secret-change-in-prod":
+            if (
+                not self.JWT_SECRET
+                or self.JWT_SECRET == "globegenius-dev-secret-change-in-prod"
+            ):
                 missing.append("JWT_SECRET")
             if not self.ADMIN_API_KEY:
                 missing.append("ADMIN_API_KEY")
             if not self.STRIPE_WEBHOOK_SECRET:
                 missing.append("STRIPE_WEBHOOK_SECRET")
+            if not self.TELEGRAM_WEBHOOK_SECRET:
+                missing.append("TELEGRAM_WEBHOOK_SECRET")
             if missing:
-                raise RuntimeError(f"Missing required env vars in production: {', '.join(missing)}")
+                raise RuntimeError(
+                    f"Missing/insecure required env vars for a production-grade "
+                    f"environment (APP_ENV={self.APP_ENV!r}): {', '.join(missing)}"
+                )
 
 
 IATA_TO_CITY = {

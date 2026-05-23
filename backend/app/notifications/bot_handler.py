@@ -2,6 +2,7 @@ import logging
 import unicodedata
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from app.db import db
 from app.config import settings
 
@@ -119,11 +120,26 @@ def _user_id_from_chat(chat_id: int) -> str | None:
 @bot_router.post("/api/telegram/webhook")
 async def telegram_webhook(request: Request):
     """Handle incoming Telegram messages (webhook mode)."""
+    import hmac
     from app.config import settings
-    if settings.TELEGRAM_WEBHOOK_SECRET:
-        header_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
-        if header_secret != settings.TELEGRAM_WEBHOOK_SECRET:
-            return {"ok": False, "error": "unauthorized"}
+
+    # SECURITY (2026-05-23): fail-closed. Telegram updates mutate user
+    # state (pause / unsubscribe / link / feedback), so the webhook MUST
+    # be authenticated. Previously the secret check was skipped entirely
+    # when TELEGRAM_WEBHOOK_SECRET was empty, which (if unset in prod)
+    # let anyone POST forged updates. We now reject every request unless
+    # the configured secret matches, using a constant-time compare.
+    expected = settings.TELEGRAM_WEBHOOK_SECRET
+    if not expected:
+        logger.error(
+            "TELEGRAM_WEBHOOK_SECRET is not configured — refusing all "
+            "webhook traffic (fail-closed). Set it on the backend env "
+            "and re-register the webhook with setWebhook(secret_token=…)."
+        )
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=403)
+    header_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    if not hmac.compare_digest(header_secret, expected):
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=403)
 
     if not db:
         return {"ok": True}
@@ -187,60 +203,69 @@ async def _handle_callback(callback: dict):
     if not bot or not callback_id or not chat_id:
         return
 
+    # SECURITY (2026-05-23): never trust the user_id embedded in
+    # callback_data. Telegram callback `data` is fully attacker-
+    # controllable, so a crafted "unsub:<victim_id>" / "pause_inf:..."
+    # would otherwise let any sender mutate another user's preferences
+    # (IDOR). We derive the AUTHORITATIVE user_id from the chat that
+    # sent the callback and pass only that to every owner-scoped
+    # mutation; the id in the payload is ignored.
+    owner_id = _user_id_from_chat(chat_id)
+    if not owner_id:
+        # Chat isn't linked to any account — nothing to act on. Ack so
+        # the spinner stops, then bail.
+        try:
+            await bot.answer_callback_query(callback_query_id=callback_id)
+        except Exception:
+            pass
+        return
+
     # Legacy (pre-v10) — kept for in-flight notifications still showing
     # the old "pause:" button. Treat it as the new "pause_menu:" entry
     # point so users see the same sub-menu.
     if data.startswith("pause:"):
-        user_id = data[len("pause:"):]
-        await _open_pause_menu(bot, callback_id, chat_id, user_id)
+        await _open_pause_menu(bot, callback_id, chat_id, owner_id)
 
     elif data.startswith("pause_menu:"):
-        user_id = data[len("pause_menu:"):]
-        await _open_pause_menu(bot, callback_id, chat_id, user_id)
+        await _open_pause_menu(bot, callback_id, chat_id, owner_id)
 
     elif data.startswith("pause_7:"):
-        user_id = data[len("pause_7:"):]
-        await _set_pause(bot, callback_id, chat_id, user_id, days=7)
+        await _set_pause(bot, callback_id, chat_id, owner_id, days=7)
 
     elif data.startswith("pause_30:"):
-        user_id = data[len("pause_30:"):]
-        await _set_pause(bot, callback_id, chat_id, user_id, days=30)
+        await _set_pause(bot, callback_id, chat_id, owner_id, days=30)
 
     elif data.startswith("pause_inf:"):
-        user_id = data[len("pause_inf:"):]
-        await _set_pause(bot, callback_id, chat_id, user_id, days=None)
+        await _set_pause(bot, callback_id, chat_id, owner_id, days=None)
 
     elif data.startswith("resume:"):
-        user_id = data[len("resume:"):]
-        await _resume_alerts(bot, callback_id, chat_id, user_id)
+        await _resume_alerts(bot, callback_id, chat_id, owner_id)
 
     elif data.startswith("block:"):
-        # Format: block:{user_id}:{iata}
+        # Format: block:{user_id}:{iata} — user_id ignored, iata trusted.
         rest = data[len("block:"):]
         parts = rest.split(":", 1)
         if len(parts) == 2:
-            await _block_destination(bot, callback_id, chat_id, parts[0], parts[1])
+            await _block_destination(bot, callback_id, chat_id, owner_id, parts[1])
 
     elif data.startswith("unblock:"):
         rest = data[len("unblock:"):]
         parts = rest.split(":", 1)
         if len(parts) == 2:
-            await _unblock_destination(bot, callback_id, chat_id, parts[0], parts[1])
+            await _unblock_destination(bot, callback_id, chat_id, owner_id, parts[1])
 
     elif data.startswith("unblock_all:"):
-        user_id = data[len("unblock_all:"):]
-        await _unblock_all(bot, callback_id, chat_id, user_id)
+        await _unblock_all(bot, callback_id, chat_id, owner_id)
 
     elif data.startswith("unsub:"):
-        user_id = data[len("unsub:"):]
-        await _unsubscribe(bot, callback_id, chat_id, user_id)
+        await _unsubscribe(bot, callback_id, chat_id, owner_id)
 
     elif data.startswith("feedback:"):
         # Format: feedback:{good|bad|late}:{message_id}
         rest = data[len("feedback:"):]
         parts = rest.split(":", 1)
         if len(parts) == 2:
-            await _record_feedback(bot, callback_id, chat_id, parts[0], parts[1])
+            await _record_feedback(bot, callback_id, chat_id, owner_id, parts[0], parts[1])
 
     else:
         # Unknown callback — just ack it silently
@@ -657,6 +682,7 @@ async def _record_feedback(
     bot,
     callback_id: str,
     chat_id: int,
+    owner_id: str,
     feedback_code: str,
     message_id: str,
 ):
@@ -664,6 +690,10 @@ async def _record_feedback(
     row of the message identified by message_id. Last click wins —
     the column UPDATEs in place, so a user can change their mind
     (click 👍 then 👎) and the most recent verdict is kept.
+
+    SECURITY: scoped to the calling user (owner_id, derived from the
+    chat) so a crafted callback can't overwrite another user's feedback
+    and poison the CTR/feedback analytics.
 
     Fails silently with a generic toast if anything goes wrong —
     we never want a Telegram callback to surface a stack trace."""
@@ -678,7 +708,7 @@ async def _record_feedback(
         db.table("sent_alerts").update({
             "feedback": db_code,
             "feedback_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("message_id", message_id).execute()
+        }).eq("message_id", message_id).eq("user_id", owner_id).execute()
         await bot.answer_callback_query(
             callback_query_id=callback_id,
             text=_FEEDBACK_TOASTS.get(feedback_code, "✓ Merci."),
