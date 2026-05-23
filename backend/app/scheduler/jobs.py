@@ -37,6 +37,15 @@ from app.analysis.baseline_maturity import compute_report as compute_maturity_re
 
 logger = logging.getLogger(__name__)
 
+# Freshness gate for the qualifier (2026-05-22). A baseline whose
+# calculated_at is older than this is considered drifted — the route
+# stopped being scraped or the recalc never reached it — and is no
+# longer trusted to qualify deals. With the recalc window at 30 days
+# and the nightly recalc now covering all routes, 21 days is a
+# comfortable ceiling: a healthy route is refreshed daily, so 21 days
+# stale unambiguously means "no longer maintained".
+BASELINE_MAX_AGE_DAYS = 21
+
 
 def get_scheduler_jobs() -> list[dict]:
     return [
@@ -268,6 +277,7 @@ async def _analyze_new_flights(flights: list[dict]):
         "rejected_stops": 0,
         "rejected_no_baseline": 0,
         "rejected_low_sample": 0,
+        "rejected_stale_baseline": 0,
         "rejected_no_anomaly": 0,
         "rejected_low_discount_or_z": 0,
         "rejected_reverify": 0,
@@ -347,6 +357,23 @@ async def _analyze_new_flights(flights: list[dict]):
         if (baseline.get("sample_count") or 0) < MIN_SAMPLE_COUNT:
             counters["rejected_low_sample"] += 1
             continue
+        # 2026-05-22: freshness gate. A route that stopped being scraped
+        # keeps its last baseline forever and would otherwise still
+        # qualify deals against a stale reference price. Reject baselines
+        # whose calculated_at is older than BASELINE_MAX_AGE_DAYS so dead
+        # routes go quiet instead of firing alerts on a frozen median.
+        # Rows with no calculated_at (legacy) are treated as fresh to
+        # avoid silencing everything during the transition.
+        calc_at = baseline.get("calculated_at")
+        if calc_at:
+            try:
+                calc_dt = datetime.fromisoformat(calc_at.replace("Z", "+00:00"))
+                age_days = (datetime.now(timezone.utc) - calc_dt).days
+                if age_days > BASELINE_MAX_AGE_DAYS:
+                    counters["rejected_stale_baseline"] += 1
+                    continue
+            except (ValueError, TypeError):
+                pass
 
         # Anomaly detection (existing helper)
         anomaly = detect_anomaly(price=flight["price"], baseline=baseline)
@@ -1268,38 +1295,51 @@ async def job_recalculate_baselines():
         return
 
     now = datetime.now(timezone.utc)
-    thirty_days_ago = (now - timedelta(days=30)).isoformat()
 
-    # Paginate: Supabase defaults to a 1000-row cap per request. Older rows
-    # (inserted before the trip_duration_days migration) have NULL and are
-    # useless for bucket baselines, so we filter them out at the source.
-    # We also page through up to 10k rows to cover the full 30-day window.
-    #
     # Vueling rows are excluded from the baseline corpus: their prices on
     # the same route/dates oscillate massively intra-day (we saw a single
     # CDG→MAD 18-25 May go 434→869→956→289→421 within hours), poisoning
     # the median and producing fake "high" baselines that turn ordinary
     # fares into apparent -56% deals. Vueling fares still get scraped for
     # the deal-detection pipeline, but they no longer set the reference.
+    #
+    # 2026-05-22: the old loop hard-capped at the most-recent 10k rows
+    # ordered scraped_at DESC. At ~1.5k round-trip rows/day that's only
+    # ~7 days of data, so routes scraped 8-30 days ago never got their
+    # baseline refreshed — 589/1000 baselines had drifted to >14 days
+    # stale (calculated_at). We now paginate one DAY-WINDOW at a time
+    # over the full 30-day floor. Day-windowing keeps each query small
+    # and index-friendly (deep OFFSET on the whole table times out at
+    # ~1M rows), and covers every route regardless of scrape cadence.
+    # Measured: ~30k rows / 411 routes / ~20s — fine for a nightly job.
     flights_data: list[dict] = []
     page_size = 1000
-    for offset in range(0, 10000, page_size):
-        page = (
-            db.table("raw_flights")
-            .select("origin, destination, price, scraped_at, trip_duration_days, stops, duration_minutes, departure_date")
-            .gte("scraped_at", thirty_days_ago)
-            .not_.is_("trip_duration_days", "null")
-            .neq("source", "vueling_direct")
-            .order("scraped_at", desc=True)
-            .range(offset, offset + page_size - 1)
-            .execute()
-        )
-        rows = page.data or []
-        flights_data.extend(rows)
-        if len(rows) < page_size:
-            break
+    for day in range(30):
+        win_start = (now - timedelta(days=day + 1)).isoformat()
+        win_end = (now - timedelta(days=day)).isoformat()
+        for offset in range(0, 50000, page_size):
+            try:
+                page = (
+                    db.table("raw_flights")
+                    .select("origin, destination, price, scraped_at, trip_duration_days, stops, duration_minutes, departure_date")
+                    .gte("scraped_at", win_start)
+                    .lt("scraped_at", win_end)
+                    .not_.is_("trip_duration_days", "null")
+                    .neq("source", "vueling_direct")
+                    .range(offset, offset + page_size - 1)
+                    .execute()
+                )
+            except Exception as e:
+                logger.warning(f"Recalculate: day-{day} offset {offset} fetch failed: {e}")
+                break
+            rows = page.data or []
+            flights_data.extend(rows)
+            if len(rows) < page_size:
+                break
+        # Yield the loop between day windows so the API stays responsive.
+        await asyncio.sleep(0)
 
-    logger.info(f"Recalculate: fetched {len(flights_data)} flights with trip_duration_days")
+    logger.info(f"Recalculate: fetched {len(flights_data)} flights with trip_duration_days over 30d")
 
     routes: dict[str, list] = {}
     for f in flights_data:
@@ -1335,6 +1375,49 @@ async def job_expire_stale_data():
 
     # Purge price_snapshots older than 24h (velocity detector data)
     purge_old_snapshots(db)
+
+    # 2026-05-22: purge raw_flights older than 45 days. The table was
+    # never pruned and had grown to ~900k rows (+100k/day), which (a)
+    # makes deep-offset scans time out and (b) costs storage for data
+    # the pipeline never reads — the baseline recalc window is 30 days,
+    # so 45 days leaves a 15-day safety margin. Delete in capped daily
+    # slices so a single run never locks the table for long.
+    cutoff_45d = (datetime.now(timezone.utc) - timedelta(days=45)).isoformat()
+    try:
+        purged_total = 0
+        for _ in range(60):  # cap iterations; 60 × oldest-day slices is plenty
+            # Find the oldest day still present beyond the cutoff and delete it.
+            oldest = (
+                db.table("raw_flights")
+                .select("scraped_at")
+                .lt("scraped_at", cutoff_45d)
+                .order("scraped_at")
+                .limit(1)
+                .execute()
+                .data
+            )
+            if not oldest:
+                break
+            oldest_ts = oldest[0]["scraped_at"]
+            # Delete everything up to the end of that oldest day.
+            slice_end = (
+                datetime.fromisoformat(oldest_ts.replace("Z", "+00:00"))
+                + timedelta(days=1)
+            ).isoformat()
+            resp = (
+                db.table("raw_flights")
+                .delete()
+                .lt("scraped_at", slice_end)
+                .execute()
+            )
+            deleted = len(resp.data or [])
+            purged_total += deleted
+            await asyncio.sleep(0)
+            if deleted == 0:
+                break
+        logger.info(f"Purged {purged_total} raw_flights rows older than 45 days")
+    except Exception as e:
+        logger.warning(f"raw_flights 45d purge failed (non-fatal): {e}")
 
 
 async def job_daily_digest():

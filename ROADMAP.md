@@ -353,7 +353,77 @@ isolate it behind a feature flag.
 
 ---
 
+### Baseline drift dashboard (admin)
+
+A weekly job + an /admin panel listing baselines that are (a) stale
+(`calculated_at` > 14d) or (b) unstable (coefficient of variation
+`std_dev / avg_price` > 0.5, ≥20 samples). Surfaces analytics debt
+before it silently degrades alert quality.
+
+**Why deferred (not P0):** the 2026-05-22 work fixed the *cause* of
+stale baselines (recalc 10k cap → full 30d windowed scan) and added a
+freshness gate so stale baselines stop firing alerts. A monitoring
+dashboard is now observation, not a fix — useful but not urgent.
+
+**Data observed 2026-05-22 (prod):** 589/1000 baselines were >14d
+stale (pre-fix); 14 routes had CV>0.5 (NTE-IST CV=1.20, ORY-ATH
+CV=0.68, TLS-RAK CV=0.56…). Re-measure after the recalc fix has run a
+few nights to confirm the stale count collapses.
+
+**Trigger:** when we want continuous visibility, or if alert-quality
+complaints recur.
+
+### Median-vs-mean inconsistency in the z-score
+
+`compute_baselines_by_bucket` stores `np.median(prices)` into a field
+named `avg_price`, while `std_dev` is `np.std` (dispersion about the
+*mean*). `detect_anomaly` then computes `(avg_price - price)/std_dev`,
+mixing a median center with a mean-based spread → the z-score isn't a
+clean statistic. `compute_baseline` (legacy) uses an age-weighted mean,
+so the two producers disagree on what `avg_price` means.
+
+**Fix when touched:** pick one location/dispersion pair (e.g. median +
+MAD), rename the field to `center_price`, make all three sites agree.
+
+**Why deferred:** subtle, not user-visible today — the ≥40% raw-discount
+fallback covers the std=0 / unreliable-z cases. Do it during the next
+baseline-math refactor, not as a standalone change.
+
+### CTR-by-destination signal (re-analyse at volume)
+
+2026-05-22 prod CTR looked striking — CMN (Casablanca) 13.3%, STN
+11.1% — and was floated as a marketing signal (Maghreb diaspora). But
+it's **statistical noise at current volume**: CMN = 2 clicks on 15
+links, STN = 1 on 9. Not actionable yet.
+
+**Trigger:** re-run the per-destination CTR analysis once any single
+destination has ≥50 tracked clicks. Then a 13% CTR means something.
+Group Maghreb routes (CMN+RAK+TNG+AGA) if testing the diaspora thesis.
+
+### "Travel intelligence layer" — long-horizon vision
+
+External strategic analysis (ChatGPT, 2026-05-22) framed the price +
+behavioural history as a future "predictive travel intelligence"
+asset — fair-flight-price API, "hot destinations" index, etc. Genuine
+long-term moat, but **prematurely sized**: needs 12-24 months of dense
+data and paying users to fund it. Parked deliberately so it doesn't
+distract from converting the current ~45 founders.
+
+**Trigger:** ≥12 months dense baseline data AND a paying base funding
+the work.
+
 ## 🚀 Long-term (P3) — Quarter+
+
+### Server-side baseline recalc (SQL/RPC)
+
+The nightly recalc now scans ~30k rows over 30 day-windows in ~20s
+(fine for a cron). But at higher scrape volume even day-windowed
+client-side pagination won't scale. Move the GROUP BY + median/std
+aggregation into a Postgres RPC (like `monitored_tp_routes`) so the
+recalc is one indexed query instead of pulling raw rows into Python.
+
+**Trigger:** when the nightly recalc runtime exceeds ~2min or the
+day-windowed scan starts timing out under load.
 
 ### DB-backed thresholds with A/B testing
 
@@ -525,3 +595,17 @@ When a roadmap item changes status (e.g. P2 → P1, or moves to "Done" /
   removed 'limit reached' teaser. Reasoning: the 'noisy upsell' loop
   with several teasers per week was hurting the free-user experience
   more than driving conversions.
+- **2026-05-22** — Analytics-debt remediation (P0) shipped after a
+  data + code review of the admin CSV export. Three fixes:
+  (A) `job_recalculate_baselines` no longer caps at the most-recent
+  10k raw_flights rows — it paginates 30 day-windows, covering every
+  route regardless of scrape cadence (the cap had left 589/1000
+  baselines >14d stale). (B) `_analyze_new_flights` rejects baselines
+  with `calculated_at` older than `BASELINE_MAX_AGE_DAYS=21` so dead
+  routes stop alerting against frozen references. (C)
+  `job_expire_stale_data` now purges raw_flights >45d (table had grown
+  to ~900k rows, never pruned). Deferred to P2/P3: baseline drift
+  dashboard, median-vs-mean z-score fix, CTR re-analysis at volume,
+  server-side SQL recalc, "travel intelligence layer" vision.
+  Reasoning: fix the root cause of drift now; monitoring + statistical
+  niceties + long-horizon vision are observation/polish, not urgent.

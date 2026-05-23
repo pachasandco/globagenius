@@ -377,14 +377,16 @@ async def test_recalculate_baselines_builds_bucket_baselines_from_history():
     pb_table = MagicMock()
     pb_table.upsert.return_value.execute.return_value = MagicMock(data=[{}])
 
-    # raw_flights chain: select().gte().not_.is_().order().range().execute()
-    # First page returns fake_flights, subsequent pages return empty (breaks loop)
+    # raw_flights chain (2026-05-22 day-windowed recalc):
+    #   select().gte().lt().not_.is_().neq().range().execute()
+    # The job loops 30 day-windows; we return the flights on the very
+    # first execute() and empty on every subsequent call so the first
+    # window's first page yields data and all later pages/windows break.
     rf_table = MagicMock()
-    rf_chain = rf_table.select.return_value.gte.return_value
-    rf_chain.not_.is_.return_value.order.return_value.range.return_value.execute.side_effect = [
-        MagicMock(data=fake_flights),
-        MagicMock(data=[]),
-    ]
+    rf_chain = rf_table.select.return_value.gte.return_value.lt.return_value.not_.is_.return_value.neq.return_value
+    rf_chain.range.return_value.execute.side_effect = (
+        [MagicMock(data=fake_flights)] + [MagicMock(data=[])] * 200
+    )
 
     # raw_accommodations chain: select().gte().execute()
     ra_table = MagicMock()
