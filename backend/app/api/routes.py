@@ -2753,6 +2753,126 @@ def admin_ctr(request: Request, days: int = 30):
 # MAX_FOUNDERS" as a scarcity signal.
 
 
+@router.get("/api/stats/recent-deals")
+def recent_deals():
+    """Public endpoint: a pool of real, recently-detected deals for the
+    landing-page hero cards.
+
+    Returns up to 12 distinct routes at ≥50% off, freshest first, so the
+    frontend can pick 3 at random per page load (rotation) while
+    guaranteeing at least one province departure. If recent (7-day) deals
+    are scarce we widen the window to 60 days so the cards are never
+    empty — better an older real deal than a stale hardcoded one.
+
+    Source: qualified_items (real, reverified deals) joined to raw_flights
+    for the origin/destination (sent_alerts has no origin column). The
+    "prix habituel" is reconstructed from the discount so we don't need
+    to join price_baselines: baseline = price / (1 - discount/100).
+    """
+    from app.config import IATA_TO_CITY
+
+    if not db:
+        return {"deals": []}
+
+    POOL_SIZE = 12
+    MIN_DISCOUNT = 50.0
+    # "Province" = real regional cities (the hors-Paris positioning).
+    # BVA (Beauvais) is greater-Paris, so it is NOT province here.
+    PROVINCE = {"LYS", "MRS", "NCE", "BOD", "NTE", "TLS"}
+    # Paris airports collapse to a single "Paris" label on the card.
+    PARIS_AIRPORTS = {"CDG", "ORY", "BVA"}
+    # Only outbound flights FROM France — the landing targets travellers
+    # leaving France, so an inbound "Dubrovnik → Lyon" (diaspora coming
+    # home) must never show as a deal to "go" somewhere.
+    FRENCH_ORIGINS = PARIS_AIRPORTS | PROVINCE
+
+    def _collect(since_iso: str) -> list[dict]:
+        try:
+            qi = (
+                db.table("qualified_items")
+                .select("item_id,price,discount_pct,created_at")
+                .gte("created_at", since_iso)
+                .gte("discount_pct", MIN_DISCOUNT)
+                .order("discount_pct", desc=True)
+                .limit(200)
+                .execute()
+                .data
+                or []
+            )
+        except Exception as e:
+            logger.warning(f"recent_deals qualified_items query failed: {e}")
+            return []
+        item_ids = [q["item_id"] for q in qi if q.get("item_id")]
+        if not item_ids:
+            return []
+        try:
+            rf = (
+                db.table("raw_flights")
+                .select("id,origin,destination")
+                .in_("id", item_ids)
+                .execute()
+                .data
+                or []
+            )
+        except Exception as e:
+            logger.warning(f"recent_deals raw_flights join failed: {e}")
+            return []
+        by_id = {r["id"]: r for r in rf}
+
+        seen: set[tuple[str, str]] = set()
+        out: list[dict] = []
+        for q in qi:
+            rfrow = by_id.get(q["item_id"])
+            if not rfrow:
+                continue
+            o, d = rfrow.get("origin"), rfrow.get("destination")
+            if not o or not d or (o, d) in seen:
+                continue
+            # Outbound-from-France only (skip inbound return legs).
+            if o not in FRENCH_ORIGINS:
+                continue
+            seen.add((o, d))
+            price = q.get("price") or 0
+            disc = q.get("discount_pct") or 0
+            if price <= 0 or disc <= 0:
+                continue
+            baseline = round(price / (1 - disc / 100))
+            # Collapse all Paris airports to "Paris"; province cities keep
+            # their name. IATA_TO_CITY has "Paris CDG"/"Paris Beauvais" etc.
+            origin_city = "Paris" if o in PARIS_AIRPORTS else IATA_TO_CITY.get(o, o)
+            dest_city = IATA_TO_CITY.get(d, d)
+            out.append({
+                "origin": o,
+                "destination": d,
+                "origin_city": origin_city,
+                "dest_city": dest_city,
+                "price": round(price),
+                "baseline": baseline,
+                "discount_pct": round(disc),
+                "is_province": o in PROVINCE,
+                "detected_at": q.get("created_at"),
+            })
+        return out
+
+    # Freshest first: 7-day window, widened to 60 days only if we're short.
+    now = datetime.now(timezone.utc)
+    deals = _collect((now - timedelta(days=7)).isoformat())
+    if len(deals) < POOL_SIZE:
+        wider = _collect((now - timedelta(days=60)).isoformat())
+        # Merge, de-duping by route, keeping the fresher (already sorted by
+        # discount within each call; 7d entries come first so they win).
+        seen = {(x["origin"], x["destination"]) for x in deals}
+        for x in wider:
+            key = (x["origin"], x["destination"])
+            if key not in seen:
+                seen.add(key)
+                deals.append(x)
+            if len(deals) >= POOL_SIZE:
+                break
+
+    return {"deals": deals[:POOL_SIZE]}
+
+
 @router.get("/api/stats/beta-count")
 def beta_count():
     """Public endpoint: how many "founders" have linked Telegram.

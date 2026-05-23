@@ -327,3 +327,34 @@ export async function getBetaCount(): Promise<BetaCount> {
     return { founders_count: 0, max_founders: 100 };
   }
 }
+
+export interface RecentDeal {
+  origin: string;
+  destination: string;
+  origin_city: string;
+  dest_city: string;
+  price: number;
+  baseline: number;
+  discount_pct: number;
+  is_province: boolean;
+  detected_at: string | null;
+}
+
+/**
+ * Fetch the pool of real recent deals for the landing hero cards.
+ * Returns up to 12 outbound-from-France deals at ≥50% off, freshest
+ * first. The hero component picks 3 at random per load. Returns [] on
+ * error so the caller can fall back to its hardcoded sample deals.
+ */
+export async function getRecentDeals(): Promise<RecentDeal[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/stats/recent-deals`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data.deals) ? data.deals : [];
+  } catch {
+    return [];
+  }
+}

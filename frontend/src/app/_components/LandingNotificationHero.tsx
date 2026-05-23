@@ -1,8 +1,9 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Wordmark } from "./Wordmark";
+import { getRecentDeals, type RecentDeal } from "@/lib/api";
 
 /**
  * Hero notification mockup — perspective stack.
@@ -12,6 +13,11 @@ import { Wordmark } from "./Wordmark";
  * and faded. Every ROTATION_MS, the front card recedes to the back
  * and the next one pops forward. The point: signal a rhythm of
  * alerts, not a single flashing card.
+ *
+ * The 3 cards are picked at random (≥1 province departure guaranteed)
+ * from a live pool fetched at /api/stats/recent-deals, so a visitor
+ * rarely sees the same deals twice. If the API is unreachable we fall
+ * back to FALLBACK_NOTIFS so the hero is never empty.
  */
 
 type DealTier = "exceptional" | "flash";
@@ -23,63 +29,81 @@ type NotifSample = {
   price: number;
   baseline: number;
   discountPct: number;
-  dates: string;
-  duration: string;
-  airline: string;
+  meta: string;
   ago: string;
 };
 
-// Real deals we have shipped in the last 14 days.
-const NOTIFS: NotifSample[] = [
-  {
-    tier: "exceptional",
-    badge: "Deal exceptionnel",
-    route: "Paris → Barcelone",
-    price: 40,
-    baseline: 165,
-    discountPct: 76,
-    dates: "8 → 12 juin",
-    duration: "4 jours",
-    airline: "Vueling",
-    ago: "maintenant",
-  },
-  {
-    tier: "flash",
-    badge: "Promo flash",
-    route: "Paris → Marrakech",
-    price: 74,
-    baseline: 155,
-    discountPct: 52,
-    dates: "22 → 26 mai",
-    duration: "4 jours",
-    airline: "Transavia",
-    ago: "il y a 12 min",
-  },
-  {
-    tier: "flash",
-    badge: "Promo flash",
-    route: "Paris → Lisbonne",
-    price: 89,
-    baseline: 210,
-    discountPct: 58,
-    dates: "15 → 22 juin",
-    duration: "7 jours",
-    airline: "TAP Portugal",
-    ago: "il y a 28 min",
-  },
+// Shown only when /api/stats/recent-deals returns nothing (network
+// error or empty pool). Real deals we have shipped in the last weeks.
+const FALLBACK_NOTIFS: NotifSample[] = [
+  { tier: "exceptional", badge: "Deal exceptionnel", route: "Paris → Barcelone", price: 40, baseline: 165, discountPct: 76, meta: "A/R · vérifié", ago: "récemment" },
+  { tier: "flash", badge: "Promo flash", route: "Toulouse → Lisbonne", price: 64, baseline: 178, discountPct: 64, meta: "A/R · vérifié", ago: "récemment" },
+  { tier: "flash", badge: "Promo flash", route: "Paris → Marrakech", price: 74, baseline: 155, discountPct: 52, meta: "A/R · vérifié", ago: "récemment" },
 ];
 
 const ROTATION_MS = 5200;
 
+// Map an API deal to the card view-model. Tier is derived from the
+// discount: ≥70% reads as "exceptionnel", below as "promo flash".
+function dealToNotif(d: RecentDeal): NotifSample {
+  const exceptional = d.discount_pct >= 70;
+  return {
+    tier: exceptional ? "exceptional" : "flash",
+    badge: exceptional ? "Deal exceptionnel" : "Promo flash",
+    route: `${d.origin_city} → ${d.dest_city}`,
+    price: d.price,
+    baseline: d.baseline,
+    discountPct: d.discount_pct,
+    meta: "A/R · vérifié",
+    ago: "récemment",
+  };
+}
+
+// Pick 3 deals from the pool, guaranteeing at least one province
+// departure when the pool contains one. Shuffles so each load differs.
+function pickThree(pool: RecentDeal[]): RecentDeal[] {
+  if (pool.length <= 3) return pool;
+  const shuffled = [...pool].sort(() => Math.random() - 0.5);
+  const province = shuffled.find((d) => d.is_province);
+  const chosen: RecentDeal[] = [];
+  if (province) chosen.push(province);
+  for (const d of shuffled) {
+    if (chosen.length >= 3) break;
+    if (!chosen.includes(d)) chosen.push(d);
+  }
+  return chosen;
+}
+
+// Shared hook: fetch the pool once, pick 3 (random, ≥1 province), map
+// to card view-models. Falls back to FALLBACK_NOTIFS on empty/error.
+function useHeroNotifs(): NotifSample[] {
+  const [pool, setPool] = useState<RecentDeal[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getRecentDeals().then((deals) => {
+      if (alive) setPool(deals);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return useMemo(() => {
+    if (!pool || pool.length === 0) return FALLBACK_NOTIFS;
+    const picked = pickThree(pool).map(dealToNotif);
+    return picked.length >= 1 ? picked : FALLBACK_NOTIFS;
+  }, [pool]);
+}
+
 export function LandingNotificationHero() {
+  const notifs = useHeroNotifs();
   const [front, setFront] = useState(0);
 
   useEffect(() => {
     const id = setInterval(() => {
-      setFront((i) => (i + 1) % NOTIFS.length);
+      setFront((i) => (i + 1) % notifs.length);
     }, ROTATION_MS);
     return () => clearInterval(id);
-  }, []);
+  }, [notifs.length]);
 
   return (
     <div className="absolute inset-0 w-full h-full overflow-hidden">
@@ -100,7 +124,7 @@ export function LandingNotificationHero() {
           in-flow <LandingNotificationStackMobile> placed below the hero. */}
       <div className="absolute inset-0 hidden md:flex items-center justify-end pointer-events-none">
         <div className="block w-[440px] max-w-[44%] mr-12 lg:mr-20">
-          <NotifStack front={front} />
+          <NotifStack notifs={notifs} front={front} />
         </div>
       </div>
     </div>
@@ -113,14 +137,15 @@ export function LandingNotificationHero() {
  * own dark backdrop so it visually reads as part of the hero.
  */
 export function LandingNotificationStackMobile() {
+  const notifs = useHeroNotifs();
   const [front, setFront] = useState(0);
 
   useEffect(() => {
     const id = setInterval(() => {
-      setFront((i) => (i + 1) % NOTIFS.length);
+      setFront((i) => (i + 1) % notifs.length);
     }, ROTATION_MS);
     return () => clearInterval(id);
-  }, []);
+  }, [notifs.length]);
 
   return (
     <div className="md:hidden relative w-full bg-[#082B78] px-6 pt-10 pb-12">
@@ -134,7 +159,7 @@ export function LandingNotificationStackMobile() {
         aria-hidden="true"
       />
       <div className="relative max-w-sm mx-auto">
-        <NotifStack front={front} compact />
+        <NotifStack notifs={notifs} front={front} compact />
       </div>
     </div>
   );
@@ -146,8 +171,8 @@ export function LandingNotificationStackMobile() {
  * distance. We animate translate/scale/opacity/tilt off the slot so
  * the swap looks like a deck of cards being dealt.
  */
-function NotifStack({ front, compact = false }: { front: number; compact?: boolean }) {
-  const slotOf = (i: number) => (i - front + NOTIFS.length) % NOTIFS.length;
+function NotifStack({ notifs, front, compact = false }: { notifs: NotifSample[]; front: number; compact?: boolean }) {
+  const slotOf = (i: number) => (i - front + notifs.length) % notifs.length;
 
   // Slot 0 = front, slot 1 = mid, slot 2 = back
   const config: Record<number, { y: number; scale: number; opacity: number; rotate: number; blur: number; zIndex: number; shadow: string }> = {
@@ -167,12 +192,12 @@ function NotifStack({ front, compact = false }: { front: number; compact?: boole
         perspective: 1400,
       }}
     >
-      {NOTIFS.map((notif, i) => {
+      {notifs.map((notif, i) => {
         const slot = slotOf(i);
         const c = config[slot];
         return (
           <motion.div
-            key={notif.route}
+            key={`${notif.route}-${i}`}
             initial={false}
             animate={{
               y: c.y,
@@ -207,7 +232,7 @@ function NotifStack({ front, compact = false }: { front: number; compact?: boole
         className="absolute left-0 right-0 flex justify-center gap-1.5"
         style={{ bottom: -22 }}
       >
-        {NOTIFS.map((_, i) => {
+        {notifs.map((_, i) => {
           const slot = slotOf(i);
           return (
             <span
@@ -306,11 +331,7 @@ function NotificationCard({
 
         {/* Meta line */}
         <div className="flex items-center gap-1.5 text-[11px] text-gray-500 leading-snug flex-wrap">
-          <span className="whitespace-nowrap">{notif.dates}</span>
-          <span className="text-gray-300">·</span>
-          <span className="whitespace-nowrap">{notif.duration}</span>
-          <span className="text-gray-300">·</span>
-          <span className="font-medium whitespace-nowrap">{notif.airline}</span>
+          <span className="whitespace-nowrap">{notif.meta}</span>
         </div>
       </div>
     </div>
