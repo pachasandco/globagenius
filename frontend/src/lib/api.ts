@@ -329,7 +329,6 @@ export async function getBetaCount(): Promise<BetaCount> {
 }
 
 export interface RecentDeal {
-  origin: string;
   destination: string;
   origin_city: string;
   dest_city: string;

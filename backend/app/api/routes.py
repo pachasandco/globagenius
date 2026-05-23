@@ -2756,18 +2756,22 @@ def admin_ctr(request: Request, days: int = 30):
 @router.get("/api/stats/recent-deals")
 def recent_deals():
     """Public endpoint: a pool of real, recently-detected deals for the
-    landing-page hero cards.
+    landing-page hero cards. Up to 12 distinct destinations at ≥40% off,
+    freshest first, so the frontend can pick 3 at random per page load.
 
-    Returns up to 12 distinct routes at ≥50% off, freshest first, so the
-    frontend can pick 3 at random per page load (rotation) while
-    guaranteeing at least one province departure. If recent (7-day) deals
-    are scarce we widen the window to 60 days so the cards are never
-    empty — better an older real deal than a stale hardcoded one.
+    Two sources are merged so the cards stay fresh AND keep the
+    hors-Paris angle:
 
-    Source: qualified_items (real, reverified deals) joined to raw_flights
-    for the origin/destination (sent_alerts has no origin column). The
-    "prix habituel" is reconstructed from the discount so we don't need
-    to join price_baselines: baseline = price / (1 - discount/100).
+      1. sent_alerts — every deal actually pushed to a user, incl. the
+         long-haul ones (e.g. Punta Cana at -42%). sent_alerts has no
+         origin column, so these are labelled "Paris → X" (true for
+         all long-haul and the large majority of deals).
+      2. qualified_items → raw_flights — gives the real origin, so we
+         can surface genuine PROVINCE departures (Toulouse → …, etc.).
+
+    De-dup is by destination (we want variety of places, not the same
+    city twice from two sources). "Prix habituel" is reconstructed from
+    the discount: baseline = price / (1 - discount/100).
     """
     from app.config import IATA_TO_CITY
 
@@ -2775,18 +2779,69 @@ def recent_deals():
         return {"deals": []}
 
     POOL_SIZE = 12
-    MIN_DISCOUNT = 50.0
-    # "Province" = real regional cities (the hors-Paris positioning).
-    # BVA (Beauvais) is greater-Paris, so it is NOT province here.
+    MIN_DISCOUNT = 40.0
     PROVINCE = {"LYS", "MRS", "NCE", "BOD", "NTE", "TLS"}
-    # Paris airports collapse to a single "Paris" label on the card.
     PARIS_AIRPORTS = {"CDG", "ORY", "BVA"}
-    # Only outbound flights FROM France — the landing targets travellers
-    # leaving France, so an inbound "Dubrovnik → Lyon" (diaspora coming
-    # home) must never show as a deal to "go" somewhere.
     FRENCH_ORIGINS = PARIS_AIRPORTS | PROVINCE
+    # Long-haul destinations: a -42% on a Paris→Caribbean fare is far
+    # more aspirational on a hero card than a 5th Rome at -79%, even
+    # though its discount is lower. We reserve a few pool slots for them
+    # so they're never crowded out by cheap short-haul Europe deals.
+    LONG_HAUL = {
+        "PUJ", "CUN", "JFK", "EWR", "YUL", "MIA", "LAX", "SFO", "BKK",
+        "DXB", "MRU", "RUN", "PPT", "GIG", "EZE", "MLE", "SIN", "HKG",
+        "NRT", "HND", "ICN", "BOM", "DEL", "CPT", "JNB", "BOG", "LIM",
+    }
+    RESERVED_LONGHAUL_SLOTS = 3
 
-    def _collect(since_iso: str) -> list[dict]:
+    now = datetime.now(timezone.utc)
+
+    def _mk(origin_city: str, dest_iata: str, price, disc, when, is_province: bool) -> dict | None:
+        price = price or 0
+        disc = disc or 0
+        if price <= 0 or disc < MIN_DISCOUNT:
+            return None
+        return {
+            "destination": dest_iata,
+            "origin_city": origin_city,
+            "dest_city": IATA_TO_CITY.get(dest_iata, dest_iata),
+            "price": round(price),
+            "baseline": round(price / (1 - disc / 100)),
+            "discount_pct": round(disc),
+            "is_province": is_province,
+            "is_long_haul": dest_iata in LONG_HAUL,
+            "detected_at": when,
+        }
+
+    # ── Source 1: real sent alerts (labelled Paris → X) ──
+    def _from_sent_alerts(since_iso: str) -> list[dict]:
+        try:
+            rows = (
+                db.table("sent_alerts")
+                .select("destination,price,discount_pct,sent_at")
+                .gte("sent_at", since_iso)
+                .gte("discount_pct", MIN_DISCOUNT)
+                .order("discount_pct", desc=True)
+                .limit(300)
+                .execute()
+                .data
+                or []
+            )
+        except Exception as e:
+            logger.warning(f"recent_deals sent_alerts query failed: {e}")
+            return []
+        out = []
+        for r in rows:
+            d = r.get("destination")
+            if not d:
+                continue
+            m = _mk("Paris", d, r.get("price"), r.get("discount_pct"), r.get("sent_at"), False)
+            if m:
+                out.append(m)
+        return out
+
+    # ── Source 2: qualified_items → raw_flights (real province origins) ──
+    def _from_qualified(since_iso: str) -> list[dict]:
         try:
             qi = (
                 db.table("qualified_items")
@@ -2818,59 +2873,69 @@ def recent_deals():
             logger.warning(f"recent_deals raw_flights join failed: {e}")
             return []
         by_id = {r["id"]: r for r in rf}
-
-        seen: set[tuple[str, str]] = set()
-        out: list[dict] = []
+        out = []
         for q in qi:
             rfrow = by_id.get(q["item_id"])
             if not rfrow:
                 continue
             o, d = rfrow.get("origin"), rfrow.get("destination")
-            if not o or not d or (o, d) in seen:
+            if not o or not d or o not in FRENCH_ORIGINS:
                 continue
-            # Outbound-from-France only (skip inbound return legs).
-            if o not in FRENCH_ORIGINS:
-                continue
-            seen.add((o, d))
-            price = q.get("price") or 0
-            disc = q.get("discount_pct") or 0
-            if price <= 0 or disc <= 0:
-                continue
-            baseline = round(price / (1 - disc / 100))
-            # Collapse all Paris airports to "Paris"; province cities keep
-            # their name. IATA_TO_CITY has "Paris CDG"/"Paris Beauvais" etc.
             origin_city = "Paris" if o in PARIS_AIRPORTS else IATA_TO_CITY.get(o, o)
-            dest_city = IATA_TO_CITY.get(d, d)
-            out.append({
-                "origin": o,
-                "destination": d,
-                "origin_city": origin_city,
-                "dest_city": dest_city,
-                "price": round(price),
-                "baseline": baseline,
-                "discount_pct": round(disc),
-                "is_province": o in PROVINCE,
-                "detected_at": q.get("created_at"),
-            })
+            m = _mk(origin_city, d, q.get("price"), q.get("discount_pct"), q.get("created_at"), o in PROVINCE)
+            if m:
+                out.append(m)
         return out
 
-    # Freshest first: 7-day window, widened to 60 days only if we're short.
-    now = datetime.now(timezone.utc)
-    deals = _collect((now - timedelta(days=7)).isoformat())
-    if len(deals) < POOL_SIZE:
-        wider = _collect((now - timedelta(days=60)).isoformat())
-        # Merge, de-duping by route, keeping the fresher (already sorted by
-        # discount within each call; 7d entries come first so they win).
-        seen = {(x["origin"], x["destination"]) for x in deals}
-        for x in wider:
-            key = (x["origin"], x["destination"])
-            if key not in seen:
-                seen.add(key)
-                deals.append(x)
-            if len(deals) >= POOL_SIZE:
+    def _build(days: int) -> list[dict]:
+        since = (now - timedelta(days=days)).isoformat()
+        # De-dup by destination, keeping the higher discount when a
+        # destination shows up in both sources. We do NOT sort
+        # province-first here: that starved long-haul Paris deals (e.g.
+        # Punta Cana) out of the 12-slot pool. Instead we build a single
+        # discount-ranked pool and, below, ensure both province AND
+        # sent-alert (long-haul) deals are represented.
+        best: dict[str, dict] = {}
+        for c in _from_qualified(since) + _from_sent_alerts(since):
+            d = c["destination"]
+            if d not in best or c["discount_pct"] > best[d]["discount_pct"]:
+                best[d] = c
+        return sorted(best.values(), key=lambda x: -x["discount_pct"])
+
+    pool = _build(7)
+    if len(pool) < POOL_SIZE:
+        seen = {c["destination"] for c in pool}
+        for c in _build(60):
+            if c["destination"] not in seen:
+                seen.add(c["destination"])
+                pool.append(c)
+            if len(pool) >= POOL_SIZE * 2:  # build a deeper pool to slice from
                 break
 
-    return {"deals": deals[:POOL_SIZE]}
+    # Compose the final 12 with guaranteed variety:
+    #   - reserve up to RESERVED_LONGHAUL_SLOTS for long-haul (aspirational)
+    #   - then fill the rest by discount rank
+    #   - province deals naturally land in the discount fill (they tend to
+    #     have high discounts), and the frontend additionally guarantees
+    #     ≥1 province among the 3 it displays.
+    long_haul = sorted(
+        [c for c in pool if c["is_long_haul"]],
+        key=lambda x: -x["discount_pct"],
+    )[:RESERVED_LONGHAUL_SLOTS]
+    final: list[dict] = []
+    seen_dest: set[str] = set()
+    for c in long_haul:
+        seen_dest.add(c["destination"])
+        final.append(c)
+    for c in pool:  # already discount-ranked
+        if len(final) >= POOL_SIZE:
+            break
+        if c["destination"] in seen_dest:
+            continue
+        seen_dest.add(c["destination"])
+        final.append(c)
+    final.sort(key=lambda x: -x["discount_pct"])
+    return {"deals": final[:POOL_SIZE]}
 
 
 @router.get("/api/stats/beta-count")
