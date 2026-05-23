@@ -2094,57 +2094,71 @@ def admin_routes(request: Request):
             if not existing or b.get("updated_at", "") > existing.get("updated_at", ""):
                 baseline_by_route[key] = b
 
-    # Travelpayouts routes: fetch distinct (origin, destination, passive)
-    # from raw_flights that are NOT in tier1_map. The passive flag lets
-    # the admin UI render BRU/GVA/ZRH rows as 'collecte passive' (no
-    # alerts) instead of mixing them with the active alert routes.
+    # Travelpayouts routes: distinct (origin, destination, passive) from
+    # raw_flights that are NOT in tier1_map. The passive flag lets the
+    # admin UI render BRU/GVA/ZRH rows as 'collecte passive' (no alerts)
+    # instead of mixing them with the active alert routes.
     #
-    # 2026-05-22 (v2): the 30-day window still hit the PostgREST 8s
-    # statement timeout because Postgres has to scan the index on
-    # scraped_at over ~3M rows before returning. We tighten to 24h
-    # AND cap the scan at 30 pages × 1000 rows (~30k of the most
-    # recent rows), ordered DESC so the most active routes are caught
-    # first. Local benchmark: ~919/1062 distinct routes captured
-    # (87 % of the 24h universe) in ~5s — acceptable latency for an
-    # admin-only endpoint hit once per dashboard load.
+    # 2026-05-22 (v3): the row-by-row PostgREST scan blew the 8s
+    # statement timeout (~100k rows/day). The aggregation now runs
+    # inside Postgres via the monitored_tp_routes() RPC (migration
+    # 045) — one indexed GROUP BY. A route is "passive" iff
+    # bool_and(passive) over the window.
     #
-    # Long-term: materialised view refreshed every 5 min would solve
-    # this cleanly. Tracked for later.
+    # Window = 6h, not 24h: the Tier-2 scraper runs every 2h so a 6h
+    # window already covers the entire active route catalogue (~1000
+    # distinct routes), and at 24h the GROUP BY occasionally tips over
+    # the statement timeout under DB load. 6h returns in <0.5s.
+    #
+    # Fallback: if the RPC isn't deployed yet (deploy window between
+    # code push and migration apply), fall back to a capped scan
+    # (10 pages × 1000 rows) so the endpoint degrades gracefully
+    # rather than 500-ing.
     tp_routes: dict[tuple[str, str], bool] = {}
-    since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-    page_size = 1000
-    max_pages = 30
-    for page_idx in range(max_pages):
-        offset = page_idx * page_size
-        try:
-            chunk = (
-                db.table("raw_flights")
-                .select("origin,destination,passive")
-                .gte("scraped_at", since)
-                .order("scraped_at", desc=True)
-                .range(offset, offset + page_size - 1)
-                .execute()
-                .data
-                or []
-            )
-        except Exception as e:
-            logger.warning(f"admin_routes: tp scan aborted at offset {offset}: {e}")
-            break
-        if not chunk:
-            break
-        for r in chunk:
-            if isinstance(r, dict) and r.get("origin") and r.get("destination"):
-                key = (r["origin"], r["destination"])
-                if key not in tier1_map:
-                    # A (o,d) is "passive" only if EVERY row we have for
-                    # it is flagged passive. Mixed rows fall back to active.
-                    is_passive = bool(r.get("passive"))
-                    if key in tp_routes:
-                        tp_routes[key] = tp_routes[key] and is_passive
-                    else:
-                        tp_routes[key] = is_passive
-        if len(chunk) < page_size:
-            break
+    since = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
+    used_rpc = False
+    try:
+        rpc_rows = db.rpc("monitored_tp_routes", {"since_ts": since}).execute().data or []
+        used_rpc = True
+        for r in rpc_rows:
+            o, d = r.get("origin"), r.get("destination")
+            if o and d and (o, d) not in tier1_map:
+                tp_routes[(o, d)] = bool(r.get("passive"))
+    except Exception as e:
+        logger.warning(f"admin_routes: monitored_tp_routes RPC unavailable, falling back to capped scan: {e}")
+
+    if not used_rpc:
+        page_size = 1000
+        max_pages = 10
+        for page_idx in range(max_pages):
+            offset = page_idx * page_size
+            try:
+                chunk = (
+                    db.table("raw_flights")
+                    .select("origin,destination,passive")
+                    .gte("scraped_at", since)
+                    .order("scraped_at", desc=True)
+                    .range(offset, offset + page_size - 1)
+                    .execute()
+                    .data
+                    or []
+                )
+            except Exception as e:
+                logger.warning(f"admin_routes: fallback scan aborted at offset {offset}: {e}")
+                break
+            if not chunk:
+                break
+            for r in chunk:
+                if isinstance(r, dict) and r.get("origin") and r.get("destination"):
+                    key = (r["origin"], r["destination"])
+                    if key not in tier1_map:
+                        is_passive = bool(r.get("passive"))
+                        if key in tp_routes:
+                            tp_routes[key] = tp_routes[key] and is_passive
+                        else:
+                            tp_routes[key] = is_passive
+            if len(chunk) < page_size:
+                break
 
     rows = []
 
