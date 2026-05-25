@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { slugFor } from "@/lib/destinations";
 
 // Force dynamic generation: the sitemap depends on the live `articles`
 // table, and the previous ISR (revalidate: 3600) caused new destinations
@@ -44,7 +45,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }));
 
   const destinationUrls: MetadataRoute.Sitemap = iatas.map((iata) => ({
-    url: `${BASE}/destination/${iata.toLowerCase()}`,
+    // SEO-friendly slug (e.g. /destination/dublin) — old IATA URLs
+    // (/destination/dub) are 301-redirected via next.config.ts.
+    url: `${BASE}/destination/${slugFor(iata)}`,
     lastModified: new Date(),
     priority: 0.7,
     changeFrequency: "weekly",

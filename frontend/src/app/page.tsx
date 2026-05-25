@@ -5,6 +5,7 @@ import LandingAnimated, { HeroContent } from "./_components/LandingAnimated";
 import { LandingNotificationHero, LandingNotificationStackMobile } from "./_components/LandingNotificationHero";
 import { Wordmark } from "./_components/Wordmark";
 import { getBetaCount } from "@/lib/api";
+import { slugFor } from "@/lib/destinations";
 
 export const metadata: Metadata = {
   title: "GlobeGenius — Alertes vols vérifiées 9 aéroports français · Beta",
@@ -154,7 +155,7 @@ export default async function Landing() {
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
               {recentGuides.map((g) => (
-                <Link key={g.iata} href={`/destination/${g.iata.toLowerCase()}`}
+                <Link key={g.iata} href={`/destination/${slugFor(g.iata)}`}
                       className="group block overflow-hidden rounded-2xl border border-[var(--color-sand)] bg-white hover:border-[var(--color-coral)] transition-colors">
                   <div className="relative aspect-video overflow-hidden">
                     {g.cover_photo ? (

@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { IATA_TO_SLUG } from "./src/lib/destinations";
 
 const nextConfig: NextConfig = {
   images: {
@@ -10,6 +11,15 @@ const nextConfig: NextConfig = {
     ],
   },
   async redirects() {
+    // 301 redirects from legacy IATA URLs (/destination/dub) to the
+    // new SEO-friendly slug URLs (/destination/dublin). Generated from
+    // the IATA_TO_SLUG mapping so we have a single source of truth.
+    const iataRedirects = Object.entries(IATA_TO_SLUG).map(([iata, slug]) => ({
+      source: `/destination/${iata}`,
+      destination: `/destination/${slug}`,
+      permanent: true,
+    }));
+
     return [
       {
         source: "/:path*",
@@ -30,6 +40,7 @@ const nextConfig: NextConfig = {
         destination: "/beta",
         permanent: true,
       },
+      ...iataRedirects,
     ];
   },
   async headers() {

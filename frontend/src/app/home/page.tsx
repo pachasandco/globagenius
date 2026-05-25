@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getPreferences, getTelegramStatus, clearSessionCookie, type FlightTripType } from "@/lib/api";
 import { initSession } from "@/lib/session";
+import { slugFor } from "@/lib/destinations";
 import { Wordmark } from "../_components/Wordmark";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -301,7 +302,7 @@ export default function HomePage() {
               {guides.map((g) => (
                 <Link
                   key={g.iata}
-                  href={`/destination/${g.iata.toLowerCase()}`}
+                  href={`/destination/${slugFor(g.iata)}`}
                   className="group block overflow-hidden rounded-2xl border border-gray-100 bg-white hover:border-[#FF6B47] hover:shadow-[0_8px_24px_rgba(10,31,61,0.08)] transition-all"
                 >
                   <div className="relative aspect-[4/3] overflow-hidden">

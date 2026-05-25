@@ -3,18 +3,32 @@ import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { getDestinationGuide } from "@/lib/api";
+import { iataFor, slugFor } from "@/lib/destinations";
 
-type PageProps = { params: Promise<{ iata: string }> };
+// URL param renamed from [iata] to [slug] in 2026-05 as part of the
+// migration from IATA-code URLs (/destination/dub) to SEO-friendly
+// slug URLs (/destination/dublin). Old IATA URLs are 301-redirected
+// to the slug version via next.config.ts.
+type PageProps = { params: Promise<{ slug: string }> };
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { iata } = await params;
+  const { slug } = await params;
+  const iata = iataFor(slug);
+  if (!iata) {
+    return { title: "Destination non trouvée — Globe Genius" };
+  }
+
   const guide = await getDestinationGuide(iata).catch(() => null);
   if (!guide) {
     return { title: "Destination non trouvée — Globe Genius" };
   }
 
   const destination = guide.article.destination;
-  const canonical = `https://globegenius.app/destination/${guide.article.iata.toLowerCase()}`;
+  // Canonical always points to the slug form. If a visitor lands on a
+  // legacy /destination/<iata> URL, next.config.ts 301s them here, so
+  // the canonical never contains the IATA.
+  const canonicalSlug = slugFor(guide.article.iata);
+  const canonical = `https://globegenius.app/destination/${canonicalSlug}`;
 
   // Pull the cheapest live deal price (if any) to inject in the title/description.
   // This gives us transactional, click-worthy SERP snippets that rank for
@@ -57,7 +71,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function DestinationPage({ params }: PageProps) {
-  const { iata } = await params;
+  const { slug } = await params;
+  const iata = iataFor(slug);
+  if (!iata) notFound();
+
   const guide = await getDestinationGuide(iata).catch(() => null);
   if (!guide) notFound();
 
@@ -71,8 +88,11 @@ export default async function DestinationPage({ params }: PageProps) {
     ? deals.reduce((min, d) => (d.price < min.price ? d : min), deals[0])
     : null;
 
-  // JSON-LD: TouristDestination + FAQPage + BreadcrumbList for rich results
-  const canonicalUrl = `https://globegenius.app/destination/${a.iata.toLowerCase()}`;
+  // JSON-LD: TouristDestination + FAQPage + BreadcrumbList for rich results.
+  // Canonical URL uses the slug, never the IATA, so the schema stays
+  // consistent with what Google sees in the search results.
+  const canonicalSlug = slugFor(a.iata);
+  const canonicalUrl = `https://globegenius.app/destination/${canonicalSlug}`;
   const jsonLd = {
     "@context": "https://schema.org",
     "@graph": [
