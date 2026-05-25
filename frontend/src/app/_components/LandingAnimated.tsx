@@ -88,7 +88,7 @@ export function HeroContent({ foundersCount = 0, maxFounders = 100 }: HeroConten
         Rejoindre les {maxFounders} fondateurs
       </Link>
       <p className="text-white/50 text-sm mt-3">
-        Gratuit · Statut premium à vie · Plus que {remaining} places
+        Accès gratuit à vie · Premium pour les actifs · Plus que {remaining} places
       </p>
     </motion.div>
   );

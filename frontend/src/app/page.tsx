@@ -330,8 +330,9 @@ export default async function Landing() {
               <div className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Étape 3 · Lancement officiel</div>
               <h3 className="font-bold text-[var(--color-ink)] mb-2">Premium à 4,99€/mois</h3>
               <p className="text-sm text-gray-500 leading-relaxed">
-                Ouverture grand public. Les 100 fondateurs gardent
-                leur accès premium <strong>gratuit à vie</strong>.
+                Ouverture grand public. Les fondateurs gardent un
+                <strong> accès gratuit à vie</strong> — et le Premium
+                tant qu&apos;ils participent à la beta.
               </p>
             </div>
           </div>
@@ -362,7 +363,7 @@ export default async function Landing() {
             </div>
             <div className="text-gray-400 text-sm mb-6">places fondateurs prises</div>
             <div className="text-sm text-gray-300 leading-loose mb-8 text-left max-w-md mx-auto">
-              ✓ <span className="text-white">Alertes premium gratuites à vie</span><br />
+              ✓ <span className="text-white">Accès gratuit à vie · Premium pour les membres actifs</span><br />
               ✓ <span className="text-white">Accès au long-courrier dès son ouverture</span><br />
               ✓ <span className="text-white">Détection stopover dès qu&apos;elle sera livrée</span><br />
               ✓ <span className="text-white">Tes préférences personnalisées</span><br />
