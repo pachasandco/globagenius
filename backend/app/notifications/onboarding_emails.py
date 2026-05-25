@@ -479,3 +479,117 @@ async def send_onboarding_emails_once() -> dict:
             counts["j15_open_feedback_skipped"] += 1
 
     return counts
+
+
+# ── Weekly OG leaderboard ────────────────────────────────────────────────────
+
+# Founders = the first MAX_FOUNDERS signups. Imported lazily inside the
+# function to avoid a circular import (routes imports this module too).
+
+
+def _format_podium_text(board: list[dict]) -> str:
+    """Plain-text podium for Brevo templates that fall back to a single
+    {{ params.PODIUM }} variable. One line per ranked contributor."""
+    if not board:
+        return "Personne n'a encore 1 contribution validée. À toi de jouer !"
+    return "\n".join(
+        f"{row['medal']} {row['name']} — {row['count']} retours"
+        for row in board
+    )
+
+
+def _format_podium_html(board: list[dict]) -> str:
+    """HTML podium (an ordered-ish list of <div> rows) for templates that
+    inject {{ params.PODIUM_HTML }} as raw HTML."""
+    if not board:
+        return "<p>Personne n'a encore de contribution validée. À toi de jouer !</p>"
+    rows = "".join(
+        f'<div style="padding:6px 0;font-size:16px;">'
+        f'{row["medal"]} <strong>{row["name"]}</strong> '
+        f'<span style="color:#888;">— {row["count"]} retours</span></div>'
+        for row in board
+    )
+    return f'<div>{rows}</div>'
+
+
+async def send_og_leaderboard_email() -> dict:
+    """Send the weekly OG leaderboard to every founder.
+
+    - Ranking: total real contributions (app.analysis.contributors).
+    - Only badged users with a display_name appear by name in the podium
+      (we never expose un-named users / emails in a mail to everyone).
+    - Recipients: the first MAX_FOUNDERS signups (the whole beta cohort).
+
+    Skips silently (returns recipients=0) when the template id is 0.
+    Returns a summary dict for the cron to log.
+    """
+    from app.analysis.contributors import (
+        count_real_contributions,
+        build_leaderboard,
+        BADGE_THRESHOLD,
+    )
+    from app.api.routes import MAX_FOUNDERS
+
+    template_id = settings.BREVO_OG_LEADERBOARD_TEMPLATE_ID
+    if not db or not template_id:
+        logger.info("OG leaderboard skipped (db=%s template_id=%s)", bool(db), template_id)
+        return {"recipients": 0, "delivered": 0, "podium": 0, "skipped": True}
+
+    counts = count_real_contributions(db)
+
+    # display_name only for badged users → never expose an un-named user.
+    badged = (
+        db.table("users")
+        .select("id,display_name")
+        .eq("badge", True)
+        .execute()
+        .data
+        or []
+    )
+    names_by_uid = {
+        u["id"]: u["display_name"]
+        for u in badged
+        if u.get("display_name")
+    }
+
+    board = build_leaderboard(counts, names_by_uid, limit=10)
+    podium_text = _format_podium_text(board)
+    podium_html = _format_podium_html(board)
+    top = board[0] if board else None
+
+    # Recipients: first MAX_FOUNDERS signups, ordered by created_at.
+    founders = (
+        db.table("users")
+        .select("id,email")
+        .order("created_at", desc=False)
+        .limit(MAX_FOUNDERS)
+        .execute()
+        .data
+        or []
+    )
+
+    params = {
+        "PODIUM": podium_text,
+        "PODIUM_HTML": podium_html,
+        "TOP_NAME": top["name"] if top else "",
+        "TOP_COUNT": top["count"] if top else 0,
+        "BADGE_THRESHOLD": BADGE_THRESHOLD,
+    }
+
+    delivered = 0
+    for f in founders:
+        email = f.get("email")
+        if not email:
+            continue
+        ok = await _send_brevo_template(
+            to_email=email, template_id=template_id, params=params
+        )
+        if ok:
+            delivered += 1
+
+    return {
+        "recipients": len(founders),
+        "delivered": delivered,
+        "podium": len(board),
+        "skipped": False,
+    }
