@@ -1656,6 +1656,14 @@ class AdminGrantPremiumRequest(BaseModel):
     reason: str | None = None
 
 
+class AdminBadgeRequest(BaseModel):
+    # Toggle the "Membre fondateur" contributor badge and set the display
+    # name (first name) the founder collected manually. display_name is what
+    # appears on the shareable /badge/<name> visual.
+    badge: bool
+    display_name: str | None = None
+
+
 class AdminTestWelcomeEmailRequest(BaseModel):
     email: str
 
@@ -1857,7 +1865,12 @@ def admin_list_users(request: Request, limit: int = 100):
     _require_admin(request)
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
-    users_resp = db.table("users").select("id,email,created_at").limit(limit).execute()
+    users_resp = (
+        db.table("users")
+        .select("id,email,created_at,display_name,badge")
+        .limit(limit)
+        .execute()
+    )
     users = users_resp.data or []
     user_ids = [u["id"] for u in users]
     prefs_by_user = {}
@@ -1898,6 +1911,8 @@ def admin_list_users(request: Request, limit: int = 100):
             "has_grant": bool(grant),
             "grant_expires_at": grant.get("expires_at") if grant else None,
             "is_admin": u["email"] in settings.ADMIN_EMAILS,
+            "display_name": u.get("display_name"),
+            "badge": bool(u.get("badge")),
         })
     return {"items": items, "count": len(items)}
 
@@ -1964,6 +1979,25 @@ def admin_revoke_premium(user_id: str, request: Request):
         .execute()
     )
     return {"ok": True, "revoked_count": len(resp.data or [])}
+
+
+@router.put("/api/admin/users/{user_id}/badge")
+def admin_set_badge(user_id: str, req: AdminBadgeRequest, request: Request):
+    """Grant/revoke the "Membre fondateur" contributor badge and set the
+    display name (first name) shown on the shareable /badge/<name> visual."""
+    _require_admin(request)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    update = {"badge": req.badge}
+    # Only touch display_name when a value is provided, so toggling the badge
+    # off later doesn't accidentally wipe a name we want to keep.
+    if req.display_name is not None:
+        name = req.display_name.strip()
+        update["display_name"] = name or None
+    resp = db.table("users").update(update).eq("id", user_id).execute()
+    if not resp.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"ok": True, "user": resp.data[0]}
 
 
 @router.post("/api/admin/users/{user_id}/reset_prefs")
