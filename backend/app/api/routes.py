@@ -4,6 +4,7 @@ import re
 import secrets
 import logging
 import stripe
+from urllib.parse import quote
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException, Request, Depends, BackgroundTasks
 from fastapi.responses import RedirectResponse
@@ -1000,7 +1001,23 @@ def get_preferences(user_id: str, user: dict = Depends(get_current_user)):
     if not prefs.data:
         raise HTTPException(status_code=404, detail="Preferences not found")
 
-    return prefs.data[0]
+    out = dict(prefs.data[0])
+    # Surface the OG badge so the profile page can render it + a share
+    # button. Best-effort: a failure here must not break preferences load.
+    try:
+        u = (
+            db.table("users")
+            .select("badge,display_name,badge_number")
+            .eq("id", user_id)
+            .execute()
+        )
+        if u.data:
+            out["badge"] = bool(u.data[0].get("badge"))
+            out["display_name"] = u.data[0].get("display_name")
+            out["badge_number"] = u.data[0].get("badge_number")
+    except Exception as e:
+        logger.debug(f"badge lookup in get_preferences failed: {e}")
+    return out
 
 
 @router.put("/api/users/{user_id}/preferences")
@@ -1867,7 +1884,7 @@ def admin_list_users(request: Request, limit: int = 100):
         raise HTTPException(status_code=503, detail="Database not configured")
     users_resp = (
         db.table("users")
-        .select("id,email,created_at,display_name,badge")
+        .select("id,email,created_at,display_name,badge,badge_number")
         .limit(limit)
         .execute()
     )
@@ -1913,6 +1930,7 @@ def admin_list_users(request: Request, limit: int = 100):
             "is_admin": u["email"] in settings.ADMIN_EMAILS,
             "display_name": u.get("display_name"),
             "badge": bool(u.get("badge")),
+            "badge_number": u.get("badge_number"),
         })
     return {"items": items, "count": len(items)}
 
@@ -1981,23 +1999,130 @@ def admin_revoke_premium(user_id: str, request: Request):
     return {"ok": True, "revoked_count": len(resp.data or [])}
 
 
+def _next_badge_number() -> int:
+    """Next sequential OG number (OG #1, #2, ...). Reads the current max
+    badge_number and adds 1. Concurrency at admin scale is a non-issue
+    (one operator), and the unique index on badge_number is the backstop."""
+    try:
+        resp = (
+            db.table("users")
+            .select("badge_number")
+            .not_.is_("badge_number", "null")
+            .order("badge_number", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if resp.data and resp.data[0].get("badge_number"):
+            return int(resp.data[0]["badge_number"]) + 1
+    except Exception as e:
+        logger.warning(f"_next_badge_number lookup failed: {e}")
+    return 1
+
+
+def _og_telegram_message(display_name: str | None, badge_number: int, badge_url: str) -> str:
+    """The message a freshly-minted OG receives on Telegram. Plain text
+    (no Markdown) so a name with special chars can't break it."""
+    hello = f"{display_name}, " if display_name else ""
+    return (
+        f"🏅 {hello}tu es officiellement OG #{badge_number} de GlobeGenius.\n\n"
+        "Ce badge récompense les tout premiers membres de l'Active Beta : "
+        "ceux qui ont utilisé le produit, donné des retours honnêtes sur la "
+        "qualité des alertes, et aidé à façonner GlobeGenius dès ses débuts. "
+        "Sans toi, on n'en serait pas là — merci. 🙏\n\n"
+        "Ce que ça t'apporte :\n"
+        "• Accès Premium gratuit à vie (même après le lancement officiel).\n"
+        "• Les nouvelles features en avant-première, avant tout le monde.\n"
+        "• Ton statut de membre fondateur, numéroté et reconnu.\n\n"
+        f"Ton badge à partager : {badge_url}"
+    )
+
+
 @router.put("/api/admin/users/{user_id}/badge")
-def admin_set_badge(user_id: str, req: AdminBadgeRequest, request: Request):
-    """Grant/revoke the "Membre fondateur" contributor badge and set the
-    display name (first name) shown on the shareable /badge/<name> visual."""
+async def admin_set_badge(user_id: str, req: AdminBadgeRequest, request: Request):
+    """Grant/revoke the OG ("Membre fondateur") badge.
+
+    On grant (badge=true) for a user who doesn't have it yet:
+      1. assign the next sequential badge_number (OG #N),
+      2. grant lifetime Premium (premium_grants, no expiry),
+      3. send a congratulatory Telegram message (if Telegram is linked).
+    Revoking (badge=false) only flips the flag — the OG number and the
+    premium grant are intentionally kept (the lifetime promise stands).
+    display_name is only overwritten when explicitly provided.
+    """
     _require_admin(request)
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
-    update = {"badge": req.badge}
-    # Only touch display_name when a value is provided, so toggling the badge
-    # off later doesn't accidentally wipe a name we want to keep.
+
+    existing = (
+        db.table("users")
+        .select("id,badge,badge_number,display_name")
+        .eq("id", user_id)
+        .execute()
+    )
+    if not existing.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    current = existing.data[0]
+    was_badged = bool(current.get("badge"))
+
+    update: dict = {"badge": req.badge}
     if req.display_name is not None:
         name = req.display_name.strip()
         update["display_name"] = name or None
+
+    newly_granted = req.badge and not was_badged
+    badge_number = current.get("badge_number")
+    if newly_granted and not badge_number:
+        badge_number = _next_badge_number()
+        update["badge_number"] = badge_number
+
     resp = db.table("users").update(update).eq("id", user_id).execute()
     if not resp.data:
         raise HTTPException(status_code=404, detail="User not found")
-    return {"ok": True, "user": resp.data[0]}
+    user_row = resp.data[0]
+
+    side_effects: dict = {"premium_granted": False, "telegram_sent": False}
+
+    if newly_granted:
+        # 2. Lifetime Premium grant (no expiry). Idempotent via upsert on
+        #    user_id — re-granting an OG won't create duplicate rows.
+        try:
+            db.table("premium_grants").upsert(
+                {
+                    "user_id": user_id,
+                    "granted_by": "admin",
+                    "expires_at": None,
+                    "reason": f"OG #{badge_number} — membre fondateur Active Beta",
+                    "revoked": False,
+                    "revoked_at": None,
+                },
+                on_conflict="user_id",
+            ).execute()
+            side_effects["premium_granted"] = True
+        except Exception as e:
+            logger.error(f"OG premium grant failed for {user_id}: {e}")
+
+        # 3. Telegram congratulations (best-effort; only if linked).
+        try:
+            prefs = (
+                db.table("user_preferences")
+                .select("telegram_connected,telegram_chat_id")
+                .eq("user_id", user_id)
+                .execute()
+            )
+            p = prefs.data[0] if prefs.data else {}
+            chat_id = p.get("telegram_chat_id")
+            if p.get("telegram_connected") and chat_id:
+                from app.notifications.telegram import send_user_text
+
+                display = user_row.get("display_name")
+                slug = display or f"OG-{badge_number}"
+                badge_url = f"{settings.FRONTEND_URL.rstrip('/')}/badge/{quote(str(slug))}"
+                msg = _og_telegram_message(display, int(badge_number), badge_url)
+                side_effects["telegram_sent"] = await send_user_text(int(chat_id), msg)
+        except Exception as e:
+            logger.error(f"OG Telegram message failed for {user_id}: {e}")
+
+    return {"ok": True, "user": user_row, **side_effects}
 
 
 @router.post("/api/admin/users/{user_id}/reset_prefs")

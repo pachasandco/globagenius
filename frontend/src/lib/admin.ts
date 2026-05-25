@@ -13,6 +13,7 @@ export interface AdminUser {
   is_admin: boolean;
   display_name: string | null;
   badge: boolean;
+  badge_number: number | null;
 }
 
 function adminKey(): string {

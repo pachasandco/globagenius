@@ -1132,6 +1132,22 @@ async def send_admin_text(message: str) -> bool:
         return False
 
 
+async def send_user_text(chat_id: int, message: str) -> bool:
+    """Send a plain-text message to a single user's chat. No Markdown
+    parsing, so the body can contain any characters safely. Returns
+    True on success."""
+    bot = _get_bot()
+    if not bot:
+        logger.warning("Telegram bot not configured, skipping user message")
+        return False
+    try:
+        await bot.send_message(chat_id=chat_id, text=message)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send user message to {chat_id}: {e}")
+        return False
+
+
 async def send_broadcast(message: str, chat_ids: list[int]) -> tuple[int, int]:
     """Send a plain-text broadcast to a list of chat_ids. Returns
     (delivered, failed). Sequential with a small delay to stay well

@@ -309,7 +309,8 @@ export default function AdminUsersPage() {
                         className="text-xs text-amber-700"
                         title={u.display_name || undefined}
                       >
-                        🏅 {u.display_name || "?"}
+                        🏅 {u.badge_number ? `#${u.badge_number} ` : ""}
+                        {u.display_name || "?"}
                       </span>
                     ) : (
                       "—"
@@ -434,9 +435,16 @@ export default function AdminUsersPage() {
               onClick={(e) => e.stopPropagation()}
             >
               <h2 className="text-lg font-semibold mb-1">
-                🏅 Badge fondateur
+                🏅 Badge OG {badgeUser.badge_number ? `#${badgeUser.badge_number}` : ""}
               </h2>
-              <p className="text-sm text-gray-500 mb-4">{badgeUser.email}</p>
+              <p className="text-sm text-gray-500 mb-3">{badgeUser.email}</p>
+              {!badgeUser.badge && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+                  Attribuer le badge va : assigner le prochain numéro OG,
+                  accorder le <strong>Premium à vie</strong>, et envoyer un
+                  message Telegram au membre (s’il est connecté).
+                </p>
+              )}
               <label className="text-sm text-gray-500">
                 Prénom affiché sur le badge
               </label>
@@ -448,16 +456,16 @@ export default function AdminUsersPage() {
                 autoFocus
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 mb-2 mt-1"
               />
-              {badgeName.trim() && (
+              {badgeName.trim() && badgeUser.badge_number && (
                 <p className="text-xs text-gray-400 mb-4">
                   Visuel partageable :{" "}
                   <a
-                    href={`/badge/${encodeURIComponent(badgeName.trim())}`}
+                    href={`/badge/${badgeUser.badge_number}/${encodeURIComponent(badgeName.trim())}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-cyan-600 underline break-all"
                   >
-                    /badge/{badgeName.trim()}
+                    /badge/{badgeUser.badge_number}/{badgeName.trim()}
                   </a>
                 </p>
               )}
