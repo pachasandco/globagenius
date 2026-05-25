@@ -39,6 +39,21 @@ export const metadata: Metadata = {
     "détecter deal vol",
   ],
   metadataBase: new URL("https://globegenius.app"),
+  // Stable, content-addressable URLs served from /public so Google does not
+  // recrawl on every deploy (Next.js file-convention icons get a content hash
+  // that Google treats as a brand-new favicon).
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any", rel: "icon" },
+      { url: "/icon.png", type: "image/png", sizes: "512x512" },
+      { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
+    ],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+    shortcut: "/favicon.ico",
+  },
   openGraph: {
     title: "Globe Genius — Vols à Prix Cassés | Alertes Telegram temps réel",
     description:
@@ -101,7 +116,10 @@ export default function RootLayout({
               url: "https://globegenius.app",
               logo: {
                 "@type": "ImageObject",
-                url: "https://globegenius.app/globe1.png",
+                // Point to the new clean 512×512 PNG so the declared
+                // width/height matches the actual asset (previously
+                // /globe1.png was 423×432 → schema mismatch).
+                url: "https://globegenius.app/icon.png",
                 width: 512,
                 height: 512,
               },

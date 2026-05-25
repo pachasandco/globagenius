@@ -57,25 +57,26 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 1.0,
       changeFrequency: "daily",
     },
+    // Page index des articles (résout le 404 historique sur /articles)
+    {
+      url: `${BASE}/articles`,
+      lastModified: new Date(),
+      priority: 0.9,
+      changeFrequency: "weekly",
+    },
+    // Planificateur IA — page produit importante, manquait dans l'ancien sitemap
+    {
+      url: `${BASE}/planificateur`,
+      lastModified: new Date(),
+      priority: 0.9,
+      changeFrequency: "weekly",
+    },
     ...articleUrls,
     ...destinationUrls,
-    {
-      url: `${BASE}/conditions`,
-      lastModified: new Date(),
-      priority: 0.3,
-      changeFrequency: "yearly",
-    },
-    {
-      url: `${BASE}/confidentialite`,
-      lastModified: new Date(),
-      priority: 0.3,
-      changeFrequency: "yearly",
-    },
-    {
-      url: `${BASE}/mentions-legales`,
-      lastModified: new Date(),
-      priority: 0.3,
-      changeFrequency: "yearly",
-    },
+    // ⚠️ Pages légales (/conditions, /confidentialite, /mentions-legales)
+    // volontairement EXCLUES du sitemap car elles sont en noindex côté HTML.
+    // Les laisser dans le sitemap créait un signal contradictoire pour Google
+    // (sitemap = "indexe-moi", noindex HTML = "n'indexe pas"). Standard de
+    // l'industrie pour les pages légales : ni dans le sitemap, ni indexées.
   ];
 }

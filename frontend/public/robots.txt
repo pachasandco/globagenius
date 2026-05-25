@@ -5,6 +5,11 @@ Disallow: /api
 Disallow: /onboarding
 Disallow: /dashboard
 Disallow: /home
+Disallow: /login
+Disallow: /signup
+Disallow: /profile
+Disallow: /reset-password
+Disallow: /r/
 
 User-agent: GPTBot
 Allow: /
