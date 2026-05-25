@@ -33,7 +33,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 // HTML/CSS twin of the OG seal so the landing page itself looks like the
 // shared image (concentric gold rings, globe, OG #n, name).
-function Seal({ display, n }: { display: string; n: string }) {
+function Seal({ n }: { n: string }) {
   return (
     <div
       className="relative flex items-center justify-center rounded-full"
@@ -47,13 +47,6 @@ function Seal({ display, n }: { display: string; n: string }) {
       }}
     >
       <div
-        className="absolute top-5 text-[#E8C37E] font-bold uppercase"
-        style={{ fontSize: 17, letterSpacing: 6 }}
-      >
-— Membre fondateur —
-      </div>
-
-      <div
         className="flex flex-col items-center justify-center rounded-full"
         style={{
           width: 252,
@@ -64,12 +57,12 @@ function Seal({ display, n }: { display: string; n: string }) {
         }}
       >
         <div
-          className="flex items-center justify-center rounded-full mb-1"
+          className="flex items-center justify-center rounded-full mb-2"
           style={{
-            width: 66,
-            height: 66,
+            width: 72,
+            height: 72,
             background: "#FF6B47",
-            fontSize: 36,
+            fontSize: 40,
             boxShadow: "0 8px 24px rgba(255,107,71,0.4)",
           }}
         >
@@ -77,22 +70,12 @@ function Seal({ display, n }: { display: string; n: string }) {
         </div>
         <div
           className="text-[#FFF8F0] font-bold leading-none"
-          style={{ fontSize: 58, letterSpacing: 3 }}
+          style={{ fontSize: 64, letterSpacing: 3 }}
         >
           OG
         </div>
-        <div className="text-[#E8C37E] font-bold" style={{ fontSize: 30 }}>
+        <div className="text-[#E8C37E] font-bold mt-1" style={{ fontSize: 34 }}>
           #{n}
-        </div>
-        <div
-          className="my-3"
-          style={{ width: 96, height: 2, background: "rgba(232,195,126,0.5)" }}
-        />
-        <div
-          className="text-[#FFF8F0] font-bold text-center px-4"
-          style={{ fontSize: 24, maxWidth: 230 }}
-        >
-          {display}
         </div>
       </div>
     </div>
@@ -113,7 +96,7 @@ export default async function BadgePage({ params }: PageProps) {
         <Wordmark />
       </Link>
 
-      <Seal display={display} n={n} />
+      <Seal n={n} />
 
       <p className="text-[var(--color-coral)] font-bold uppercase tracking-widest text-sm mt-8 mb-3">
         OG #{n} · Membre fondateur

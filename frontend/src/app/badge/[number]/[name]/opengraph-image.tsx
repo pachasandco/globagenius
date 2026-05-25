@@ -18,8 +18,7 @@ type Props = { params: Promise<{ number: string; name: string }> };
 // segments. Satori supports a flexbox subset, borderRadius and layered
 // boxes — the seal is built from concentric circles, not SVG textPath.
 export default async function BadgeImage({ params }: Props) {
-  const { number, name } = await params;
-  const display = decodeURIComponent(name).slice(0, 22);
+  const { number } = await params;
   const n = (decodeURIComponent(number).replace(/[^0-9]/g, "") || "1").slice(0, 4);
 
   return new ImageResponse(
@@ -64,22 +63,6 @@ export default async function BadgeImage({ params }: Props) {
             position: "relative",
           }}
         >
-          {/* Outer ring text — top arc approximated with letter-spacing */}
-          <div
-            style={{
-              position: "absolute",
-              top: "34px",
-              display: "flex",
-              fontSize: "26px",
-              letterSpacing: "10px",
-              color: GOLD,
-              fontWeight: "bold",
-              textTransform: "uppercase",
-            }}
-          >
-— MEMBRE FONDATEUR —
-          </div>
-
           {/* Inner ring (the medallion core) */}
           <div
             style={{
@@ -130,39 +113,13 @@ export default async function BadgeImage({ params }: Props) {
             <div
               style={{
                 display: "flex",
-                fontSize: "40px",
+                fontSize: "48px",
                 fontWeight: "bold",
                 color: GOLD,
-                marginTop: "2px",
+                marginTop: "4px",
               }}
             >
               #{n}
-            </div>
-
-            {/* Divider */}
-            <div
-              style={{
-                width: "120px",
-                height: "2px",
-                background: "rgba(232,195,126,0.5)",
-                marginTop: "14px",
-                marginBottom: "12px",
-                display: "flex",
-              }}
-            />
-
-            {/* Name */}
-            <div
-              style={{
-                display: "flex",
-                fontSize: "32px",
-                color: CREAM,
-                fontWeight: "bold",
-                maxWidth: "280px",
-                textAlign: "center",
-              }}
-            >
-              {display}
             </div>
           </div>
         </div>
