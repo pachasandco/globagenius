@@ -65,6 +65,12 @@ export default async function DestinationPage({ params }: PageProps) {
   const photo = guide.photo;
   const deals = guide.deals;
 
+  // Pick the cheapest live deal for the hero banner. Falls back to a
+  // "monitoring" empty state when no live deal is available.
+  const bestDeal = deals.length > 0
+    ? deals.reduce((min, d) => (d.price < min.price ? d : min), deals[0])
+    : null;
+
   // JSON-LD: TouristDestination + FAQPage + BreadcrumbList for rich results
   const canonicalUrl = `https://globegenius.app/destination/${a.iata.toLowerCase()}`;
   const jsonLd = {
@@ -148,6 +154,89 @@ export default async function DestinationPage({ params }: PageProps) {
         )}
       </section>
 
+      {/* ── Deal hero block ──────────────────────────────────────────
+        Sits between the cover photo and the long-form guide.
+        Pulls the cheapest live deal to make the product value visible
+        immediately. SEO visitors landing on this page see the deal
+        before having to scroll through 4000 words of guide. */}
+      <section className="bg-white border-b border-[var(--color-sand)]">
+        <div className="mx-auto max-w-3xl px-6 py-6 sm:py-8">
+          {bestDeal ? (
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex-1">
+                <div className="inline-flex items-center gap-2 rounded-full bg-[var(--color-coral-50)] px-3 py-1 text-xs font-semibold text-[var(--color-coral)] mb-2">
+                  <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--color-coral)]" />
+                  Deal détecté
+                </div>
+                <div className="font-[family-name:var(--font-dm-serif)] text-2xl sm:text-3xl text-[var(--color-ink)] leading-tight">
+                  Vol {bestDeal.origin} → {a.destination} dès{" "}
+                  <span className="text-[var(--color-coral)]">
+                    {bestDeal.price}€
+                  </span>
+                  {bestDeal.baseline_price > bestDeal.price && (
+                    <span className="ml-2 text-base font-normal text-gray-400 line-through align-middle">
+                      {bestDeal.baseline_price}€
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1 text-sm text-gray-500">
+                  {[
+                    bestDeal.airline,
+                    bestDeal.departure_date
+                      ? bestDeal.return_date
+                        ? `${bestDeal.departure_date} → ${bestDeal.return_date}`
+                        : `${bestDeal.departure_date} (aller simple)`
+                      : null,
+                    bestDeal.discount_pct > 0
+                      ? `-${Math.round(bestDeal.discount_pct)}% vs prix médian`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </div>
+                {deals.length > 1 && (
+                  <a
+                    href="#deals"
+                    className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-coral)] hover:underline"
+                  >
+                    Voir les {deals.length} deals détectés ↓
+                  </a>
+                )}
+              </div>
+              <Link
+                href="/signup"
+                className="inline-flex items-center justify-center rounded-full bg-[var(--color-coral)] px-6 py-3 text-sm font-bold text-white shadow-sm transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-coral)] focus-visible:ring-offset-2 whitespace-nowrap"
+              >
+                Recevoir les alertes (gratuit)
+              </Link>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex-1">
+                <div className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600 mb-2">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-gray-400" />
+                  Surveillance active
+                </div>
+                <div className="font-[family-name:var(--font-dm-serif)] text-xl sm:text-2xl text-[var(--color-ink)] leading-tight">
+                  Pas de deal sur {a.destination} en ce moment
+                </div>
+                <p className="mt-1 text-sm text-gray-500">
+                  On scanne 200+ compagnies en continu. Reçois une alerte
+                  gratuite dès qu&apos;un vol pas cher est détecté pour{" "}
+                  {a.destination}.
+                </p>
+              </div>
+              <Link
+                href="/signup"
+                className="inline-flex items-center justify-center rounded-full bg-[var(--color-coral)] px-6 py-3 text-sm font-bold text-white shadow-sm transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-coral)] focus-visible:ring-offset-2 whitespace-nowrap"
+              >
+                M&apos;alerter quand un deal arrive
+              </Link>
+            </div>
+          )}
+        </div>
+      </section>
+
       {/* Article body */}
       <article className="mx-auto max-w-3xl px-6 py-12 prose prose-lg">
         <p className="text-xl font-medium text-[var(--color-ink)]">{a.lead}</p>
@@ -188,7 +277,10 @@ export default async function DestinationPage({ params }: PageProps) {
         {/* Deals slot */}
         {deals.length > 0 && (
           <>
-            <h2 className="mt-12 font-[family-name:var(--font-dm-serif)] text-3xl">
+            <h2
+              id="deals"
+              className="mt-12 font-[family-name:var(--font-dm-serif)] text-3xl scroll-mt-20"
+            >
               Vols pas chers vers {a.destination} en ce moment
             </h2>
             <div className="not-prose grid gap-4 sm:grid-cols-2">
