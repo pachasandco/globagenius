@@ -10,19 +10,48 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { iata } = await params;
   const guide = await getDestinationGuide(iata).catch(() => null);
   if (!guide) {
-    return { title: "Destination non trouvée" };
+    return { title: "Destination non trouvée — Globe Genius" };
   }
+
+  const destination = guide.article.destination;
+  const canonical = `https://globegenius.app/destination/${guide.article.iata.toLowerCase()}`;
+
+  // Pull the cheapest live deal price (if any) to inject in the title/description.
+  // This gives us transactional, click-worthy SERP snippets that rank for
+  // "vol [ville] pas cher" rather than competing with Lonely Planet on
+  // "[ville] guide voyage" (which we'll never win).
+  const minPrice = guide.deals.length > 0
+    ? Math.min(...guide.deals.map((d) => d.price))
+    : null;
+
+  const title = minPrice !== null
+    ? `Vol ${destination} dès ${minPrice}€ — Bons plans & guide | Globe Genius`
+    : `Vol pas cher ${destination} — Bons plans & guide | Globe Genius`;
+
+  const description = minPrice !== null
+    ? `Vol pour ${destination} détecté dès ${minPrice}€. Globe Genius scanne plus de 200 compagnies en continu et t'envoie une alerte gratuite dès qu'un deal arrive. Guide voyage ${destination} inclus.`
+    : `Trouve le meilleur vol pour ${destination} grâce à Globe Genius. Alertes gratuites dès qu'un deal est détecté, plus de 200 compagnies scannées en continu. Guide voyage ${destination} inclus.`;
+
   return {
-    title: guide.article.title,
-    description: guide.article.meta_description,
+    title,
+    description,
+    alternates: { canonical },
     openGraph: {
-      title: guide.article.title,
-      description: guide.article.meta_description,
-      images: guide.photo.url ? [{ url: guide.photo.url }] : undefined,
+      title,
+      description,
+      url: canonical,
+      siteName: "Globe Genius",
+      locale: "fr_FR",
       type: "article",
+      images: guide.photo.url
+        ? [{ url: guide.photo.url, width: 1200, height: 630, alt: destination }]
+        : undefined,
     },
-    alternates: {
-      canonical: `https://globegenius.app/destination/${guide.article.iata.toLowerCase()}`,
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: guide.photo.url ? [guide.photo.url] : undefined,
     },
   };
 }
@@ -36,7 +65,8 @@ export default async function DestinationPage({ params }: PageProps) {
   const photo = guide.photo;
   const deals = guide.deals;
 
-  // JSON-LD: TouristDestination + FAQPage for rich results
+  // JSON-LD: TouristDestination + FAQPage + BreadcrumbList for rich results
+  const canonicalUrl = `https://globegenius.app/destination/${a.iata.toLowerCase()}`;
   const jsonLd = {
     "@context": "https://schema.org",
     "@graph": [
@@ -45,7 +75,7 @@ export default async function DestinationPage({ params }: PageProps) {
         name: a.destination,
         description: a.meta_description,
         image: photo.url || undefined,
-        url: `https://globegenius.app/destination/${a.iata.toLowerCase()}`,
+        url: canonicalUrl,
       },
       {
         "@type": "FAQPage",
@@ -54,6 +84,29 @@ export default async function DestinationPage({ params }: PageProps) {
           name: q.q,
           acceptedAnswer: { "@type": "Answer", text: q.a },
         })),
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          {
+            "@type": "ListItem",
+            position: 1,
+            name: "Accueil",
+            item: "https://globegenius.app",
+          },
+          {
+            "@type": "ListItem",
+            position: 2,
+            name: "Destinations",
+            item: "https://globegenius.app/articles",
+          },
+          {
+            "@type": "ListItem",
+            position: 3,
+            name: a.destination,
+            item: canonicalUrl,
+          },
+        ],
       },
     ],
   };
