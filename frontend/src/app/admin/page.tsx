@@ -124,6 +124,11 @@ export default function AdminPage() {
   const [ctr, setCtr] = useState<CtrData | null>(null);
   const [loading, setLoading] = useState(false);
   const [triggerResult, setTriggerResult] = useState("");
+  // Telegram broadcast composer
+  const [bcMessage, setBcMessage] = useState("");
+  const [bcStatus, setBcStatus] = useState("");
+  const [bcPendingCount, setBcPendingCount] = useState<number | null>(null);
+  const [bcSending, setBcSending] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -252,6 +257,44 @@ export default function AdminPage() {
     }
   }
 
+  async function broadcast(mode: "test" | "send", confirmCount?: number) {
+    const message = bcMessage.trim();
+    if (!message) { setBcStatus("Message vide."); return; }
+    setBcSending(true);
+    setBcStatus(mode === "test" ? "Envoi du test à toi…" : "Envoi en cours…");
+    try {
+      const res = await fetch(`${API_URL}/api/admin/broadcast`, {
+        method: "POST",
+        headers: { "X-Admin-Key": adminKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ message, mode, confirm_count: confirmCount ?? null }),
+      });
+      if (res.status === 409) {
+        const body = await res.json().catch(() => ({}));
+        // Extract the recipient count from the detail message.
+        const m = /(\d+)\s+destinataires/.exec(body.detail || "");
+        const n = m ? parseInt(m[1], 10) : null;
+        setBcPendingCount(n);
+        setBcStatus(`⚠️ Confirme l'envoi à ${n ?? "?"} fondateurs (clique "Confirmer l'envoi").`);
+        setBcSending(false);
+        return;
+      }
+      const data = await res.json();
+      if (!res.ok) {
+        setBcStatus(`Erreur : ${data.detail || res.status}`);
+      } else if (mode === "test") {
+        setBcStatus(`✅ Test envoyé à ton compte (${data.delivered}/1). Vérifie Telegram, puis "Envoyer à tous".`);
+      } else {
+        setBcStatus(`✅ Diffusé : ${data.delivered}/${data.recipients} (${data.failed} échecs).`);
+        setBcPendingCount(null);
+        setBcMessage("");
+      }
+    } catch (e) {
+      setBcStatus(`Erreur : ${e}`);
+    } finally {
+      setBcSending(false);
+    }
+  }
+
   if (!authenticated) {
     return (
       <div className="min-h-screen bg-[#FFF8F0] flex items-center justify-center px-4">
@@ -368,6 +411,51 @@ export default function AdminPage() {
             <button onClick={() => triggerJob("expire_stale_data")} className="bg-gray-500 text-white text-sm px-4 py-2 rounded-lg hover:bg-gray-600">Expire Data</button>
           </div>
           {triggerResult && <div className="mt-2 text-xs text-gray-500">{triggerResult}</div>}
+        </div>
+
+        {/* Telegram broadcast */}
+        <div className="bg-white rounded-xl border border-gray-100 p-4 mb-6">
+          <h2 className="font-semibold mb-1">📣 Message Telegram aux fondateurs</h2>
+          <p className="text-xs text-gray-400 mb-3">
+            Envoi ponctuel (update beta, annonce). Teste d&apos;abord sur ton compte,
+            puis diffuse. Les utilisateurs en pause sont exclus automatiquement.
+          </p>
+          <textarea
+            value={bcMessage}
+            onChange={(e) => { setBcMessage(e.target.value); setBcPendingCount(null); setBcStatus(""); }}
+            rows={5}
+            maxLength={3500}
+            placeholder={"Mise à jour J+5 : 52 fondateurs en une semaine 🙏\n\nIl reste 48 places gratuites à vie.\n96% des alertes validées 👍\n\n→ globegenius.app"}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono resize-y mb-1"
+          />
+          <div className="text-[11px] text-gray-400 mb-3">{bcMessage.length}/3500 · texte brut (pas de Markdown)</div>
+          <div className="flex flex-wrap gap-2 items-center">
+            <button
+              onClick={() => broadcast("test")}
+              disabled={bcSending || !bcMessage.trim()}
+              className="bg-gray-700 text-white text-sm px-4 py-2 rounded-lg hover:bg-gray-800 disabled:opacity-40"
+            >
+              📩 M&apos;envoyer le test
+            </button>
+            {bcPendingCount === null ? (
+              <button
+                onClick={() => broadcast("send")}
+                disabled={bcSending || !bcMessage.trim()}
+                className="bg-[#FF6B47] text-white text-sm px-4 py-2 rounded-lg hover:bg-[#E55A38] disabled:opacity-40"
+              >
+                📣 Préparer l&apos;envoi à tous
+              </button>
+            ) : (
+              <button
+                onClick={() => broadcast("send", bcPendingCount)}
+                disabled={bcSending}
+                className="bg-red-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-red-700 disabled:opacity-40"
+              >
+                ✅ Confirmer l&apos;envoi à {bcPendingCount} fondateurs
+              </button>
+            )}
+          </div>
+          {bcStatus && <div className="mt-2 text-xs text-gray-600">{bcStatus}</div>}
         </div>
 
         {/* Scrape logs */}

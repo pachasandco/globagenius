@@ -1132,6 +1132,31 @@ async def send_admin_text(message: str) -> bool:
         return False
 
 
+async def send_broadcast(message: str, chat_ids: list[int]) -> tuple[int, int]:
+    """Send a plain-text broadcast to a list of chat_ids. Returns
+    (delivered, failed). Sequential with a small delay to stay well
+    under Telegram's ~30 msg/s global limit and avoid a bot ban; at
+    beta scale (tens of recipients) this is plenty fast.
+
+    Plain text (no parse_mode) so the operator's message can't break
+    on stray Markdown characters mid-send."""
+    import asyncio as _asyncio
+    bot = _get_bot()
+    if not bot:
+        return 0, len(chat_ids)
+    delivered = 0
+    failed = 0
+    for cid in chat_ids:
+        try:
+            await bot.send_message(chat_id=cid, text=message)
+            delivered += 1
+        except Exception as e:
+            failed += 1
+            logger.warning(f"Broadcast send failed for chat {cid}: {e}")
+        await _asyncio.sleep(0.05)  # ~20 msg/s, safely under the limit
+    return delivered, failed
+
+
 async def send_admin_markdown(message: str) -> bool:
     bot = _get_bot()
     if not bot or not settings.TELEGRAM_ADMIN_CHAT_ID:

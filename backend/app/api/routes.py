@@ -2660,6 +2660,104 @@ def admin_feedback(request: Request, days: int = 30, limit: int = 200):
     }
 
 
+class AdminBroadcastRequest(BaseModel):
+    message: str
+    # "test"  → send only to the admin's own Telegram chat (preview)
+    # "send"  → real broadcast to all eligible founders
+    mode: str = "test"
+    # For mode="send", the client must echo the exact recipient count it
+    # was shown, as a fat-finger guard. Ignored for test mode.
+    confirm_count: int | None = None
+
+
+@router.post("/api/admin/broadcast")
+async def admin_broadcast(req: AdminBroadcastRequest, request: Request):
+    """Send a one-off plain-text Telegram message to beta founders.
+
+    Guard rails:
+      - admin-only (X-Admin-Key)
+      - mode="test" sends ONLY to TELEGRAM_ADMIN_CHAT_ID so the operator
+        previews the real rendering before any mass send
+      - mode="send" requires confirm_count to equal the live recipient
+        count (fat-finger guard against an accidental blast)
+      - recipients = users with a linked Telegram AND not currently
+        paused (respects the user's pause choice)
+      - every send (test or real) is recorded in broadcast_log
+    """
+    _require_admin(request)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    msg = (req.message or "").strip()
+    if not msg:
+        raise HTTPException(status_code=400, detail="message vide")
+    if len(msg) > 3500:
+        raise HTTPException(status_code=400, detail="message trop long (max 3500 caractères)")
+
+    from app.notifications.telegram import send_broadcast
+    from app.config import settings as _settings
+
+    # ── TEST mode: only the admin's own chat ──
+    if req.mode == "test":
+        admin_chat = _settings.TELEGRAM_ADMIN_CHAT_ID
+        if not admin_chat:
+            raise HTTPException(status_code=400, detail="TELEGRAM_ADMIN_CHAT_ID non configuré")
+        delivered, failed = await send_broadcast(msg, [int(admin_chat)])
+        try:
+            db.table("broadcast_log").insert({
+                "message": msg, "kind": "test",
+                "recipients": 1, "delivered": delivered, "failed": failed,
+            }).execute()
+        except Exception:
+            pass
+        return {"mode": "test", "recipients": 1, "delivered": delivered, "failed": failed}
+
+    # ── SEND mode: all eligible founders ──
+    now_iso = datetime.now(timezone.utc).isoformat()
+    prefs = (
+        db.table("user_preferences")
+        .select("telegram_chat_id,alerts_paused_until")
+        .not_.is_("telegram_chat_id", "null")
+        .execute()
+        .data
+        or []
+    )
+    chat_ids: list[int] = []
+    for p in prefs:
+        cid = p.get("telegram_chat_id")
+        if not cid:
+            continue
+        # Skip users whose alerts are currently paused — respect their choice.
+        paused = p.get("alerts_paused_until")
+        if paused:
+            try:
+                if datetime.fromisoformat(paused.replace("Z", "+00:00")) > datetime.now(timezone.utc):
+                    continue
+            except (ValueError, TypeError):
+                pass
+        chat_ids.append(int(cid))
+
+    recipient_count = len(chat_ids)
+    if req.confirm_count is None or req.confirm_count != recipient_count:
+        # Don't send — tell the client the real count so it can confirm.
+        raise HTTPException(
+            status_code=409,
+            detail=f"Confirmation requise : {recipient_count} destinataires. "
+                   f"Renvoie avec confirm_count={recipient_count}.",
+        )
+
+    delivered, failed = await send_broadcast(msg, chat_ids)
+    try:
+        db.table("broadcast_log").insert({
+            "message": msg, "kind": "broadcast",
+            "recipients": recipient_count, "delivered": delivered, "failed": failed,
+        }).execute()
+    except Exception:
+        pass
+    logger.info(f"[broadcast] sent to {delivered}/{recipient_count} founders ({failed} failed)")
+    return {"mode": "send", "recipients": recipient_count, "delivered": delivered, "failed": failed}
+
+
 @router.get("/api/admin/ctr")
 def admin_ctr(request: Request, days: int = 30):
     """Click-through rate dashboard for Telegram alerts."""
@@ -2947,11 +3045,14 @@ def recent_deals():
 
 @router.get("/api/stats/beta-count")
 def beta_count():
-    """Public endpoint: how many "founders" have linked Telegram.
+    """Public endpoint: how many founder places are taken.
 
-    A founder = a user with a non-null telegram_chat_id in their
-    preferences. The Telegram-linking step is the real activation
-    barrier; signups without it are tourists, not founders.
+    2026-05-25: counts SIGNUPS (every created account), not just
+    Telegram-linked users. Each signup reserves a lifetime founder
+    place — a user who hasn't linked Telegram yet still holds their
+    spot and may activate in the coming days, so "places restantes"
+    = MAX_FOUNDERS - signups. This keeps the public counter consistent
+    with the founder messaging ("X fondateurs / Y places restantes").
 
     Cached client-side via standard HTTP semantics — this endpoint
     runs at every page render, so kept dead simple (one count query).
@@ -2960,9 +3061,8 @@ def beta_count():
         return {"founders_count": 0, "max_founders": MAX_FOUNDERS}
     try:
         resp = (
-            db.table("user_preferences")
-            .select("user_id", count="exact")
-            .not_.is_("telegram_chat_id", "null")
+            db.table("users")
+            .select("id", count="exact")
             .limit(1)
             .execute()
         )

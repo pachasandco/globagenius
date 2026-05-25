@@ -96,6 +96,45 @@ export interface FeedbackResponse {
 export const listFeedback = (days = 30, limit = 200) =>
   adminFetch<FeedbackResponse>(`/api/admin/feedback?days=${days}&limit=${limit}`);
 
+export interface BroadcastResult {
+  ok: boolean;
+  mode?: "test" | "send";
+  recipients?: number;
+  delivered?: number;
+  failed?: number;
+  // On a 409 confirmation-required response, the backend tells us the
+  // real recipient count to echo back via confirm_count.
+  needsConfirm?: boolean;
+  detail?: string;
+}
+
+/**
+ * Send a Telegram broadcast.
+ * - mode "test": delivers only to the admin's own chat (preview).
+ * - mode "send": real broadcast; the backend returns HTTP 409 with the
+ *   live recipient count until confirm_count matches it (fat-finger guard).
+ */
+export async function broadcastMessage(
+  message: string,
+  mode: "test" | "send",
+  confirmCount?: number
+): Promise<BroadcastResult> {
+  const res = await fetch(`${API_URL}/api/admin/broadcast`, {
+    method: "POST",
+    headers: { "X-Admin-Key": adminKey(), "Content-Type": "application/json" },
+    body: JSON.stringify({ message, mode, confirm_count: confirmCount ?? null }),
+  });
+  if (res.status === 409) {
+    const body = await res.json().catch(() => ({}));
+    return { ok: false, needsConfirm: true, detail: body.detail || "Confirmation requise" };
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    return { ok: false, detail: body.detail || `HTTP ${res.status}` };
+  }
+  return { ok: true, ...(await res.json()) };
+}
+
 export function setAdminKey(key: string) {
   localStorage.setItem("gg_admin_key", key);
 }
