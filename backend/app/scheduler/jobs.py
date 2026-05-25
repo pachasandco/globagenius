@@ -158,31 +158,6 @@ def get_scheduler_jobs() -> list[dict]:
             "minute": 0,
             "timezone": "Europe/Paris",
         },
-        # ── CONTRIBUTOR BADGES : tous les jours à 8h30 ──
-        # Attribue le badge fondateur ("OG") aux users ayant atteint le
-        # seuil de contributions réelles (10 alertes distinctes notées avec
-        # un feedback réfléchi ≥20s après l'envoi). Idempotent, ne révoque
-        # jamais. Tourne avant les emails de 9h/10h.
-        {
-            "id": "daily_contributor_badges",
-            "func": job_grant_contributor_badges,
-            "trigger": "cron",
-            "hour": 8,
-            "minute": 30,
-            "timezone": "Europe/Paris",
-        },
-        # ── OG LEADERBOARD : tous les lundis à 10h (Europe/Paris) ──
-        # Email Brevo à TOUS les fondateurs avec le podium des OGs (par
-        # prénom saisi dans l'admin) pour susciter la compétition.
-        {
-            "id": "weekly_og_leaderboard",
-            "func": job_weekly_og_leaderboard,
-            "trigger": "cron",
-            "day_of_week": "mon",
-            "hour": 10,
-            "minute": 0,
-            "timezone": "Europe/Paris",
-        },
         # ── TIER 1 : toutes les 20 min (CDG + ORY via endpoints directs LCC) ──
         # Ryanair + Transavia directs → données quasi temps-réel pour les routes chaudes.
         # Polling intensif justifié : ces routes contiennent les mistake fares éphémères.
@@ -1784,81 +1759,6 @@ async def job_send_onboarding_emails():
     if counts.get("j1_relance_sent") or counts.get("j7_inactivity_sent"):
         try:
             await send_admin_text(summary)
-        except Exception:
-            pass
-
-
-async def job_grant_contributor_badges():
-    """Daily — grant the founder ("OG") badge to users who reached the
-    real-contribution threshold (BADGE_THRESHOLD distinct alerts with a
-    considered, ≥20s-delayed feedback). Idempotent: only flips badge=false
-    rows, never revokes. display_name is left untouched (set manually in
-    the admin console)."""
-    if not db:
-        return
-    from app.analysis.contributors import count_real_contributions, eligible_for_badge
-
-    try:
-        counts = count_real_contributions(db)
-        eligible = eligible_for_badge(counts)
-        if not eligible:
-            logger.info("contributor badges: nobody eligible yet")
-            return
-        # Only update users who don't already have the badge, so we don't
-        # rewrite rows every day (and the log line reflects real grants).
-        existing = (
-            db.table("users")
-            .select("id")
-            .eq("badge", True)
-            .in_("id", eligible)
-            .execute()
-            .data
-            or []
-        )
-        already = {u["id"] for u in existing}
-        to_grant = [uid for uid in eligible if uid not in already]
-        for uid in to_grant:
-            db.table("users").update({"badge": True}).eq("id", uid).execute()
-        if to_grant:
-            logger.info("contributor badges: granted %d new badge(s)", len(to_grant))
-            try:
-                await send_admin_text(
-                    f"🏅 {len(to_grant)} nouveau(x) badge(s) OG attribué(s) "
-                    f"(seuil {len(eligible)} fondateurs éligibles au total). "
-                    f"Pense à renseigner leur prénom dans /admin/users."
-                )
-            except Exception:
-                pass
-    except Exception as e:
-        logger.exception("job_grant_contributor_badges failed: %s", e)
-
-
-async def job_weekly_og_leaderboard():
-    """Monday 10:00 Europe/Paris — email the OG leaderboard (podium of
-    badged contributors by their admin-set first name) to every founder,
-    to spark friendly competition. All logic + Brevo send lives in
-    onboarding_emails.send_og_leaderboard_email."""
-    from app.notifications.onboarding_emails import send_og_leaderboard_email
-    try:
-        res = await send_og_leaderboard_email()
-    except Exception as e:
-        logger.exception("weekly_og_leaderboard failed")
-        try:
-            await send_admin_alert(f"OG leaderboard email crashed: {e}")
-        except Exception:
-            pass
-        return
-    logger.info(
-        "OG leaderboard — recipients=%s delivered=%s podium=%s skipped=%s",
-        res.get("recipients"), res.get("delivered"),
-        res.get("podium"), res.get("skipped"),
-    )
-    if not res.get("skipped") and res.get("delivered"):
-        try:
-            await send_admin_text(
-                f"📨 Classement OG envoyé à {res.get('delivered')} fondateurs "
-                f"({res.get('podium')} au podium)."
-            )
         except Exception:
             pass
 

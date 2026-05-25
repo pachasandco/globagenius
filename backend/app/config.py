@@ -52,9 +52,6 @@ class Settings:
     BREVO_FEEDBACK_NURTURE_J7_TEMPLATE_ID: int = int(os.getenv("BREVO_FEEDBACK_NURTURE_J7_TEMPLATE_ID", "10") or 0)
     BREVO_FEEDBACK_NURTURE_J14_TEMPLATE_ID: int = int(os.getenv("BREVO_FEEDBACK_NURTURE_J14_TEMPLATE_ID", "11") or 0)
     BREVO_OPEN_FEEDBACK_J15_TEMPLATE_ID: int = int(os.getenv("BREVO_OPEN_FEEDBACK_J15_TEMPLATE_ID", "12") or 0)
-    # Weekly OG leaderboard email to all founders (Monday). 0 = disabled
-    # (no template configured yet) → the cron skips silently.
-    BREVO_OG_LEADERBOARD_TEMPLATE_ID: int = int(os.getenv("BREVO_OG_LEADERBOARD_TEMPLATE_ID", "0") or 0)
     BREVO_SENDER_EMAIL: str = os.getenv("BREVO_SENDER_EMAIL", "contact@globegenius.app")
     BREVO_SENDER_NAME: str = os.getenv("BREVO_SENDER_NAME", "Globe Genius")
     SCRAPE_FLIGHTS_INTERVAL_HOURS: int = int(os.getenv("SCRAPE_FLIGHTS_INTERVAL_HOURS", "6"))
