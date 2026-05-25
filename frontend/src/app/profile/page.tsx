@@ -194,6 +194,11 @@ export default function ProfilePage() {
   const [telegramConnected, setTelegramConnected] = useState<boolean | null>(null);
   const [telegramLinking, setTelegramLinking] = useState(false);
   const [telegramLinkOpened, setTelegramLinkOpened] = useState(false);
+  // OG founder badge
+  const [hasBadge, setHasBadge] = useState(false);
+  const [badgeName, setBadgeName] = useState<string | null>(null);
+  const [badgeNumber, setBadgeNumber] = useState<number | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
   const router = useRouter();
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -245,6 +250,11 @@ export default function ProfilePage() {
           setMinDiscount(prefs.min_discount);
         } else {
           setMinDiscount(40);
+        }
+        if (prefs.badge) {
+          setHasBadge(true);
+          setBadgeName(prefs.display_name ?? null);
+          setBadgeNumber(prefs.badge_number ?? null);
         }
       })
       .catch(() => {
@@ -310,6 +320,26 @@ export default function ProfilePage() {
       setError("Impossible de générer le lien Telegram. Réessaie dans un instant.");
     } finally {
       setTelegramLinking(false);
+    }
+  }
+
+  // Public shareable badge URL. Falls back to the OG number as the slug
+  // when no first name has been set yet, so the link always works.
+  const badgeSlug = (badgeName && badgeName.trim()) || `OG-${badgeNumber ?? ""}`;
+  const badgeUrl =
+    typeof window !== "undefined" && badgeNumber
+      ? `${window.location.origin}/badge/${badgeNumber}/${encodeURIComponent(badgeSlug)}`
+      : "";
+  const shareText = `Je suis OG #${badgeNumber} 🏅 membre fondateur de GlobeGenius !`;
+
+  async function copyBadgeLink() {
+    if (!badgeUrl) return;
+    try {
+      await navigator.clipboard.writeText(badgeUrl);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2000);
+    } catch {
+      /* clipboard blocked — the visible link is still selectable */
     }
   }
 
@@ -510,6 +540,103 @@ export default function ProfilePage() {
         {success && (
           <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">
             ✅ {success}
+          </div>
+        )}
+
+        {/* ── OG founder badge (only for badged members) ── */}
+        {hasBadge && (
+          <div className="mb-10 rounded-2xl p-6 text-center bg-[#0A1F3D] border border-[#E8C37E]/40">
+            <div
+              className="mx-auto mb-4 relative flex items-center justify-center rounded-full"
+              style={{
+                width: 132,
+                height: 132,
+                background: "#0A1F3D",
+                border: "2px solid #E8C37E",
+                boxShadow: "0 0 0 5px #0A1F3D, 0 0 0 6px rgba(232,195,126,0.35)",
+              }}
+            >
+              <div
+                className="flex flex-col items-center justify-center rounded-full"
+                style={{
+                  width: 96,
+                  height: 96,
+                  border: "1px solid rgba(232,195,126,0.45)",
+                }}
+              >
+                <div className="text-[#FFF8F0] font-bold leading-none" style={{ fontSize: 26, letterSpacing: 2 }}>
+                  OG
+                </div>
+                {badgeNumber && (
+                  <div className="text-[#E8C37E] font-bold" style={{ fontSize: 18 }}>
+                    #{badgeNumber}
+                  </div>
+                )}
+              </div>
+            </div>
+            <h2 className="text-white font-semibold text-lg mb-1">
+              {badgeName ? `${badgeName}, tu es OG` : "Tu es OG"}
+              {badgeNumber ? ` #${badgeNumber}` : ""} 🏅
+            </h2>
+            <p className="text-gray-400 text-sm max-w-md mx-auto mb-5">
+              Membre fondateur de l&apos;Active Beta — Premium à vie et features
+              en avant-première. Partage ton badge :
+            </p>
+
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <button
+                onClick={copyBadgeLink}
+                className="px-4 py-2 rounded-lg bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white text-sm font-semibold transition-colors"
+              >
+                {shareCopied ? "✓ Lien copié" : "🔗 Copier le lien"}
+              </button>
+              {badgeUrl && (
+                <>
+                  <a
+                    href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(badgeUrl)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors"
+                  >
+                    X
+                  </a>
+                  <a
+                    href={`https://wa.me/?text=${encodeURIComponent(`${shareText} ${badgeUrl}`)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors"
+                  >
+                    WhatsApp
+                  </a>
+                  <a
+                    href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(badgeUrl)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors"
+                  >
+                    Facebook
+                  </a>
+                  <a
+                    href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(badgeUrl)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors"
+                  >
+                    LinkedIn
+                  </a>
+                </>
+              )}
+            </div>
+            {badgeUrl && (
+              <a
+                href={badgeUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block mt-4 text-xs text-gray-500 hover:text-gray-300 underline break-all"
+              >
+                {badgeUrl}
+              </a>
+            )}
           </div>
         )}
 

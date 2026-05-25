@@ -6,6 +6,7 @@ import {
   listUsers,
   grantPremium,
   revokePremium,
+  setBadge,
   resetPrefs,
   deleteUser,
   hasAdminKey,
@@ -33,6 +34,9 @@ export default function AdminUsersPage() {
   const [selected, setSelected] = useState<AdminUser | null>(null);
   const [grantExpiresAt, setGrantExpiresAt] = useState("");
   const [grantReason, setGrantReason] = useState("");
+  const [badgeUser, setBadgeUser] = useState<AdminUser | null>(null);
+  const [badgeName, setBadgeName] = useState("");
+  const [badgeSubmitting, setBadgeSubmitting] = useState(false);
   const [deletingUser, setDeletingUser] = useState<AdminUser | null>(null);
   const [deleteConfirmEmail, setDeleteConfirmEmail] = useState("");
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
@@ -113,6 +117,34 @@ export default function AdminUsersPage() {
       await reload();
     } catch (e) {
       alert(`Failed: ${e instanceof Error ? e.message : "error"}`);
+    }
+  }
+
+  function openBadge(user: AdminUser) {
+    setBadgeUser(user);
+    setBadgeName(user.display_name || "");
+  }
+
+  function closeBadge() {
+    setBadgeUser(null);
+    setBadgeName("");
+    setBadgeSubmitting(false);
+  }
+
+  async function handleSetBadge(grant: boolean) {
+    if (!badgeUser) return;
+    if (grant && !badgeName.trim()) {
+      alert("Renseigne le prénom avant d'attribuer le badge.");
+      return;
+    }
+    setBadgeSubmitting(true);
+    try {
+      await setBadge(badgeUser.id, grant, badgeName.trim() || null);
+      closeBadge();
+      await reload();
+    } catch (e) {
+      alert(`Failed: ${e instanceof Error ? e.message : "error"}`);
+      setBadgeSubmitting(false);
     }
   }
 
@@ -236,6 +268,7 @@ export default function AdminUsersPage() {
                 <th className="p-3">Tier</th>
                 <th className="p-3">Stripe</th>
                 <th className="p-3">TG</th>
+                <th className="p-3">Badge</th>
                 <th className="p-3">Grant</th>
                 <th className="p-3">Actions</th>
               </tr>
@@ -271,6 +304,19 @@ export default function AdminUsersPage() {
                   <td className="p-3">{u.stripe_customer_id ? "✓" : "—"}</td>
                   <td className="p-3">{u.telegram_connected ? "✓" : "—"}</td>
                   <td className="p-3">
+                    {u.badge ? (
+                      <span
+                        className="text-xs text-amber-700"
+                        title={u.display_name || undefined}
+                      >
+                        🏅 {u.badge_number ? `#${u.badge_number} ` : ""}
+                        {u.display_name || "?"}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="p-3">
                     {u.has_grant ? (
                       <span className="text-xs text-green-600">
                         ✓{" "}
@@ -298,6 +344,16 @@ export default function AdminUsersPage() {
                         Grant
                       </button>
                     )}
+                    <button
+                      onClick={() => openBadge(u)}
+                      className={`text-xs px-2 py-1 rounded ${
+                        u.badge
+                          ? "bg-amber-100 hover:bg-amber-200 text-amber-800"
+                          : "bg-amber-50 hover:bg-amber-100 text-amber-700"
+                      }`}
+                    >
+                      {u.badge ? "🏅 Badge" : "Badge"}
+                    </button>
                     <button
                       onClick={() => handleReset(u)}
                       className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded"
@@ -363,6 +419,78 @@ export default function AdminUsersPage() {
                   className="flex-1 border border-gray-200 text-gray-700 py-2 rounded-lg"
                 >
                   Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {badgeUser && (
+          <div
+            className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50"
+            onClick={closeBadge}
+          >
+            <div
+              className="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="text-lg font-semibold mb-1">
+                🏅 Badge OG {badgeUser.badge_number ? `#${badgeUser.badge_number}` : ""}
+              </h2>
+              <p className="text-sm text-gray-500 mb-3">{badgeUser.email}</p>
+              {!badgeUser.badge && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+                  Attribuer le badge va : assigner le prochain numéro OG,
+                  accorder le <strong>Premium à vie</strong>, et envoyer un
+                  message Telegram au membre (s’il est connecté).
+                </p>
+              )}
+              <label className="text-sm text-gray-500">
+                Prénom affiché sur le badge
+              </label>
+              <input
+                type="text"
+                value={badgeName}
+                onChange={(e) => setBadgeName(e.target.value)}
+                placeholder="Prénom"
+                autoFocus
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 mb-2 mt-1"
+              />
+              {badgeName.trim() && badgeUser.badge_number && (
+                <p className="text-xs text-gray-400 mb-4">
+                  Visuel partageable :{" "}
+                  <a
+                    href={`/badge/${badgeUser.badge_number}/${encodeURIComponent(badgeName.trim())}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-cyan-600 underline break-all"
+                  >
+                    /badge/{badgeUser.badge_number}/{badgeName.trim()}
+                  </a>
+                </p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleSetBadge(true)}
+                  disabled={badgeSubmitting}
+                  className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-semibold py-2 rounded-lg transition-all disabled:opacity-40"
+                >
+                  {badgeUser.badge ? "Mettre à jour" : "Attribuer le badge"}
+                </button>
+                {badgeUser.badge && (
+                  <button
+                    onClick={() => handleSetBadge(false)}
+                    disabled={badgeSubmitting}
+                    className="flex-1 bg-red-50 hover:bg-red-100 text-red-600 py-2 rounded-lg disabled:opacity-40"
+                  >
+                    Retirer
+                  </button>
+                )}
+                <button
+                  onClick={closeBadge}
+                  className="border border-gray-200 text-gray-700 px-4 py-2 rounded-lg"
+                >
+                  Annuler
                 </button>
               </div>
             </div>

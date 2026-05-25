@@ -93,6 +93,11 @@ export interface UserPreferences {
   blocked_destinations: string[];
   flight_trip_types: FlightTripType[];
   include_split_tickets: boolean;
+  // OG founder badge (surfaced by the preferences endpoint so the profile
+  // can render the badge + share button). Absent/false for non-OG users.
+  badge?: boolean;
+  display_name?: string | null;
+  badge_number?: number | null;
 }
 
 export function getPreferences(userId: string) {

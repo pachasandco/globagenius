@@ -11,6 +11,9 @@ export interface AdminUser {
   has_grant: boolean;
   grant_expires_at: string | null;
   is_admin: boolean;
+  display_name: string | null;
+  badge: boolean;
+  badge_number: number | null;
 }
 
 function adminKey(): string {
@@ -59,6 +62,16 @@ export const revokePremium = (id: string) =>
 // updateMinDiscount removed in v10 — admin override of user-controlled
 // min_discount caused silent overrides of profile choices. The backend
 // endpoint is gone too.
+
+export const setBadge = (
+  id: string,
+  badge: boolean,
+  display_name?: string | null
+) =>
+  adminFetch<{ ok: boolean; user: AdminUser }>(`/api/admin/users/${id}/badge`, {
+    method: "PUT",
+    body: JSON.stringify({ badge, display_name: display_name ?? null }),
+  });
 
 export const resetPrefs = (id: string) =>
   adminFetch(`/api/admin/users/${id}/reset_prefs`, { method: "POST" });
