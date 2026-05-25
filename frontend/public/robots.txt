@@ -1,14 +1,20 @@
+# Globe Genius — robots.txt
+#
+# Private user-facing routes (/home, /login, /signup, /onboarding,
+# /dashboard, /profile, /reset-password) are deliberately NOT disallowed
+# here even though they shouldn't appear in search results. They each
+# carry a `noindex` meta tag (see app/<route>/layout.tsx). Blocking them
+# in robots.txt would prevent Googlebot from reading the noindex tag,
+# causing the "Indexed though blocked by robots.txt" anti-pattern.
+#
+# What we still block here :
+#  - /admin : sensitive admin panel (defense in depth)
+#  - /api   : JSON API, never useful in search results
+#  - /r/    : short-link redirect routes
 User-agent: *
 Allow: /
 Disallow: /admin
 Disallow: /api
-Disallow: /onboarding
-Disallow: /dashboard
-Disallow: /home
-Disallow: /login
-Disallow: /signup
-Disallow: /profile
-Disallow: /reset-password
 Disallow: /r/
 
 User-agent: GPTBot
