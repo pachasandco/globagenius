@@ -308,6 +308,45 @@ export async function getDestinationGuide(iata: string): Promise<DestinationGuid
   return res.json();
 }
 
+/** Summary row returned by `/api/destinations` — lighter than the
+ *  full DestinationGuide. Used by landing/home and the "Other
+ *  destinations" cross-link block on each destination page. */
+export interface DestinationSummary {
+  iata: string;
+  destination: string;
+  title: string;
+  cover_photo: string | null;
+}
+
+/**
+ * List destinations that have a generated article. Used for cross-link
+ * blocks (e.g. "Other destinations" at the bottom of /destination/[slug]).
+ *
+ * `random=true` is helpful when we want a fresh selection per request
+ * for a "discover" feel. We cache for 5 minutes to keep the API hot
+ * spot bounded on a deal page that may receive bursts of SEO traffic.
+ */
+export async function getDestinations(opts: {
+  limit?: number;
+  random?: boolean;
+} = {}): Promise<DestinationSummary[]> {
+  const { limit = 50, random = false } = opts;
+  const qs = new URLSearchParams();
+  qs.set("limit", String(limit));
+  if (random) qs.set("random", "true");
+
+  try {
+    const res = await fetch(`${API_URL}/api/destinations?${qs.toString()}`, {
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.items || []) as DestinationSummary[];
+  } catch {
+    return [];
+  }
+}
+
 
 // ─── Beta cohort counter ───
 

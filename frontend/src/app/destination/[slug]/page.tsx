@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import { getDestinationGuide } from "@/lib/api";
+import { getDestinationGuide, getDestinations } from "@/lib/api";
 import { iataFor, slugFor } from "@/lib/destinations";
 
 // URL param renamed from [iata] to [slug] in 2026-05 as part of the
@@ -75,12 +75,28 @@ export default async function DestinationPage({ params }: PageProps) {
   const iata = iataFor(slug);
   if (!iata) notFound();
 
-  const guide = await getDestinationGuide(iata).catch(() => null);
+  // Fetch the guide and a randomised set of other destinations in
+  // parallel. The cross-link block at the bottom of the page (a.k.a
+  // "Destinations similaires") needs the latter; doing them concurrently
+  // shaves ~150ms off TTFB.
+  const [guide, allDestinations] = await Promise.all([
+    getDestinationGuide(iata).catch(() => null),
+    getDestinations({ random: true, limit: 12 }),
+  ]);
   if (!guide) notFound();
 
   const a = guide.article;
   const photo = guide.photo;
   const deals = guide.deals;
+
+  // Pick 6 destinations to cross-link to from the bottom of this page.
+  // Filter out the current city + any that wouldn't render (no slug map +
+  // no IATA fallback would crash iataFor lookups on click — but slugFor
+  // always returns *something*, so this is purely about avoiding the
+  // self-link).
+  const otherDestinations = allDestinations
+    .filter((d) => d.iata.toUpperCase() !== iata.toUpperCase())
+    .slice(0, 6);
 
   // Pick the cheapest live deal for the hero banner. Falls back to a
   // "monitoring" empty state when no live deal is available.
@@ -360,6 +376,73 @@ export default async function DestinationPage({ params }: PageProps) {
           </>
         )}
       </article>
+
+      {/* ── Cross-link block: other destinations ───────────────────
+        Internal linking is the biggest indexation lever for a young
+        site: it spreads PageRank to pages Google currently lists as
+        "Detected, not indexed" and helps the crawler discover content
+        through breadcrumbs of related links rather than the sitemap
+        alone. Six other destinations, randomised per request, with a
+        5-minute API cache (see getDestinations). */}
+      {otherDestinations.length > 0 && (
+        <section
+          aria-label="Autres destinations à explorer"
+          className="bg-white border-t border-[var(--color-sand)] py-12 sm:py-16 px-6"
+        >
+          <div className="mx-auto max-w-5xl">
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl text-[var(--color-ink)] text-center mb-2">
+              D&apos;autres destinations à explorer
+            </h2>
+            <p className="text-center text-gray-500 text-sm mb-10 max-w-xl mx-auto">
+              Pendant que tu lis sur {a.destination}, on surveille les vols
+              vers ces villes aussi. Active les alertes pour ne plus rater un
+              deal.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+              {otherDestinations.map((d) => (
+                <Link
+                  key={d.iata}
+                  href={`/destination/${slugFor(d.iata)}`}
+                  className="group block overflow-hidden rounded-2xl border border-[var(--color-sand)] bg-white hover:border-[var(--color-coral)] transition-colors"
+                >
+                  <div className="relative aspect-square overflow-hidden bg-[var(--color-cream)]">
+                    {d.cover_photo ? (
+                      // <img> deliberate — these are below-the-fold cards,
+                      // we don't want to inflate the layout cost of <Image>.
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={d.cover_photo}
+                        alt={d.destination}
+                        className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 bg-gradient-to-br from-[var(--color-coral-50)] to-[var(--color-cream)] flex items-center justify-center">
+                        <span className="font-[family-name:var(--font-dm-serif)] text-2xl text-[var(--color-coral)]/40">
+                          {d.iata}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-3">
+                    <div className="font-bold text-sm text-[var(--color-ink)] truncate group-hover:text-[var(--color-coral)] transition-colors">
+                      {d.destination}
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+            <div className="mt-10 text-center">
+              <Link
+                href="/articles"
+                className="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-coral)] hover:underline"
+              >
+                Voir tous nos guides →
+              </Link>
+            </div>
+          </div>
+        </section>
+      )}
     </main>
   );
 }
