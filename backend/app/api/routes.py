@@ -2028,11 +2028,12 @@ def _og_telegram_message(display_name: str | None, badge_number: int, badge_url:
         "Ce badge récompense les tout premiers membres de l'Active Beta : "
         "ceux qui ont utilisé le produit, donné des retours honnêtes sur la "
         "qualité des alertes, et aidé à façonner GlobeGenius dès ses débuts. "
-        "Sans toi, on n'en serait pas là — merci. 🙏\n\n"
+        "Merci. 🙏\n\n"
         "Ce que ça t'apporte :\n"
         "• Accès Premium gratuit à vie (même après le lancement officiel).\n"
         "• Les nouvelles features en avant-première, avant tout le monde.\n"
-        "• Ton statut de membre fondateur, numéroté et reconnu.\n\n"
+        "• Ton statut de membre fondateur, numéroté et reconnu.\n"
+        "• Des avantages si le projet grandit et devient un succès.\n\n"
         f"Ton badge à partager : {badge_url}"
     )
 
