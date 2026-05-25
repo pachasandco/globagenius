@@ -1676,7 +1676,7 @@ class AdminGrantPremiumRequest(BaseModel):
 class AdminBadgeRequest(BaseModel):
     # Toggle the "Membre fondateur" contributor badge and set the display
     # name (first name) the founder collected manually. display_name is what
-    # appears on the shareable /badge/<name> visual.
+    # appears on the shareable /badge/<number>/<name> visual.
     badge: bool
     display_name: str | None = None
 
@@ -2115,8 +2115,13 @@ async def admin_set_badge(user_id: str, req: AdminBadgeRequest, request: Request
                 from app.notifications.telegram import send_user_text
 
                 display = user_row.get("display_name")
+                # Route is /badge/[number]/[name]; fall back to the OG
+                # number as the name slug when no first name is set yet.
                 slug = display or f"OG-{badge_number}"
-                badge_url = f"{settings.FRONTEND_URL.rstrip('/')}/badge/{quote(str(slug))}"
+                badge_url = (
+                    f"{settings.FRONTEND_URL.rstrip('/')}"
+                    f"/badge/{badge_number}/{quote(str(slug))}"
+                )
                 msg = _og_telegram_message(display, int(badge_number), badge_url)
                 side_effects["telegram_sent"] = await send_user_text(int(chat_id), msg)
         except Exception as e:
