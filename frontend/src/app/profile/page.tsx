@@ -546,30 +546,26 @@ export default function ProfilePage() {
         {/* ── OG founder badge (only for badged members) ── */}
         {hasBadge && (
           <div className="mb-10 rounded-2xl p-6 text-center bg-[#0A1F3D] border border-[#E8C37E]/40">
-            <div
-              className="mx-auto mb-4 relative flex items-center justify-center rounded-full"
-              style={{
-                width: 132,
-                height: 132,
-                background: "#0A1F3D",
-                border: "2px solid #E8C37E",
-                boxShadow: "0 0 0 5px #0A1F3D, 0 0 0 6px rgba(232,195,126,0.35)",
-              }}
-            >
-              <div
-                className="flex flex-col items-center justify-center rounded-full"
-                style={{
-                  width: 96,
-                  height: 96,
-                  border: "1px solid rgba(232,195,126,0.45)",
-                }}
-              >
-                <div className="text-[#FFF8F0] font-bold leading-none" style={{ fontSize: 26, letterSpacing: 2 }}>
-                  OG
+            <div className="mx-auto mb-4 relative" style={{ width: 200, height: 200 }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/badge-bg.png"
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover rounded-2xl"
+              />
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <div
+                  className="font-bold leading-none"
+                  style={{ color: "#0A1F3D", fontSize: 19, letterSpacing: 1 }}
+                >
+                  OG{badgeNumber ? ` #${badgeNumber}` : ""}
                 </div>
-                {badgeNumber && (
-                  <div className="text-[#E8C37E] font-bold" style={{ fontSize: 18 }}>
-                    #{badgeNumber}
+                {badgeName && (
+                  <div
+                    className="font-bold text-center leading-none mt-1 px-1"
+                    style={{ color: "#0A1F3D", fontSize: 14, maxWidth: 110 }}
+                  >
+                    {badgeName}
                   </div>
                 )}
               </div>

@@ -31,66 +31,40 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-// HTML/CSS twin of the OG seal so the landing page itself looks like the
-// shared image (concentric gold rings, globe, OG #n, name).
+// The illustrated "baroudeur" emblem (same asset as the OG image) with the
+// OG number + name overlaid in the central cream medallion, so the landing
+// page matches what gets shared on social.
 function Seal({ display, n }: { display: string; n: string }) {
   return (
     <div
-      className="relative flex items-center justify-center rounded-full"
-      style={{
-        width: 360,
-        height: 360,
-        background: "#0A1F3D",
-        border: "3px solid #E8C37E",
-        boxShadow:
-          "0 0 0 11px #0A1F3D, 0 0 0 13px rgba(232,195,126,0.35), 0 30px 80px rgba(0,0,0,0.45)",
-      }}
+      className="relative"
+      style={{ width: 380, height: 380 }}
     >
-      <div
-        className="absolute top-5 text-[#E8C37E] font-bold uppercase"
-        style={{ fontSize: 17, letterSpacing: 6 }}
-      >
-— Membre fondateur —
-      </div>
-
-      <div
-        className="flex flex-col items-center justify-center rounded-full"
-        style={{
-          width: 252,
-          height: 252,
-          border: "2px solid rgba(232,195,126,0.45)",
-          background:
-            "radial-gradient(circle at 50% 35%, rgba(255,107,71,0.18) 0%, rgba(10,31,61,0) 60%)",
-        }}
-      >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/badge-bg.png"
+        alt=""
+        className="absolute inset-0 w-full h-full object-cover rounded-2xl"
+      />
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
         <div
-          className="flex items-center justify-center rounded-full mb-1"
+          className="font-bold leading-none"
+          style={{ color: "#0A1F3D", fontSize: 34, letterSpacing: 1 }}
+        >
+          OG #{n}
+        </div>
+        <div
           style={{
-            width: 66,
-            height: 66,
+            width: 64,
+            height: 3,
             background: "#FF6B47",
-            fontSize: 36,
-            boxShadow: "0 8px 24px rgba(255,107,71,0.4)",
+            borderRadius: 2,
+            margin: "9px 0",
           }}
-        >
-          🌍
-        </div>
-        <div
-          className="text-[#FFF8F0] font-bold leading-none"
-          style={{ fontSize: 58, letterSpacing: 3 }}
-        >
-          OG
-        </div>
-        <div className="text-[#E8C37E] font-bold" style={{ fontSize: 30 }}>
-          #{n}
-        </div>
-        <div
-          className="my-3"
-          style={{ width: 96, height: 2, background: "rgba(232,195,126,0.5)" }}
         />
         <div
-          className="text-[#FFF8F0] font-bold text-center px-4"
-          style={{ fontSize: 24, maxWidth: 230 }}
+          className="font-bold text-center leading-none px-2"
+          style={{ color: "#0A1F3D", fontSize: 27, maxWidth: 200 }}
         >
           {display}
         </div>

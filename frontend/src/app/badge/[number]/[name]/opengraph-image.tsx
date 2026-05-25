@@ -1,4 +1,6 @@
 import { ImageResponse } from "next/og";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 export const alt = "Membre fondateur OG — GlobeGenius";
 export const size = { width: 1200, height: 630 };
@@ -6,20 +8,26 @@ export const contentType = "image/png";
 
 // Brand palette
 const NAVY = "#0A1F3D";
-const NAVY_DEEP = "#06152B";
 const CORAL = "#FF6B47";
-const GOLD = "#E8C37E";
-const CREAM = "#FFF8F0";
 
 type Props = { params: Promise<{ number: string; name: string }> };
 
-// Dynamic Open Graph badge: a circular "founder seal" rendered server-side
-// as PNG via next/og (Satori). The name + OG number come from the URL
-// segments. Satori supports a flexbox subset, borderRadius and layered
-// boxes — the seal is built from concentric circles, not SVG textPath.
+// The illustrated "baroudeur" emblem background (generated once, committed
+// to /public). Satori can't resolve a public path, so we read the bytes at
+// request time and inline them as a data URL. Read once at module load.
+let BG_DATA_URL = "";
+try {
+  const bytes = readFileSync(join(process.cwd(), "public", "badge-bg.png"));
+  BG_DATA_URL = `data:image/png;base64,${bytes.toString("base64")}`;
+} catch {
+  BG_DATA_URL = "";
+}
+
+// Dynamic Open Graph badge: an illustrated travel emblem (fixed background)
+// with the OG number + first name overlaid in the central cream medallion.
 export default async function BadgeImage({ params }: Props) {
   const { number, name } = await params;
-  const display = decodeURIComponent(name).slice(0, 22);
+  const display = decodeURIComponent(name).slice(0, 18);
   const n = (decodeURIComponent(number).replace(/[^0-9]/g, "") || "1").slice(0, 4);
 
   return new ImageResponse(
@@ -31,139 +39,76 @@ export default async function BadgeImage({ params }: Props) {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: `linear-gradient(135deg, ${NAVY} 0%, ${NAVY_DEEP} 100%)`,
-          fontFamily: "Georgia, serif",
+          background: NAVY,
           position: "relative",
+          fontFamily: "Georgia, serif",
         }}
       >
-        {/* Soft coral glow behind the seal */}
-        <div
-          style={{
-            position: "absolute",
-            width: "560px",
-            height: "560px",
-            borderRadius: "50%",
-            background: CORAL,
-            opacity: 0.16,
-            display: "flex",
-          }}
-        />
-
-        {/* ── The seal ── */}
-        <div
-          style={{
-            width: "470px",
-            height: "470px",
-            borderRadius: "50%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: NAVY,
-            border: `3px solid ${GOLD}`,
-            boxShadow: `0 0 0 16px rgba(232,195,126,0.18)`,
-            position: "relative",
-          }}
-        >
-          {/* Outer ring text — top arc approximated with letter-spacing */}
-          <div
+        {/* Illustrated emblem background, cover-cropped */}
+        {BG_DATA_URL ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={BG_DATA_URL}
+            alt=""
+            width={1200}
+            height={670}
             style={{
               position: "absolute",
-              top: "34px",
-              display: "flex",
-              fontSize: "26px",
-              letterSpacing: "10px",
-              color: GOLD,
-              fontWeight: "bold",
-              textTransform: "uppercase",
+              top: "-20px",
+              left: 0,
+              width: "1200px",
+              height: "670px",
+              objectFit: "cover",
             }}
-          >
-— MEMBRE FONDATEUR —
-          </div>
+          />
+        ) : null}
 
-          {/* Inner ring (the medallion core) */}
+        {/* Center overlay: OG number + name, sitting in the cream medallion.
+            The emblem's clear circle is centered, so we center the column. */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            position: "relative",
+            marginTop: "-16px",
+          }}
+        >
           <div
             style={{
-              width: "330px",
-              height: "330px",
-              borderRadius: "50%",
               display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              border: `2px solid rgba(232,195,126,0.45)`,
-              background:
-                "radial-gradient(circle at 50% 35%, rgba(255,107,71,0.18) 0%, rgba(10,31,61,0) 60%)",
+              fontSize: "30px",
+              fontWeight: "bold",
+              color: NAVY,
+              lineHeight: 1,
+              letterSpacing: "1px",
             }}
           >
-            {/* Globe mark */}
-            <div
-              style={{
-                width: "86px",
-                height: "86px",
-                borderRadius: "50%",
-                background: CORAL,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "48px",
-                marginBottom: "6px",
-                boxShadow: "0 8px 24px rgba(255,107,71,0.4)",
-              }}
-            >
-              🌍
-            </div>
-
-            {/* OG monogram */}
-            <div
-              style={{
-                fontSize: "76px",
-                fontWeight: "bold",
-                color: CREAM,
-                lineHeight: 1,
-                letterSpacing: "4px",
-              }}
-            >
-              OG
-            </div>
-
-            {/* The number */}
-            <div
-              style={{
-                display: "flex",
-                fontSize: "40px",
-                fontWeight: "bold",
-                color: GOLD,
-                marginTop: "2px",
-              }}
-            >
-              #{n}
-            </div>
-
-            {/* Divider */}
-            <div
-              style={{
-                width: "120px",
-                height: "2px",
-                background: "rgba(232,195,126,0.5)",
-                marginTop: "14px",
-                marginBottom: "12px",
-                display: "flex",
-              }}
-            />
-
-            {/* Name */}
-            <div
-              style={{
-                display: "flex",
-                fontSize: "32px",
-                color: CREAM,
-                fontWeight: "bold",
-                maxWidth: "280px",
-                textAlign: "center",
-              }}
-            >
-              {display}
-            </div>
+            {`OG #${n}`}
+          </div>
+          <div
+            style={{
+              width: "56px",
+              height: "2px",
+              background: CORAL,
+              borderRadius: "2px",
+              margin: "7px 0",
+              display: "flex",
+            }}
+          />
+          <div
+            style={{
+              display: "flex",
+              fontSize: "24px",
+              fontWeight: "bold",
+              color: NAVY,
+              maxWidth: "180px",
+              textAlign: "center",
+              lineHeight: 1,
+            }}
+          >
+            {display}
           </div>
         </div>
 
@@ -171,12 +116,11 @@ export default async function BadgeImage({ params }: Props) {
         <div
           style={{
             position: "absolute",
-            bottom: "40px",
-            right: "56px",
+            bottom: "34px",
+            right: "48px",
             display: "flex",
-            alignItems: "center",
-            fontSize: "26px",
-            color: "rgba(255,255,255,0.85)",
+            fontSize: "24px",
+            color: "rgba(255,248,240,0.9)",
             fontWeight: "bold",
           }}
         >
@@ -187,10 +131,10 @@ export default async function BadgeImage({ params }: Props) {
         <div
           style={{
             position: "absolute",
-            bottom: "40px",
-            left: "56px",
+            bottom: "34px",
+            left: "48px",
             display: "flex",
-            fontSize: "22px",
+            fontSize: "20px",
             color: CORAL,
             fontWeight: "bold",
             letterSpacing: "2px",
