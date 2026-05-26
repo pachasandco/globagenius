@@ -96,6 +96,8 @@ export interface FeedbackItem {
   feedback_at: string;
   message_id: string;
   sent_at: string;
+  // false = user rated the alert without ever opening the deal link.
+  opened_link: boolean;
 }
 
 export interface FeedbackResponse {
@@ -103,6 +105,8 @@ export interface FeedbackResponse {
   total_clicks: number;
   distinct_users: number;
   by_type: Record<string, number>;
+  // Number of feedbacks given without opening the deal link.
+  feedback_without_open: number;
   days_window: number;
 }
 

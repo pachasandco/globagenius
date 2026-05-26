@@ -2765,7 +2765,7 @@ def admin_feedback(request: Request, days: int = 30, limit: int = 200):
         db.table("sent_alerts")
         .select(
             "user_id,destination,alert_type,price,discount_pct,"
-            "feedback,feedback_at,message_id,sent_at"
+            "feedback,feedback_at,message_id,sent_at,alert_key"
         )
         .not_.is_("feedback", "null")
         .gte("feedback_at", since)
@@ -2789,6 +2789,36 @@ def admin_feedback(request: Request, days: int = 30, limit: int = 200):
         if len(deduped) >= limit:
             break
 
+    # Did the user actually open the deal link before rating it?
+    # Clicks live in alert_redirect_tokens keyed by (user_id, alert_key),
+    # where alert_key is stored WITHOUT the lane prefix that sent_alerts
+    # adds (e.g. "fday:" / "fwk:"). Strip the prefix before matching.
+    def _bare_key(k: str | None) -> str:
+        if not k:
+            return ""
+        return k.split(":", 1)[1] if ":" in k else k
+
+    opened_pairs: set[tuple[str, str]] = set()
+    pair_uids = [r["user_id"] for r in deduped if r.get("user_id")]
+    if pair_uids:
+        try:
+            tok = (
+                db.table("alert_redirect_tokens")
+                .select("user_id,alert_key,click_count")
+                .in_("user_id", list(set(pair_uids)))
+                .gt("click_count", 0)
+                .execute()
+                .data
+                or []
+            )
+            for t in tok:
+                opened_pairs.add((t.get("user_id"), _bare_key(t.get("alert_key"))))
+        except Exception as e:
+            logger.debug(f"feedback open-link lookup failed: {e}")
+
+    def _opened(r: dict) -> bool:
+        return (r.get("user_id"), _bare_key(r.get("alert_key"))) in opened_pairs
+
     # Hydrate emails
     uids = list({r["user_id"] for r in deduped if r.get("user_id")})
     emails_by_uid: dict[str, str] = {}
@@ -2809,18 +2839,24 @@ def admin_feedback(request: Request, days: int = 30, limit: int = 200):
             "feedback_at": r.get("feedback_at"),
             "message_id": r.get("message_id"),
             "sent_at": r.get("sent_at"),
+            # True if the user opened the deal link (any time) before/around
+            # rating. False = rated without ever opening the link — a weaker
+            # signal (likely a reflex tap rather than a considered judgement).
+            "opened_link": _opened(r),
         })
 
     # Aggregate counters
     from collections import Counter
     by_type = dict(Counter(r["feedback"] for r in deduped))
     distinct_users = len({r.get("user_id") for r in deduped if r.get("user_id")})
+    feedback_without_open = sum(1 for it in items if not it["opened_link"])
 
     return {
         "items": items,
         "total_clicks": len(items),
         "distinct_users": distinct_users,
         "by_type": by_type,
+        "feedback_without_open": feedback_without_open,
         "days_window": days,
     }
 

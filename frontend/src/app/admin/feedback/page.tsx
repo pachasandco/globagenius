@@ -131,12 +131,17 @@ export default function AdminFeedbackPage() {
 
         {/* Stats */}
         {data && (
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
             <Stat label="Clics total" value={String(data.total_clicks)} />
             <Stat label="Utilisateurs" value={String(data.distinct_users)} />
             <Stat label="👍 Bon" value={String(data.by_type.good ?? 0)} cls="text-emerald-600" />
             <Stat label="👎 Faux" value={String(data.by_type.bad ?? 0)} cls="text-rose-600" />
             <Stat label="⏱️ Trop tard" value={String(data.by_type.too_late ?? 0)} cls="text-amber-600" />
+            <Stat
+              label="⚠️ Sans ouverture"
+              value={String(data.feedback_without_open ?? 0)}
+              cls="text-orange-600"
+            />
           </div>
         )}
 
@@ -212,6 +217,14 @@ export default function AdminFeedbackPage() {
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${meta.cls}`}>
                         {meta.emoji} {meta.label}
                       </span>
+                      {!r.opened_link && (
+                        <span
+                          className="ml-2 text-xs font-semibold px-2 py-0.5 rounded-full border bg-orange-50 text-orange-700 border-orange-200 whitespace-nowrap"
+                          title="Feedback envoyé sans avoir ouvert le lien de l'alerte"
+                        >
+                          ⚠️ sans ouverture
+                        </span>
+                      )}
                     </td>
                     <td className="p-3 text-xs">{r.user_email}</td>
                     <td className="p-3 font-medium">{r.destination ?? "—"}</td>
