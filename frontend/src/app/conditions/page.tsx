@@ -36,14 +36,14 @@ export default function Conditions() {
             <p>Globe Genius est un service de détection automatique de vols à prix anormalement bas au départ de 9 aéroports français. Le service comprend :</p>
             <ul className="list-disc pl-6 space-y-1">
               <li><strong>Formule Gratuite :</strong> accès aux deals avec une réduction d&apos;au moins 40% par rapport au prix moyen du marché, dans la limite de 3 alertes complètes par semaine glissante. Les deals au-delà de 50% de réduction sont affichés avec prix masqué.</li>
-              <li><strong>Formule Premium (29€/an) :</strong> accès à tous les deals sans limite (réductions de 40% et plus, incluant les erreurs de prix et les promos flash), alertes Telegram illimitées avec prix et liens de réservation directs vers Aviasales et Booking.com.</li>
+              <li><strong>Formule Premium (49€/an) :</strong> accès à tous les deals sans limite (réductions de 40% et plus, incluant les erreurs de prix et les promos flash), alertes Telegram illimitées avec prix et liens de réservation directs vers Aviasales et Booking.com.</li>
             </ul>
           </section>
 
           <section>
             <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 3 — Prix et paiement</h2>
             <p>
-              L&apos;abonnement Premium est proposé au tarif de <strong>29€ par an</strong>, payable en une seule fois. Le paiement est effectué par carte bancaire via la plateforme sécurisée Stripe. Le prix est indiqué en euros, toutes taxes comprises.
+              L&apos;abonnement Premium est proposé au tarif de <strong>49€ par an</strong>, payable en une seule fois. Le paiement est effectué par carte bancaire via la plateforme sécurisée Stripe. Le prix est indiqué en euros, toutes taxes comprises.
             </p>
           </section>
 
@@ -72,28 +72,46 @@ export default function Conditions() {
           </section>
 
           <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 7 — Limitation de responsabilité</h2>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 7 — Programme fondateur et accès à vie</h2>
+            <p>
+              Pendant la phase de beta publique, les <strong>100 premiers comptes inscrits</strong> rejoignent le programme fondateur (« membres OG »). Ce programme comporte deux avantages distincts qu&apos;il convient de ne pas confondre :
+            </p>
+            <ul className="list-disc pl-6 space-y-2">
+              <li>
+                <strong>Accès gratuit à vie (garanti et inconditionnel).</strong> Les membres fondateurs conservent gratuitement l&apos;accès au service, à vie, y compris après le lancement officiel et la mise en place de l&apos;abonnement payant. Cet accès gratuit ne peut leur être retiré, quelle que soit leur activité.
+              </li>
+              <li>
+                <strong>Statut Premium gratuit (conditionné à l&apos;activité).</strong> En plus de l&apos;accès gratuit, les membres fondateurs bénéficient gratuitement du statut Premium (alertes illimitées, deals au-delà de 50% avec prix affiché, liens directs) <strong>tant qu&apos;ils participent activement à la beta</strong> : utilisation du service et retours sur la qualité des alertes (boutons 👍 / 👎 / « trop tard »).
+              </li>
+            </ul>
+            <p>
+              En cas d&apos;inactivité totale et prolongée (aucune ouverture d&apos;alerte ni aucun retour pendant plusieurs mois), le statut Premium gratuit peut être suspendu et le compte repasser en formule Gratuite. Dans ce cas, <strong>l&apos;accès gratuit à vie est conservé</strong> : seul l&apos;avantage Premium est concerné, et il est automatiquement rétabli dès que le membre redevient actif. Le nombre de places fondateur est limité à 100 et n&apos;est pas reconductible une fois atteint.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 8 — Limitation de responsabilité</h2>
             <p>
               Globe Genius détecte et signale des anomalies de prix sur les vols à partir de données fournies par des tiers (Travelpayouts/Aviasales). Les prix affichés sont indicatifs et peuvent varier entre le moment de la détection et la réservation effective. Globe Genius ne se substitue pas à une agence de voyage et ne vend pas de billets d&apos;avion.
             </p>
           </section>
 
           <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 8 — Droit applicable</h2>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 9 — Droit applicable</h2>
             <p>
               Les présentes CGV sont soumises au droit français. En cas de litige, une solution amiable sera recherchée avant toute action judiciaire. À défaut, les tribunaux français seront compétents.
             </p>
           </section>
 
           <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 9 — Contact</h2>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 10 — Contact</h2>
             <p>
               Pour toute question relative aux présentes CGV ou au service Globe Genius :<br />
               Email : <a href="mailto:contact@globegenius.app" className="text-[#FF6B47] hover:underline">contact@globegenius.app</a>
             </p>
           </section>
 
-          <p className="text-sm text-[#082B78]/40 pt-4">Dernière mise à jour : avril 2026</p>
+          <p className="text-sm text-[#082B78]/40 pt-4">Dernière mise à jour : mai 2026</p>
         </div>
       </div>
 
