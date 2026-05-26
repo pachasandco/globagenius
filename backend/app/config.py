@@ -38,11 +38,13 @@ class Settings:
     UNSPLASH_ACCESS_KEY: str = os.getenv("UNSPLASH_ACCESS_KEY", "")
     BREVO_WELCOME_TEMPLATE_ID: int = int(os.getenv("BREVO_WELCOME_TEMPLATE_ID", "0") or 0)
     # Onboarding follow-ups (chantier 10, 2026-05-17).
-    # Set to 0 to disable the email — the job logs the would-be
-    # send and skips the actual API call. This is the default
-    # until the templates are designed in Brevo.
-    BREVO_RELANCE_TELEGRAM_TEMPLATE_ID: int = int(os.getenv("BREVO_RELANCE_TELEGRAM_TEMPLATE_ID", "0") or 0)
-    BREVO_INACTIVITY_TEMPLATE_ID: int = int(os.getenv("BREVO_INACTIVITY_TEMPLATE_ID", "0") or 0)
+    # Defaults map to the live Brevo templates (#8 J+1 relance, #9 J+7
+    # inactivity). Set to 0 to disable an email — the job then logs the
+    # would-be send and skips the actual API call. Note: template #8 must
+    # also be flipped to "active" on Brevo, an inactive template is
+    # rejected by the transactional API.
+    BREVO_RELANCE_TELEGRAM_TEMPLATE_ID: int = int(os.getenv("BREVO_RELANCE_TELEGRAM_TEMPLATE_ID", "8") or 0)
+    BREVO_INACTIVITY_TEMPLATE_ID: int = int(os.getenv("BREVO_INACTIVITY_TEMPLATE_ID", "9") or 0)
     # Feedback nurturing (2026-05-21).
     # J+7 / J+14 since first alert received, sent only when user has
     # received >=3 alerts but clicked 0 feedback buttons. Soft tone,
