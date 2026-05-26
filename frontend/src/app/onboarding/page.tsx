@@ -395,7 +395,7 @@ export default function OnboardingPage() {
               onClick={() => router.push("/home")}
               className="w-full py-3 rounded-xl border border-gray-200 text-gray-500 font-medium hover:bg-gray-50 transition-colors"
             >
-              {telegramLink ? "Acceder au dashboard" : "Passer cette etape"}
+              {telegramLink ? "Acceder a mon espace" : "Passer cette etape"}
             </button>
           </div>
         )}

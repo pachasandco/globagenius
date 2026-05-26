@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PROTECTED = ["/home", "/profile", "/onboarding", "/dashboard"];
+const PROTECTED = ["/home", "/profile", "/onboarding"];
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "https://globagenius-production-b887.up.railway.app").trim();
 
@@ -43,5 +43,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/home/:path*", "/profile/:path*", "/onboarding/:path*", "/dashboard/:path*"],
+  matcher: ["/home/:path*", "/profile/:path*", "/onboarding/:path*"],
 };
