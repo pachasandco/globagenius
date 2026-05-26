@@ -188,7 +188,7 @@ export default function HomePage() {
               <h3 className="font-semibold mb-1">Un seul deal suffit à rembourser votre année</h3>
               <p className="text-sm text-[#082B78]/70">
                 Accès illimité à tous les deals ≥50%, sans quota hebdomadaire. Alertes Telegram instantanées.
-                <span className="font-semibold"> 29€/an</span> <span className="line-through text-[#082B78]/40">59€</span> — soit 2,42€/mois.
+                <span className="font-semibold"> 49€/an</span> <span className="line-through text-[#082B78]/40">59€</span> — soit 4,08€/mois.
                 <span className="block mt-1 text-xs text-[#16A34A]">✅ Satisfait ou remboursé 30 jours</span>
               </p>
             </div>
@@ -196,7 +196,7 @@ export default function HomePage() {
               onClick={handleCheckout}
               className="bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold px-6 py-3 rounded-xl text-sm shrink-0 transition-all"
             >
-              Essayer Premium — 29€/an
+              Essayer Premium — 49€/an
             </button>
           </div>
         )}

@@ -639,7 +639,7 @@ export default function PlanificateurPage() {
                   onClick={handleCheckout}
                   className="h-11 bg-[var(--color-coral)] text-white hover:bg-[var(--color-coral-hover)] shadow-[0_8px_24px_rgba(255,107,71,0.25)] text-sm font-semibold shrink-0"
                 >
-                  Débloquer — 29€/an
+                  Débloquer — 49€/an
                   <ArrowRight className="size-4" />
                 </Button>
               </div>

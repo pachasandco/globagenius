@@ -100,7 +100,7 @@ export default async function BetaPage() {
               ✓ <strong>Préférences personnalisées</strong> : aéroports, seuil de réduction, destinations bloquées
             </li>
             <li>
-              ✓ <strong>Accès fondateur gratuit à vie</strong> — et statut <strong>Premium</strong> tant que tu participes à la beta (usage + feedback), même quand on lancera officiellement à 4,99€/mois
+              ✓ <strong>Accès fondateur gratuit à vie</strong> — et statut <strong>Premium</strong> tant que tu participes à la beta (usage + feedback), même quand on lancera officiellement à 49€/an
             </li>
           </ul>
         </section>
@@ -153,7 +153,7 @@ export default async function BetaPage() {
             <div>
               <div className="font-semibold text-[var(--color-ink)] mb-2">Lancement officiel</div>
               <ul className="space-y-1 text-sm text-gray-600">
-                <li>○ Premium à 4,99€/mois (les fondateurs actifs gardent le Premium gratuit ; l&apos;accès reste gratuit à vie pour tous)</li>
+                <li>○ Premium à 49€/an (les fondateurs actifs gardent le Premium gratuit ; l&apos;accès reste gratuit à vie pour tous)</li>
                 <li>○ Extension Belgique francophone, Suisse romande, Luxembourg</li>
                 <li>○ App PWA installable</li>
               </ul>

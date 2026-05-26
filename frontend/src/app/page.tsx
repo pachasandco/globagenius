@@ -42,7 +42,7 @@ async function fetchRecentDestinationGuides(): Promise<Array<{ iata: string; des
 
 const faqs = [
   { q: "C'est quoi GlobeGenius exactement ?", a: "On surveille en continu les prix des vols depuis 9 aéroports français vers l'Europe, la Méditerranée et l'Afrique du Nord. Quand un tarif chute significativement sous le prix habituel, on t'envoie une alerte Telegram avec dates, prix et lien direct pour réserver. On est en beta publique depuis mai 2026." },
-  { q: "Pourquoi c'est gratuit pendant la beta ?", a: "Parce que ce n'est pas encore un produit fini. La couverture est limitée à l'Europe et la Méditerranée — le long-courrier (Asie, Amériques) arrive prochainement. Les 100 premiers inscrits gardent un statut « Membre fondateur » à vie : ils restent gratuits même quand on lancera officiellement à 4,99€/mois." },
+  { q: "Pourquoi c'est gratuit pendant la beta ?", a: "Parce que ce n'est pas encore un produit fini. La couverture est limitée à l'Europe et la Méditerranée — le long-courrier (Asie, Amériques) arrive prochainement. Les 100 premiers inscrits gardent un statut « Membre fondateur » à vie : ils restent gratuits même quand on lancera officiellement à 49€/an." },
   { q: "Combien d'alertes je reçois par jour ?", a: "Entre 1 et 3 alertes par jour selon ta config. On plafonne strictement à 5/24h, étalées dans le temps (jamais 4 notifs entre 2h et 4h du matin). Tu peux ajuster ton seuil à tout moment depuis ton profil." },
   { q: "Comment sont vérifiés les deals ?", a: "Cross-check 2-tier avant envoi (95% de couverture). Tier 1 : on re-requête directement l'API de la compagnie aérienne (Ryanair, Transavia, Vueling). Tier 2 : on confirme sur l'agrégateur Travelpayouts. Les deux sources doivent confirmer pour que l'alerte parte. Ça élimine les ghost fares (prix affiché mais qui n'existe pas au moment de réserver)." },
   { q: "Comment je gère mes préférences ?", a: "Depuis Telegram directement (commandes /destinations, /pause, ou bouton Masquer sur chaque alerte) ou depuis la page Profil sur le site." },
@@ -329,7 +329,7 @@ export default async function Landing() {
             </div>
             <div className="bg-[var(--color-cream-pure)] border border-[var(--color-sand)] rounded-2xl p-5">
               <div className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Étape 3 · Lancement officiel</div>
-              <h3 className="font-bold text-[var(--color-ink)] mb-2">Premium à 4,99€/mois</h3>
+              <h3 className="font-bold text-[var(--color-ink)] mb-2">Premium à 49€/an</h3>
               <p className="text-sm text-gray-500 leading-relaxed">
                 Ouverture grand public. Les fondateurs gardent un
                 <strong> accès gratuit à vie</strong> — et le Premium

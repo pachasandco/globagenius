@@ -288,7 +288,7 @@ export default function MethodologiePage() {
             <strong>Deux sources de revenus :</strong>
           </p>
           <p className="text-[var(--color-ink)]/85 leading-relaxed mb-2">
-            <strong>Abonnement Premium à 4,99€/mois.</strong> Donne accès :
+            <strong>Abonnement Premium à 49€/an.</strong> Donne accès :
           </p>
           <ul className="space-y-1 text-[var(--color-ink)]/85 list-disc list-inside mb-4">
             <li>Toutes les alertes en temps réel (vs J+24h pour le tier gratuit)</li>
