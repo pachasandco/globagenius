@@ -705,6 +705,29 @@ async def _record_feedback(
             pass
         return
     try:
+        # Was this the user's very first feedback ever? Check BEFORE writing,
+        # and grab the alert_key of this message so we can tell whether they
+        # opened the deal link. Both feed the one-time "open the link first"
+        # tip below. Best-effort: never let this block the feedback write.
+        is_first_feedback = False
+        this_alert_key: str | None = None
+        try:
+            prior = (
+                db.table("sent_alerts")
+                .select("alert_key,feedback,message_id")
+                .eq("user_id", owner_id)
+                .execute()
+                .data
+                or []
+            )
+            is_first_feedback = not any(r.get("feedback") for r in prior)
+            for r in prior:
+                if r.get("message_id") == message_id and r.get("alert_key"):
+                    this_alert_key = r["alert_key"]
+                    break
+        except Exception:
+            pass
+
         db.table("sent_alerts").update({
             "feedback": db_code,
             "feedback_at": datetime.now(timezone.utc).isoformat(),
@@ -714,12 +737,53 @@ async def _record_feedback(
             text=_FEEDBACK_TOASTS.get(feedback_code, "✓ Merci."),
             show_alert=False,
         )
+
+        # One-time gentle nudge: if this is their first-ever feedback and they
+        # gave it WITHOUT opening the deal link, suggest opening the link first
+        # next time so the rating reflects the actual offer (dispo + dates).
+        # Sent at most once per user (gated on "first feedback"). Never spams.
+        if is_first_feedback:
+            await _maybe_send_open_link_tip(bot, chat_id, owner_id, this_alert_key)
     except Exception as e:
         logger.warning(f"Feedback record failed for message_id={message_id} code={feedback_code}: {e}")
         try:
             await bot.answer_callback_query(callback_query_id=callback_id, text="Erreur, réessaie.")
         except Exception:
             pass
+
+
+async def _maybe_send_open_link_tip(bot, chat_id: int, owner_id: str, alert_key: str | None):
+    """Send a one-time, friendly tip when a user rates an alert without
+    having opened its deal link. Best-effort and silent on any error."""
+    try:
+        opened = False
+        if alert_key:
+            tok = (
+                db.table("alert_redirect_tokens")
+                .select("click_count")
+                .eq("user_id", owner_id)
+                .eq("alert_key", alert_key)
+                .gt("click_count", 0)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            opened = bool(tok)
+        if opened:
+            return
+        await bot.send_message(
+            chat_id=chat_id,
+            text=(
+                "🙏 Merci pour ton retour !\n\n"
+                "Petit conseil pour la prochaine fois : ouvre le lien du deal "
+                "avant de donner ton avis 👍/👎. Tu vois la dispo réelle, les "
+                "dates exactes et le prix final — ton feedback nous aide "
+                "vraiment plus quand il s'appuie sur l'offre réelle. 🚀"
+            ),
+        )
+    except Exception as e:
+        logger.debug(f"open-link tip skipped: {e}")
 
 
 async def _link_account(chat_id: int, token: str, chat: dict):
