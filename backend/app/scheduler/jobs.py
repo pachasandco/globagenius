@@ -1765,6 +1765,7 @@ async def job_send_onboarding_emails():
             await send_admin_text(summary)
         except Exception:
             pass
+    return counts
 
 
 async def job_scrape_tier1():

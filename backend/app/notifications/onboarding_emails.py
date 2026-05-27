@@ -130,19 +130,24 @@ def _mark_sent(user_id: str, email_type: str) -> None:
 
 # ── Cohort queries ─────────────────────────────────────────────────────────
 
+# How far back we catch up missed follow-ups. Each cohort's lower bound
+# (signup age / first-alert age) extends this far, so a user who aged past
+# the original narrow window — e.g. while the templates were disabled — is
+# still mailed once. onboarding_email_log guarantees a single send.
+RELANCE_CATCHUP_DAYS = 30
 
-def _users_unlinked_telegram_24h_to_48h() -> list[dict]:
-    """Users created 24h-48h ago who haven't linked Telegram yet.
 
-    The window is 24h wide so a daily cron catches each user exactly
-    once. Edge case: a user created at exactly H-25 might be missed
-    on the day H cron and caught on H+1 — acceptable for a J+1 nudge.
+def _users_unlinked_telegram_due() -> list[dict]:
+    """Users created at least 24h ago (up to RELANCE_CATCHUP_DAYS days)
+    who still haven't linked Telegram. The window is wide so users who
+    aged past the original 24h-48h band are caught up; idempotence via
+    onboarding_email_log keeps it to one send per user.
     """
     if not db:
         return []
     now = datetime.now(timezone.utc)
     end = (now - timedelta(hours=24)).isoformat()
-    start = (now - timedelta(hours=48)).isoformat()
+    start = (now - timedelta(days=RELANCE_CATCHUP_DAYS)).isoformat()
     try:
         u = (
             db.table("users")
@@ -176,15 +181,17 @@ def _users_unlinked_telegram_24h_to_48h() -> list[dict]:
     return [u for u in users if u["id"] not in linked]
 
 
-def _users_linked_telegram_but_no_alerts_7d() -> list[dict]:
-    """Users created 7-8 days ago who linked Telegram but never
-    received an alert. Likely their preferences (min_discount,
-    blocked destinations) are too strict, or they're in a quiet week."""
+def _users_linked_telegram_but_no_alerts() -> list[dict]:
+    """Users created 7+ days ago (up to RELANCE_CATCHUP_DAYS) who linked
+    Telegram but never received an alert. Likely their preferences
+    (min_discount, blocked destinations) are too strict, or they're in a
+    quiet week. Wide lower bound catches up users who aged past the
+    original 7-8 day band; onboarding_email_log keeps it to one send."""
     if not db:
         return []
     now = datetime.now(timezone.utc)
     end = (now - timedelta(days=7)).isoformat()
-    start = (now - timedelta(days=8)).isoformat()
+    start = (now - timedelta(days=RELANCE_CATCHUP_DAYS)).isoformat()
     try:
         u = (
             db.table("users")
@@ -251,16 +258,19 @@ def _users_linked_telegram_but_no_alerts_7d() -> list[dict]:
 FEEDBACK_NURTURE_MIN_ALERTS = 3
 
 
-def _users_no_feedback_since_first_alert(days_since_first: int) -> list[dict]:
-    """Users whose FIRST sent_alerts row is exactly `days_since_first`
-    days old, have received at least FEEDBACK_NURTURE_MIN_ALERTS alerts,
-    and have clicked ZERO feedback buttons. Used by J+7 and J+14 nurturing.
-    """
+def _users_no_feedback_since_first_alert(*, min_days: int, max_days: int) -> list[dict]:
+    """Users whose FIRST sent_alerts row is between `min_days` and
+    `max_days` old, have received at least FEEDBACK_NURTURE_MIN_ALERTS
+    alerts, and have clicked ZERO feedback buttons. Used by J+7 and J+14
+    nurturing. The two callers use adjacent, non-overlapping age bands
+    (7-14 and 14-30 days) so each user lands in exactly one — no double
+    send on a single run — while still widening the original 1-day window
+    to catch up users who aged past it."""
     if not db:
         return []
     now = datetime.now(timezone.utc)
-    end = (now - timedelta(days=days_since_first)).isoformat()
-    start = (now - timedelta(days=days_since_first + 1)).isoformat()
+    end = (now - timedelta(days=min_days)).isoformat()
+    start = (now - timedelta(days=max_days)).isoformat()
 
     # Pull every user's first alert timestamp via a min() aggregation —
     # the supabase-py SDK doesn't support GROUP BY directly so we fetch
@@ -386,7 +396,7 @@ async def send_onboarding_emails_once() -> dict:
     }
 
     # J+1
-    for user in _users_unlinked_telegram_24h_to_48h():
+    for user in _users_unlinked_telegram_due():
         uid = user["id"]
         if _already_sent(uid, "j1_relance"):
             counts["j1_relance_skipped"] += 1
@@ -405,7 +415,7 @@ async def send_onboarding_emails_once() -> dict:
             counts["j1_relance_skipped"] += 1
 
     # J+7 inactivity (linked Telegram, never alerted)
-    for user in _users_linked_telegram_but_no_alerts_7d():
+    for user in _users_linked_telegram_but_no_alerts():
         uid = user["id"]
         if _already_sent(uid, "j7_inactivity"):
             counts["j7_inactivity_skipped"] += 1
@@ -427,8 +437,8 @@ async def send_onboarding_emails_once() -> dict:
         else:
             counts["j7_inactivity_skipped"] += 1
 
-    # J+7 feedback nurture (got alerts, clicked 0)
-    for user in _users_no_feedback_since_first_alert(days_since_first=7):
+    # J+7 feedback nurture (got alerts, clicked 0): first alert 7-14 days old
+    for user in _users_no_feedback_since_first_alert(min_days=7, max_days=14):
         uid = user["id"]
         if _already_sent(uid, "j7_feedback_nurture"):
             counts["j7_feedback_nurture_skipped"] += 1
@@ -444,8 +454,8 @@ async def send_onboarding_emails_once() -> dict:
         else:
             counts["j7_feedback_nurture_skipped"] += 1
 
-    # J+14 feedback relance (still no click after the J+7 ping)
-    for user in _users_no_feedback_since_first_alert(days_since_first=14):
+    # J+14 feedback relance (still no click): first alert 14-30 days old
+    for user in _users_no_feedback_since_first_alert(min_days=14, max_days=RELANCE_CATCHUP_DAYS):
         uid = user["id"]
         if _already_sent(uid, "j14_feedback_relance"):
             counts["j14_feedback_relance_skipped"] += 1
