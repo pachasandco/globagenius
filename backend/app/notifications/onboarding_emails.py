@@ -82,6 +82,12 @@ async def _send_brevo_template(
             resp.raise_for_status()
         logger.info("Brevo template %s sent to %s", template_id, to_email)
         return True
+    except httpx.HTTPStatusError as e:
+        logger.error(
+            "Brevo template %s send failed for %s: %s — body: %s",
+            template_id, to_email, e, e.response.text,
+        )
+        return False
     except Exception as e:
         logger.error("Brevo template %s send failed for %s: %s", template_id, to_email, e)
         return False
