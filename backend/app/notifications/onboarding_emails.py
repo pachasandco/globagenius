@@ -69,8 +69,12 @@ async def _send_brevo_template(
     payload = {
         "to": [{"email": to_email}],
         "templateId": template_id,
-        "params": params or {},
     }
+    # Only include `params` when non-empty. Brevo rejects an explicit empty
+    # object (`"params": {}`) with 400 "params is blank", even for templates
+    # that use no merge variables (e.g. the J+15 open-feedback mail).
+    if params:
+        payload["params"] = params
     headers = {
         "api-key": settings.BREVO_API_KEY,
         "accept": "application/json",

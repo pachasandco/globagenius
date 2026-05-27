@@ -1710,7 +1710,7 @@ async def admin_probe_template(request: Request, template_id: int, to: str):
     why a specific template is rejected (e.g. #12 returning 400)."""
     _require_admin(request)
     import httpx as _httpx
-    payload = {"to": [{"email": to}], "templateId": template_id, "params": {}}
+    payload = {"to": [{"email": to}], "templateId": template_id}
     headers = {
         "api-key": settings.BREVO_API_KEY,
         "accept": "application/json",
