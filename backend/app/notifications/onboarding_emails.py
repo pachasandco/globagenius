@@ -125,7 +125,11 @@ def _mark_sent(user_id: str, email_type: str) -> None:
             "sent_at": datetime.now(timezone.utc).isoformat(),
         }).execute()
     except Exception as e:
-        logger.debug("onboarding_email_log insert failed (%s) — non-fatal", e)
+        # A failed insert means the user is NOT recorded as mailed, so the
+        # cron will re-send next run. Surface it at warning level — a silent
+        # debug log here once hid a CHECK-constraint rejection that caused
+        # repeated sends (see migration 048).
+        logger.warning("onboarding_email_log insert failed for %s/%s — user may be re-mailed: %s", user_id, email_type, e)
 
 
 # ── Cohort queries ─────────────────────────────────────────────────────────
