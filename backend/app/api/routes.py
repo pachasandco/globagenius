@@ -719,8 +719,8 @@ async def trigger_job(job_name: str, request: Request):
     # to dig into Railway logs to learn why nothing got sent.
     if job_name == "daily_onboarding_emails":
         try:
-            await jobs[job_name]()
-            return {"status": "completed", "job": job_name}
+            counts = await jobs[job_name]()
+            return {"status": "completed", "job": job_name, "counts": counts}
         except Exception as e:
             logger.exception(f"Manual trigger of {job_name} failed")
             raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
