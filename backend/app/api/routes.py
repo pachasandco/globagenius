@@ -1703,6 +1703,24 @@ async def admin_test_welcome_email(req: AdminTestWelcomeEmailRequest, request: R
     }
 
 
+@router.post("/api/admin/email/probe-template")
+async def admin_probe_template(request: Request, template_id: int, to: str):
+    """Send a Brevo template to `to` via the exact transactional payload the
+    onboarding job uses, and return Brevo's raw HTTP status + body. Diagnoses
+    why a specific template is rejected (e.g. #12 returning 400)."""
+    _require_admin(request)
+    import httpx as _httpx
+    payload = {"to": [{"email": to}], "templateId": template_id, "params": {}}
+    headers = {
+        "api-key": settings.BREVO_API_KEY,
+        "accept": "application/json",
+        "content-type": "application/json",
+    }
+    async with _httpx.AsyncClient(timeout=10.0) as c:
+        r = await c.post("https://api.brevo.com/v3/smtp/email", json=payload, headers=headers)
+    return {"status_code": r.status_code, "body": r.text}
+
+
 @router.get("/api/admin/scrapers/health")
 def admin_scrapers_health(request: Request):
     """Per-scraper health snapshot for the last 24h and 7d.
