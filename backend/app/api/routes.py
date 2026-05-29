@@ -2316,17 +2316,18 @@ def admin_routes(request: Request):
     # 045) — one indexed GROUP BY. A route is "passive" iff
     # bool_and(passive) over the window.
     #
-    # Window = 3h: the Tier-2 scraper runs every 2h so a 3h window
-    # already covers the entire active route catalogue, and the GROUP
-    # BY over ~3h of rows is consistently <0.2s. At 6h+ the aggregation
-    # occasionally tips over the 8s statement timeout under DB load.
+    # Window = 2h: the Tier-2 scraper runs every 2h, so a 2h window still
+    # covers the entire active route catalogue while roughly halving the
+    # rows the GROUP BY has to aggregate vs the old 3h window (~41k rows
+    # in 3h was tipping over the 8s statement timeout). Migration 048 adds
+    # a BRIN index on scraped_at so the recent-window scan stays cheap.
     #
     # Fallback: if the RPC isn't deployed yet (deploy window between
     # code push and migration apply) OR it times out, fall back to a
     # capped scan (10 pages × 1000 rows) so the endpoint degrades
     # gracefully rather than 500-ing.
     tp_routes: dict[tuple[str, str], bool] = {}
-    since = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+    since = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
     used_rpc = False
     try:
         rpc_rows = db.rpc("monitored_tp_routes", {"since_ts": since}).execute().data or []
@@ -2997,13 +2998,25 @@ def admin_ctr(request: Request, days: int = 30):
 
     # Clicks recorded (tokens created in window). V5+ P1: also pull
     # trip_type and qualification_method so we can break down CTR.
-    tokens_resp = (
-        db.table("alert_redirect_tokens")
-        .select("destination,origin,click_count,clicked_at,trip_type,qualification_method")
-        .gte("created_at", since)
-        .execute()
-    )
-    tokens = tokens_resp.data or []
+    # Paginate: PostgREST caps a single select at 1000 rows, which would
+    # silently undercount total_links_generated AND skew every per-bucket
+    # breakdown (they only saw the first 1000 tokens). Scan the full window.
+    tokens: list[dict] = []
+    offset = 0
+    while True:
+        page = (
+            db.table("alert_redirect_tokens")
+            .select("destination,origin,click_count,clicked_at,trip_type,qualification_method")
+            .gte("created_at", since)
+            .range(offset, offset + 999)
+            .execute()
+            .data
+            or []
+        )
+        tokens.extend(page)
+        if len(page) < 1000:
+            break
+        offset += 1000
 
     total_tokens = len(tokens)
     total_clicked = sum(1 for t in tokens if t.get("click_count", 0) > 0)
