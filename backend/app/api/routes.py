@@ -2319,7 +2319,7 @@ def admin_routes(request: Request):
     # Window = 2h: the Tier-2 scraper runs every 2h, so a 2h window still
     # covers the entire active route catalogue while roughly halving the
     # rows the GROUP BY has to aggregate vs the old 3h window (~41k rows
-    # in 3h was tipping over the 8s statement timeout). Migration 048 adds
+    # in 3h was tipping over the 8s statement timeout). Migration 049 adds
     # a BRIN index on scraped_at so the recent-window scan stays cheap.
     #
     # Fallback: if the RPC isn't deployed yet (deploy window between
