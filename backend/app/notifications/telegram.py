@@ -1173,6 +1173,39 @@ async def send_broadcast(message: str, chat_ids: list[int]) -> tuple[int, int]:
     return delivered, failed
 
 
+async def send_survey(
+    message: str,
+    options: list[tuple[str, str]],
+    survey_key: str,
+    chat_ids: list[int],
+) -> tuple[int, int]:
+    """Send a survey message with inline-button options to each chat.
+
+    `options` is a list of (choice_code, label) — one button per row so
+    long French labels render fully. callback_data is
+    "survey:<survey_key>:<choice>", handled in bot_handler._record_survey.
+    Returns (delivered, failed). Throttled like send_broadcast."""
+    import asyncio as _asyncio
+    bot = _get_bot()
+    if not bot:
+        return 0, len(chat_ids)
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(label, callback_data=f"survey:{survey_key}:{code}")]
+        for code, label in options
+    ])
+    delivered = 0
+    failed = 0
+    for cid in chat_ids:
+        try:
+            await bot.send_message(chat_id=cid, text=message, reply_markup=keyboard)
+            delivered += 1
+        except Exception as e:
+            failed += 1
+            logger.warning(f"Survey send failed for chat {cid}: {e}")
+        await _asyncio.sleep(0.05)
+    return delivered, failed
+
+
 async def send_admin_markdown(message: str) -> bool:
     bot = _get_bot()
     if not bot or not settings.TELEGRAM_ADMIN_CHAT_ID:

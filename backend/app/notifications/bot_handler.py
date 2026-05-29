@@ -267,6 +267,20 @@ async def _handle_callback(callback: dict):
         if len(parts) == 2:
             await _record_feedback(bot, callback_id, chat_id, owner_id, parts[0], parts[1])
 
+    elif data.startswith("survey:"):
+        # Format: survey:{survey_key}:{choice}  — survey_key is a campaign
+        # id, choice is a single option letter (A..E). owner_id is derived
+        # from the chat (never from the payload) like every other branch.
+        rest = data[len("survey:"):]
+        parts = rest.rsplit(":", 1)
+        if len(parts) == 2:
+            await _record_survey(bot, callback_id, chat_id, owner_id, parts[0], parts[1])
+        else:
+            try:
+                await bot.answer_callback_query(callback_query_id=callback_id)
+            except Exception:
+                pass
+
     else:
         # Unknown callback — just ack it silently
         try:
@@ -784,6 +798,58 @@ async def _maybe_send_open_link_tip(bot, chat_id: int, owner_id: str, alert_key:
         )
     except Exception as e:
         logger.debug(f"open-link tip skipped: {e}")
+
+
+# Human-readable label per survey option, for the confirmation toast.
+_SURVEY_CHOICE_LABELS = {
+    "A": "⏰ Pas le temps",
+    "B": "😐 Pas intéressé par les destinations",
+    "C": "💸 Prix pas assez intéressants",
+    "D": "🤷 Je ne savais pas que c'était utile",
+    "E": "✅ J'ai déjà cliqué",
+}
+
+
+async def _record_survey(
+    bot,
+    callback_id: str,
+    chat_id: int,
+    owner_id: str,
+    survey_key: str,
+    choice: str,
+):
+    """Persist a survey button press. Upsert on (user_id, survey_key) so a
+    user can change their answer (last click wins), mirroring feedback.
+    Best-effort: a DB hiccup never surfaces a stack trace to the user."""
+    choice = (choice or "").strip().upper()[:8]
+    if choice not in _SURVEY_CHOICE_LABELS:
+        try:
+            await bot.answer_callback_query(callback_query_id=callback_id)
+        except Exception:
+            pass
+        return
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        db.table("survey_responses").upsert(
+            {
+                "user_id": owner_id,
+                "survey_key": survey_key[:64],
+                "choice": choice,
+                "updated_at": now,
+            },
+            on_conflict="user_id,survey_key",
+        ).execute()
+        await bot.answer_callback_query(
+            callback_query_id=callback_id,
+            text=f"Merci ! Réponse enregistrée : {_SURVEY_CHOICE_LABELS[choice]}",
+            show_alert=False,
+        )
+    except Exception as e:
+        logger.warning(f"Survey record failed (key={survey_key} choice={choice}): {e}")
+        try:
+            await bot.answer_callback_query(callback_query_id=callback_id, text="Erreur, réessaie.")
+        except Exception:
+            pass
 
 
 async def _link_account(chat_id: int, token: str, chat: dict):

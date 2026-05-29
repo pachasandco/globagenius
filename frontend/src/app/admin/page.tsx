@@ -129,6 +129,14 @@ export default function AdminPage() {
   const [bcStatus, setBcStatus] = useState("");
   const [bcPendingCount, setBcPendingCount] = useState<number | null>(null);
   const [bcSending, setBcSending] = useState(false);
+  // Telegram survey (inline-button poll)
+  const [svStatus, setSvStatus] = useState("");
+  const [svPendingCount, setSvPendingCount] = useState<number | null>(null);
+  const [svSending, setSvSending] = useState(false);
+  const [svResults, setSvResults] = useState<{
+    total_responses: number;
+    results: Array<{ choice: string; label: string; count: number }>;
+  } | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -143,16 +151,18 @@ export default function AdminPage() {
   async function loadData(key: string) {
     setLoading(true);
     try {
-      const [statusRes, debugRes, routesRes, ctrRes] = await Promise.all([
+      const [statusRes, debugRes, routesRes, ctrRes, surveyRes] = await Promise.all([
         fetch(`${API_URL}/api/status`).then(r => r.json()),
         fetch(`${API_URL}/api/debug/data`, { headers: { "X-Admin-Key": key } }).then(r => r.json()),
         fetch(`${API_URL}/api/admin/routes`, { headers: { "X-Admin-Key": key } }).then(r => r.json()),
         fetch(`${API_URL}/api/admin/ctr?days=30`, { headers: { "X-Admin-Key": key } }).then(r => r.json()),
+        fetch(`${API_URL}/api/admin/survey/results`, { headers: { "X-Admin-Key": key } }).then(r => r.json()).catch(() => null),
       ]);
       setStatus(statusRes);
       if (!debugRes.detail) setDebug(debugRes);
       if (routesRes.routes) setRoutes(routesRes.routes);
       if (!ctrRes.detail) setCtr(ctrRes);
+      if (surveyRes && !surveyRes.detail) setSvResults(surveyRes);
     } catch { /* ignore */ }
     setLoading(false);
   }
@@ -292,6 +302,49 @@ export default function AdminPage() {
       setBcStatus(`Erreur : ${e}`);
     } finally {
       setBcSending(false);
+    }
+  }
+
+  async function loadSurveyResults() {
+    try {
+      const res = await fetch(`${API_URL}/api/admin/survey/results`, {
+        headers: { "X-Admin-Key": adminKey },
+      });
+      if (res.ok) setSvResults(await res.json());
+    } catch { /* ignore */ }
+  }
+
+  async function sendSurvey(mode: "test" | "send", confirmCount?: number) {
+    setSvSending(true);
+    setSvStatus(mode === "test" ? "Envoi du test à toi…" : "Envoi en cours…");
+    try {
+      const res = await fetch(`${API_URL}/api/admin/survey/send`, {
+        method: "POST",
+        headers: { "X-Admin-Key": adminKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ mode, confirm_count: confirmCount ?? null }),
+      });
+      if (res.status === 409) {
+        const body = await res.json().catch(() => ({}));
+        const m = /(\d+)\s+destinataires/.exec(body.detail || "");
+        const n = m ? parseInt(m[1], 10) : null;
+        setSvPendingCount(n);
+        setSvStatus(`⚠️ Confirme l'envoi du sondage à ${n ?? "?"} users.`);
+        setSvSending(false);
+        return;
+      }
+      const data = await res.json();
+      if (!res.ok) {
+        setSvStatus(`Erreur : ${data.detail || res.status}`);
+      } else if (mode === "test") {
+        setSvStatus(`✅ Sondage test envoyé à ton compte (${data.delivered}/1). Vérifie Telegram.`);
+      } else {
+        setSvStatus(`✅ Sondage envoyé : ${data.delivered}/${data.recipients} (${data.failed} échecs).`);
+        setSvPendingCount(null);
+      }
+    } catch (e) {
+      setSvStatus(`Erreur : ${e}`);
+    } finally {
+      setSvSending(false);
     }
   }
 
@@ -456,6 +509,79 @@ export default function AdminPage() {
             )}
           </div>
           {bcStatus && <div className="mt-2 text-xs text-gray-600">{bcStatus}</div>}
+        </div>
+
+        {/* Telegram survey (inline-button poll) */}
+        <div className="bg-white rounded-xl border border-gray-100 p-4 mb-6">
+          <h2 className="font-semibold mb-1">📊 Sondage Telegram</h2>
+          <p className="text-xs text-gray-400 mb-3">
+            Envoie le sondage « qu&apos;est-ce qui t&apos;a empêché de cliquer ? » avec
+            5 boutons. Réponses stockées en DB (1 par user, modifiable). Users en
+            pause exclus. Teste d&apos;abord sur ton compte.
+          </p>
+          <div className="flex flex-wrap gap-2 items-center mb-3">
+            <button
+              onClick={() => sendSurvey("test")}
+              disabled={svSending}
+              className="bg-gray-700 text-white text-sm px-4 py-2 rounded-lg hover:bg-gray-800 disabled:opacity-40"
+            >
+              📩 M&apos;envoyer le test
+            </button>
+            {svPendingCount === null ? (
+              <button
+                onClick={() => sendSurvey("send")}
+                disabled={svSending}
+                className="bg-[#FF6B47] text-white text-sm px-4 py-2 rounded-lg hover:bg-[#E55A38] disabled:opacity-40"
+              >
+                📊 Préparer l&apos;envoi à tous
+              </button>
+            ) : (
+              <button
+                onClick={() => sendSurvey("send", svPendingCount)}
+                disabled={svSending}
+                className="bg-red-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-red-700 disabled:opacity-40"
+              >
+                ✅ Confirmer l&apos;envoi à {svPendingCount} users
+              </button>
+            )}
+            <button
+              onClick={loadSurveyResults}
+              className="text-xs text-gray-500 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50"
+            >
+              ↻ Rafraîchir résultats
+            </button>
+          </div>
+          {svStatus && <div className="mb-3 text-xs text-gray-600">{svStatus}</div>}
+
+          {svResults && (
+            <div className="border-t border-gray-100 pt-3">
+              <div className="text-xs text-gray-400 mb-2">
+                {svResults.total_responses} réponse(s)
+              </div>
+              <div className="space-y-1.5">
+                {svResults.results.map((r) => {
+                  const pct = svResults.total_responses
+                    ? Math.round((r.count / svResults.total_responses) * 100)
+                    : 0;
+                  return (
+                    <div key={r.choice} className="flex items-center gap-2 text-sm">
+                      <span className="w-64 shrink-0 truncate">{r.label}</span>
+                      <div className="flex-1 bg-gray-100 rounded h-4 overflow-hidden">
+                        <div
+                          className="bg-[#FF6B47] h-full"
+                          style={{ width: `${pct}%` }}
+                          aria-hidden="true"
+                        />
+                      </div>
+                      <span className="w-16 shrink-0 text-right tabular-nums text-gray-600">
+                        {r.count} · {pct}%
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Scrape logs */}
