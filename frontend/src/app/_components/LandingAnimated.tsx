@@ -81,15 +81,28 @@ export function HeroContent({ foundersCount = 0, maxFounders = 100 }: HeroConten
         <br />
         Long-courrier (Asie, Amériques) bientôt en beta.
       </p>
-      <Link
-        href="/signup"
-        className="inline-block bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-8 py-4 rounded-xl font-bold text-lg transition-colors shadow-[0_8px_24px_rgba(255,107,71,0.3)]"
-      >
-        Rejoindre les {maxFounders} fondateurs
-      </Link>
-      <p className="text-white/50 text-sm mt-3">
-        Accès gratuit à vie · Premium pour les actifs · Plus que {remaining} places
-      </p>
+      {remaining > 0 ? (
+        <>
+          <Link
+            href="/signup"
+            className="inline-block bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-8 py-4 rounded-xl font-bold text-lg transition-colors shadow-[0_8px_24px_rgba(255,107,71,0.3)]"
+          >
+            Rejoindre les {maxFounders} fondateurs
+          </Link>
+          <p className="text-white/50 text-sm mt-3">
+            Accès gratuit à vie · Premium pour les actifs · Plus que {remaining} places
+          </p>
+        </>
+      ) : (
+        <>
+          <span className="inline-block bg-white/15 border border-white/20 text-white/90 px-8 py-4 rounded-xl font-bold text-lg cursor-not-allowed">
+            Inscriptions fermées · {maxFounders}/{maxFounders}
+          </span>
+          <p className="text-white/50 text-sm mt-3">
+            La beta fondateur est complète. Lancement public à venir.
+          </p>
+        </>
+      )}
     </motion.div>
   );
 }

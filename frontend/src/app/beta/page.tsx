@@ -73,12 +73,18 @@ export default async function BetaPage() {
               aria-hidden="true"
             />
           </div>
-          <Link
-            href="/signup"
-            className="inline-block bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-8 py-3 rounded-xl font-bold text-base transition-colors"
-          >
-            Rejoindre les {remaining} places restantes
-          </Link>
+          {remaining > 0 ? (
+            <Link
+              href="/signup"
+              className="inline-block bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-8 py-3 rounded-xl font-bold text-base transition-colors"
+            >
+              Rejoindre les {remaining} places restantes
+            </Link>
+          ) : (
+            <div className="inline-block bg-white/10 border border-white/20 text-white px-8 py-3 rounded-xl font-bold text-base">
+              Inscriptions fermées · {max_founders}/{max_founders}
+            </div>
+          )}
         </section>
 
         {/* ── CE QUE TU RECOIS ── */}
@@ -175,18 +181,28 @@ export default async function BetaPage() {
             anglo-saxons (Going, Jack&apos;s Flight Club) ignorent Lyon,
             Marseille, Toulouse, Bordeaux, Nantes.
           </p>
-          <p className="text-[var(--color-ink)]/85 leading-relaxed">
-            Aujourd&apos;hui en beta, {founders_count} utilisateurs reçoivent
-            quotidiennement des alertes pour des vols à -40% à -80% sur
-            l&apos;Europe et la Méditerranée. Si tu veux faire partie des{" "}
-            {max_founders} premiers fondateurs, c&apos;est ici :
-          </p>
-          <Link
-            href="/signup"
-            className="inline-block mt-6 bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-6 py-3 rounded-xl font-bold text-sm transition-colors"
-          >
-            Rejoindre la beta — gratuit à vie
-          </Link>
+          {remaining > 0 ? (
+            <>
+              <p className="text-[var(--color-ink)]/85 leading-relaxed">
+                Aujourd&apos;hui en beta, {founders_count} utilisateurs reçoivent
+                quotidiennement des alertes pour des vols à -40% à -80% sur
+                l&apos;Europe et la Méditerranée. Si tu veux faire partie des{" "}
+                {max_founders} premiers fondateurs, c&apos;est ici :
+              </p>
+              <Link
+                href="/signup"
+                className="inline-block mt-6 bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-6 py-3 rounded-xl font-bold text-sm transition-colors"
+              >
+                Rejoindre la beta — gratuit à vie
+              </Link>
+            </>
+          ) : (
+            <p className="text-[var(--color-ink)]/85 leading-relaxed">
+              Les {max_founders} places fondateurs sont prises. Merci à toutes
+              et tous pour l&apos;engouement 🙏 — le lancement public arrive
+              bientôt.
+            </p>
+          )}
         </section>
       </main>
 

@@ -22,10 +22,15 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Beta cohort cap. The first MAX_FOUNDERS signups get lifetime premium
-# (auto-granted at /api/auth/signup). The hero card and /beta page also
-# render "founders_count / MAX_FOUNDERS" as a scarcity signal.
+# Beta cohort cap. Signup is HARD-BLOCKED once MAX_FOUNDERS is reached;
+# the landing/beta pages mirror that state with an "inscriptions fermées"
+# message. Within the cap, the first LIFETIME_PREMIUM_FOUNDERS signups
+# get Premium for life (auto-granted) — the rest of the cohort up to
+# MAX_FOUNDERS get Premium for 1 year then revert to free. The hero card
+# and /beta page render "founders_count / MAX_FOUNDERS" as a scarcity
+# signal.
 MAX_FOUNDERS = 100
+LIFETIME_PREMIUM_FOUNDERS = 50
 security = HTTPBearer(auto_error=False)
 
 VALID_AIRPORTS = settings.MVP_AIRPORTS
@@ -765,6 +770,22 @@ async def signup(req: SignupRequest, request: Request, bg_tasks: BackgroundTasks
 
     loop = asyncio.get_running_loop()
 
+    # Hard cap: stop accepting new signups once the beta cohort is full.
+    # Done BEFORE inserting the user so a refused signup leaves no orphan
+    # row. Race condition between the count and the insert is harmless at
+    # this scale (a few inscriptions/day): worst case 1-2 over the cap.
+    cap_resp = await loop.run_in_executor(
+        None,
+        lambda: db.table("users").select("id", count="exact").limit(1).execute(),
+    )
+    current_count = cap_resp.count or 0
+    if current_count >= MAX_FOUNDERS:
+        raise HTTPException(
+            status_code=403,
+            detail="Les inscriptions à la beta sont fermées (100 places atteintes). "
+                   "Inscris-toi à la liste d'attente sur globegenius.app.",
+        )
+
     existing = await loop.run_in_executor(
         None,
         lambda: db.table("users").select("id").eq("email", req.email).execute(),
@@ -795,10 +816,11 @@ async def signup(req: SignupRequest, request: Request, bg_tasks: BackgroundTasks
         }).execute(),
     )
 
-    # Founder beta program: the first MAX_FOUNDERS signups get
-    # lifetime premium so they can stress-test every feature. We write
-    # both layers so the dispatcher (users.tier) and the API
-    # (premium_grants) agree — see _get_user_tier + get_user_caps.
+    # Founder beta program: the first LIFETIME_PREMIUM_FOUNDERS signups
+    # get Premium for life ; signups 51..MAX_FOUNDERS get Premium for one
+    # year then revert to free. We write both layers so the dispatcher
+    # (users.tier) and the API (premium_grants) agree — see
+    # _get_user_tier + get_user_caps.
     try:
         total_users_resp = await loop.run_in_executor(
             None,
@@ -806,6 +828,15 @@ async def signup(req: SignupRequest, request: Request, bg_tasks: BackgroundTasks
         )
         total_users = total_users_resp.count or len(total_users_resp.data or [])
         if total_users <= MAX_FOUNDERS:
+            if total_users <= LIFETIME_PREMIUM_FOUNDERS:
+                expires_at = None  # lifetime
+                reason = f"founder_beta #{total_users} (lifetime)"
+                duration_label = "lifetime"
+            else:
+                # 1 year from signup, then revert to free.
+                expires_at = (datetime.now(timezone.utc) + timedelta(days=365)).isoformat()
+                reason = f"founder_beta #{total_users} (1 year)"
+                duration_label = "1y"
             await loop.run_in_executor(
                 None,
                 lambda: db.table("users").update({"tier": "premium_grandfathered"}).eq("id", user_id).execute(),
@@ -814,13 +845,13 @@ async def signup(req: SignupRequest, request: Request, bg_tasks: BackgroundTasks
                 None,
                 lambda: db.table("premium_grants").upsert({
                     "user_id": user_id,
-                    "expires_at": None,
+                    "expires_at": expires_at,
                     "revoked": False,
                     "granted_by": "auto_founder_beta",
-                    "reason": f"founder_beta #{total_users}",
+                    "reason": reason,
                 }, on_conflict="user_id").execute(),
             )
-            logger.info(f"[founder_beta] Auto-granted lifetime premium to #{total_users}: {req.email}")
+            logger.info(f"[founder_beta] Auto-granted {duration_label} premium to #{total_users}: {req.email}")
     except Exception as e:
         # A grant failure must never block signup — the user can still
         # use the product on the free tier, and the admin can grant
