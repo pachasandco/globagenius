@@ -9,6 +9,8 @@ import {
   setBadge,
   resetPrefs,
   deleteUser,
+  downgradeUser,
+  downgradeUsersBulk,
   hasAdminKey,
   setAdminKey,
   type AdminUser,
@@ -41,6 +43,13 @@ export default function AdminUsersPage() {
   const [deleteConfirmEmail, setDeleteConfirmEmail] = useState("");
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Bulk-downgrade state. We track ids of selected rows + whether the
+  // operator wants the Brevo email sent on bulk action.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkSendEmail, setBulkSendEmail] = useState(true);
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  // null = no per-row downgrade in flight; otherwise it's the user id.
+  const [downgradingId, setDowngradingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (hasAdminKey()) {
@@ -117,6 +126,87 @@ export default function AdminUsersPage() {
       await reload();
     } catch (e) {
       alert(`Failed: ${e instanceof Error ? e.message : "error"}`);
+    }
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll(visibleIds: string[]) {
+    const allSelected = visibleIds.every((id) => selectedIds.has(id));
+    setSelectedIds(() => {
+      if (allSelected) {
+        // Clear only the ones we just had visible — keep selections that
+        // weren't in the current filter, so the operator doesn't lose work.
+        const next = new Set(selectedIds);
+        visibleIds.forEach((id) => next.delete(id));
+        return next;
+      }
+      const next = new Set(selectedIds);
+      visibleIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  async function handleDowngradeOne(user: AdminUser) {
+    const ok = confirm(
+      `Repasser ${user.email} en Free ?\n\n` +
+        `Le grant Premium sera révoqué, l'utilisateur garde l'accès gratuit. ` +
+        `Un email lui sera envoyé (si le template Brevo est configuré).`
+    );
+    if (!ok) return;
+    setDowngradingId(user.id);
+    try {
+      const res = await downgradeUser(user.id, true);
+      if (!res.ok) {
+        alert(`Échec pour ${user.email}.`);
+      } else if (!res.email_sent) {
+        alert(`✓ ${user.email} repassé en Free.\n(Email non envoyé — template Brevo non configuré.)`);
+      }
+      await reload();
+    } catch (e) {
+      alert(`Failed: ${e instanceof Error ? e.message : "error"}`);
+    } finally {
+      setDowngradingId(null);
+    }
+  }
+
+  async function handleDowngradeBulk() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const emails = users
+      .filter((u) => selectedIds.has(u.id))
+      .map((u) => u.email)
+      .slice(0, 8);
+    const more = ids.length > 8 ? ` (+${ids.length - 8} autres)` : "";
+    const ok = confirm(
+      `Repasser ${ids.length} utilisateur(s) en Free ?\n\n` +
+        emails.join("\n") +
+        more +
+        (bulkSendEmail
+          ? "\n\nUn email leur sera envoyé (si template Brevo configuré)."
+          : "\n\nAUCUN email ne sera envoyé.")
+    );
+    if (!ok) return;
+    setBulkSubmitting(true);
+    try {
+      const res = await downgradeUsersBulk(ids, bulkSendEmail);
+      alert(
+        `✓ ${res.downgraded}/${ids.length} repassé(s) en Free.\n` +
+          `${res.emails_sent} email(s) envoyé(s).`
+      );
+      setSelectedIds(new Set());
+      await reload();
+    } catch (e) {
+      alert(`Failed: ${e instanceof Error ? e.message : "error"}`);
+    } finally {
+      setBulkSubmitting(false);
     }
   }
 
@@ -259,10 +349,50 @@ export default function AdminUsersPage() {
           <div className="text-sm text-red-500 mb-4">{error}</div>
         )}
 
+        {selectedIds.size > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+            <span className="text-sm text-amber-900 font-semibold">
+              {selectedIds.size} sélectionné{selectedIds.size > 1 ? "s" : ""}
+            </span>
+            <label className="text-xs text-amber-900 flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={bulkSendEmail}
+                onChange={(e) => setBulkSendEmail(e.target.checked)}
+              />
+              envoyer l&apos;email Brevo
+            </label>
+            <button
+              onClick={handleDowngradeBulk}
+              disabled={bulkSubmitting}
+              className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg font-semibold disabled:opacity-40"
+            >
+              {bulkSubmitting ? "Dégradation…" : "↓ Repasser en Free"}
+            </button>
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="text-xs text-gray-600 hover:text-gray-900 px-2 py-1.5"
+            >
+              Désélectionner
+            </button>
+          </div>
+        )}
+
         <div className="bg-white rounded-2xl shadow overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="border-b border-gray-100 text-left text-gray-500">
               <tr>
+                <th className="p-3 w-8">
+                  <input
+                    type="checkbox"
+                    aria-label="Tout sélectionner"
+                    checked={
+                      filtered.length > 0 &&
+                      filtered.every((u) => selectedIds.has(u.id))
+                    }
+                    onChange={() => toggleSelectAll(filtered.map((u) => u.id))}
+                  />
+                </th>
                 <th className="p-3">Email</th>
                 <th className="p-3">Inscrit</th>
                 <th className="p-3">Tier</th>
@@ -277,8 +407,21 @@ export default function AdminUsersPage() {
               {filtered.map((u) => (
                 <tr
                   key={u.id}
-                  className="border-b border-gray-50 hover:bg-gray-50"
+                  className={
+                    "border-b border-gray-50 hover:bg-gray-50 " +
+                    (selectedIds.has(u.id) ? "bg-amber-50/40" : "")
+                  }
                 >
+                  <td className="p-3">
+                    <input
+                      type="checkbox"
+                      aria-label={`Sélectionner ${u.email}`}
+                      checked={selectedIds.has(u.id)}
+                      onChange={() => toggleSelected(u.id)}
+                      disabled={u.is_admin}
+                      title={u.is_admin ? "Admin protégé" : undefined}
+                    />
+                  </td>
                   <td className="p-3">
                     {u.email}
                     {u.is_admin && (
@@ -359,6 +502,18 @@ export default function AdminUsersPage() {
                       className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded"
                     >
                       Reset
+                    </button>
+                    <button
+                      onClick={() => handleDowngradeOne(u)}
+                      disabled={u.is_admin || downgradingId === u.id}
+                      title={
+                        u.is_admin
+                          ? "Admin protégé"
+                          : "Repasser ce compte en Free + email Brevo"
+                      }
+                      className="text-xs bg-orange-50 hover:bg-orange-100 text-orange-700 px-2 py-1 rounded disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {downgradingId === u.id ? "…" : "↓ Free"}
                     </button>
                     <button
                       onClick={() => openDelete(u)}
