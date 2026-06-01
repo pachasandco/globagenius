@@ -59,6 +59,36 @@ export const grantPremium = (
 export const revokePremium = (id: string) =>
   adminFetch(`/api/admin/users/${id}/premium`, { method: "DELETE" });
 
+// Downgrade = revoke premium grant + flip users.tier to 'free' +
+// (optionally) send the Brevo "you've been downgraded" template.
+// Stronger than revokePremium because it also touches users.tier so
+// the dispatcher stops treating them as premium_grandfathered.
+export interface DowngradeResult {
+  ok: boolean;
+  user_id: string;
+  email: string | null;
+  email_sent: boolean;
+}
+
+export const downgradeUser = (id: string, sendEmail = true) =>
+  adminFetch<DowngradeResult>(`/api/admin/users/${id}/downgrade`, {
+    method: "POST",
+    body: JSON.stringify({ send_email: sendEmail }),
+  });
+
+export interface DowngradeBulkResult {
+  ok: boolean;
+  downgraded: number;
+  emails_sent: number;
+  results: DowngradeResult[];
+}
+
+export const downgradeUsersBulk = (userIds: string[], sendEmail = true) =>
+  adminFetch<DowngradeBulkResult>(`/api/admin/users/downgrade-bulk`, {
+    method: "POST",
+    body: JSON.stringify({ user_ids: userIds, send_email: sendEmail }),
+  });
+
 // updateMinDiscount removed in v10 — admin override of user-controlled
 // min_discount caused silent overrides of profile choices. The backend
 // endpoint is gone too.

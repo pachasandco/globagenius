@@ -2048,6 +2048,112 @@ def admin_revoke_premium(user_id: str, request: Request):
     return {"ok": True, "revoked_count": len(resp.data or [])}
 
 
+# ── Downgrade: kick an inactive founder back to the free tier ───────────────
+# This is "stronger" than revoke_premium: it also flips users.tier to
+# 'free' (so the dispatcher and tier helpers stop treating them as
+# premium_grandfathered) and optionally sends an explanatory email via
+# Brevo. The free ACCESS to GlobeGenius is kept (CGV Article 7) — only
+# the Premium status (unlimited alerts, deals >50%, etc.) is removed.
+
+class AdminDowngradeRequest(BaseModel):
+    # When true, send the Brevo template explaining the change. Skipped
+    # silently if BREVO_DOWNGRADE_TEMPLATE_ID is 0 (template not configured).
+    send_email: bool = True
+
+
+class AdminDowngradeBulkRequest(BaseModel):
+    user_ids: list[str]
+    send_email: bool = True
+
+
+async def _send_downgrade_email(email: str) -> bool:
+    """Send the Brevo downgrade template, best-effort. Returns True on send."""
+    template_id = settings.BREVO_DOWNGRADE_TEMPLATE_ID
+    if not settings.BREVO_API_KEY or not template_id:
+        return False
+    try:
+        from app.notifications.onboarding_emails import _send_brevo_template
+        return await _send_brevo_template(
+            to_email=email, template_id=template_id, params=None
+        )
+    except Exception as e:
+        logger.warning(f"downgrade email failed for {email}: {e}")
+        return False
+
+
+def _do_downgrade(user_id: str) -> tuple[bool, str | None]:
+    """Run the downgrade DB writes for one user. Returns (ok, email).
+    No email sent here — the caller decides whether to fire Brevo so the
+    bulk endpoint can batch + log. Idempotent: re-running on an already
+    downgraded user is a no-op."""
+    if not db:
+        return False, None
+    user_resp = db.table("users").select("id,email").eq("id", user_id).execute()
+    if not user_resp.data:
+        return False, None
+    email = user_resp.data[0].get("email")
+    # Revoke any active premium grant.
+    try:
+        db.table("premium_grants").update({
+            "revoked": True,
+            "revoked_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("user_id", user_id).eq("revoked", False).execute()
+    except Exception as e:
+        logger.warning(f"downgrade revoke failed for {user_id}: {e}")
+    # Flip the tier column so dispatcher + caps logic stop seeing them as
+    # premium_grandfathered. The free access to the product stays —
+    # only the Premium status is removed (CGV Article 7).
+    try:
+        db.table("users").update({"tier": "free"}).eq("id", user_id).execute()
+    except Exception as e:
+        logger.warning(f"downgrade tier flip failed for {user_id}: {e}")
+        return False, email
+    return True, email
+
+
+@router.post("/api/admin/users/{user_id}/downgrade")
+async def admin_downgrade(user_id: str, req: AdminDowngradeRequest, request: Request):
+    """Revoke Premium grant + flip users.tier to 'free' + (optionally)
+    send the Brevo explanatory email."""
+    _require_admin(request)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    ok, email = _do_downgrade(user_id)
+    if not ok and not email:
+        raise HTTPException(status_code=404, detail="User not found")
+    email_sent = False
+    if ok and req.send_email and email:
+        email_sent = await _send_downgrade_email(email)
+    return {"ok": ok, "user_id": user_id, "email": email, "email_sent": email_sent}
+
+
+@router.post("/api/admin/users/downgrade-bulk")
+async def admin_downgrade_bulk(req: AdminDowngradeBulkRequest, request: Request):
+    """Downgrade many founders in one call. Returns per-user outcome so
+    the admin UI can show what worked / what failed."""
+    _require_admin(request)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    ids = [u for u in (req.user_ids or []) if u]
+    if not ids:
+        raise HTTPException(status_code=400, detail="user_ids vide")
+    if len(ids) > 200:
+        raise HTTPException(status_code=400, detail="trop d'utilisateurs en un appel (max 200)")
+    results = []
+    for uid in ids:
+        ok, email = _do_downgrade(uid)
+        email_sent = False
+        if ok and req.send_email and email:
+            email_sent = await _send_downgrade_email(email)
+        results.append({"user_id": uid, "email": email, "ok": ok, "email_sent": email_sent})
+    return {
+        "ok": True,
+        "downgraded": sum(1 for r in results if r["ok"]),
+        "emails_sent": sum(1 for r in results if r["email_sent"]),
+        "results": results,
+    }
+
+
 def _next_badge_number() -> int:
     """Next sequential OG number (OG #1, #2, ...). Reads the current max
     badge_number and adds 1. Concurrency at admin scale is a non-issue
