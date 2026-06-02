@@ -42,7 +42,7 @@ async function fetchRecentDestinationGuides(): Promise<Array<{ iata: string; des
 
 const faqs = [
   { q: "C'est quoi GlobeGenius exactement ?", a: "On surveille en continu les prix des vols depuis 9 aéroports français vers l'Europe, la Méditerranée et l'Afrique du Nord. Quand un tarif chute significativement sous le prix habituel, on t'envoie une alerte Telegram avec dates, prix et lien direct pour réserver. On est en beta publique depuis mai 2026." },
-  { q: "Pourquoi c'est gratuit pendant la beta ?", a: "Parce que ce n'est pas encore un produit fini. La couverture est limitée à l'Europe et la Méditerranée — le long-courrier (Asie, Amériques) arrive prochainement. Les 100 premiers inscrits ont le statut « Membre fondateur » et le Premium gratuit pendant au moins 1 an. Tant que tu participes à la beta (utilisation + retours sur les alertes), ton Premium reste gratuit, même après le lancement officiel à 49€/an. En cas d'inactivité prolongée, le compte repasse en Free — l'accès au service est conservé." },
+  { q: "Pourquoi c'est gratuit pendant la beta ?", a: "Parce que ce n'est pas encore un produit fini. La couverture est limitée à l'Europe et la Méditerranée — le long-courrier (Asie, Amériques) arrive prochainement. Les 100 premiers inscrits ont le statut « Membre fondateur » et le Premium gratuit pendant 1 an. Les vrais testeurs (usage + retours sur les alertes) gardent leur Premium à vie. Les autres repassent en Free au bout d'un an — ou peuvent prendre l'abonnement payant à 49€/an pour garder le Premium. L'accès au service est conservé dans tous les cas." },
   { q: "Combien d'alertes je reçois par jour ?", a: "Entre 1 et 3 alertes par jour selon ta config. On plafonne strictement à 5/24h, étalées dans le temps (jamais 4 notifs entre 2h et 4h du matin). Tu peux ajuster ton seuil à tout moment depuis ton profil." },
   { q: "Comment sont vérifiés les deals ?", a: "Cross-check 2-tier avant envoi (95% de couverture). Tier 1 : on re-requête directement l'API de la compagnie aérienne (Ryanair, Transavia, Vueling). Tier 2 : on confirme sur l'agrégateur Travelpayouts. Les deux sources doivent confirmer pour que l'alerte parte. Ça élimine les ghost fares (prix affiché mais qui n'existe pas au moment de réserver)." },
   { q: "Comment je gère mes préférences ?", a: "Depuis Telegram directement (commandes /destinations, /pause, ou bouton Masquer sur chaque alerte) ou depuis la page Profil sur le site." },
@@ -331,9 +331,11 @@ export default async function Landing() {
               <div className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Étape 3 · Lancement officiel</div>
               <h3 className="font-bold text-[var(--color-ink)] mb-2">Premium à 49€/an</h3>
               <p className="text-sm text-gray-500 leading-relaxed">
-                Ouverture grand public. Les fondateurs actifs gardent leur
-                <strong> Premium gratuit</strong> tant qu&apos;ils participent à la beta
-                (au moins 1 an, renouvelable).
+                Ouverture grand public à 49€/an. Tous les fondateurs gardent
+                leur <strong>Premium gratuit pendant 1 an</strong>. Les vrais
+                testeurs (usage + retours) le conservent <strong>à vie</strong>.
+                Les autres repassent en Free au bout d&apos;un an — ou prennent
+                l&apos;abonnement à 49€/an pour garder le Premium.
               </p>
             </div>
           </div>
@@ -353,7 +355,7 @@ export default async function Landing() {
           </h2>
           <p className="text-center text-gray-400 text-sm mb-10">
             Tout est gratuit pour les {betaCount.max_founders} premiers inscrits.
-            Premium gratuit pendant la beta (au moins 1 an), renouvelé tant que tu es actif.
+            Premium gratuit pendant 1 an · À vie pour les vrais testeurs.
           </p>
           <div className="max-w-2xl mx-auto bg-[var(--color-ink)] rounded-2xl p-8 text-center">
             <div className="text-[var(--color-coral)] text-sm font-bold mb-2">
@@ -364,7 +366,7 @@ export default async function Landing() {
             </div>
             <div className="text-gray-400 text-sm mb-6">places fondateurs prises</div>
             <div className="text-sm text-gray-300 leading-loose mb-8 text-left max-w-md mx-auto">
-              ✓ <span className="text-white">Premium gratuit jusqu&apos;à 1 an · Renouvelé tant que tu es actif</span><br />
+              ✓ <span className="text-white">Premium gratuit jusqu&apos;à 1 an · À vie pour les vrais testeurs</span><br />
               ✓ <span className="text-white">Accès au long-courrier dès son ouverture</span><br />
               ✓ <span className="text-white">Détection stopover dès qu&apos;elle sera livrée</span><br />
               ✓ <span className="text-white">Tes préférences personnalisées</span><br />

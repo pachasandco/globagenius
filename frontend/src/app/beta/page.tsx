@@ -6,12 +6,12 @@ import { getBetaCount } from "@/lib/api";
 export const metadata: Metadata = {
   title: "Programme Beta Fondateur — GlobeGenius",
   description:
-    "100 places fondateurs disponibles. Premium gratuit pendant la beta (au moins 1 an), renouvelé tant que tu participes activement. Couverture Europe + Méditerranée + Afrique du Nord, long-courrier bientôt en beta.",
+    "100 places fondateurs disponibles. Premium gratuit pendant 1 an, à vie pour les vrais testeurs. Couverture Europe + Méditerranée + Afrique du Nord, long-courrier bientôt en beta.",
   alternates: { canonical: "https://globegenius.app/beta" },
   openGraph: {
     title: "Programme Beta Fondateur · GlobeGenius",
     description:
-      "100 places fondateurs. Premium gratuit pendant la beta, renouvelé tant que tu es actif.",
+      "100 places fondateurs. Premium gratuit 1 an, à vie pour les vrais testeurs.",
     url: "https://globegenius.app/beta",
     type: "website",
   },
@@ -54,8 +54,9 @@ export default async function BetaPage() {
           <p className="text-gray-500 text-lg max-w-2xl mx-auto leading-relaxed">
             GlobeGenius est en beta publique depuis mai 2026. Les {max_founders}{" "}
             premiers inscrits ont le statut Membre fondateur et le Premium gratuit
-            pendant la beta (au moins 1 an). Tant que tu participes activement
-            (usage + retours honnêtes sur les alertes), le Premium est renouvelé.
+            pendant 1 an. Les vrais testeurs (usage + retours honnêtes sur les
+            alertes) gardent leur Premium à vie. Les autres repassent en Free au
+            bout d&apos;un an — ou prennent l&apos;abonnement à 49€/an.
           </p>
         </header>
 
@@ -106,7 +107,7 @@ export default async function BetaPage() {
               ✓ <strong>Préférences personnalisées</strong> : aéroports, seuil de réduction, destinations bloquées
             </li>
             <li>
-              ✓ <strong>Premium gratuit pendant la beta</strong> (au moins 1 an), renouvelé tant que tu participes activement (usage + retours), même après le lancement officiel à 49€/an. En cas d&apos;inactivité prolongée, le compte repasse en Free — l&apos;accès au service est conservé.
+              ✓ <strong>Premium gratuit pendant 1 an</strong>. Si tu participes vraiment (usage + retours honnêtes), le Premium reste <strong>à vie</strong>. Sinon, ton compte repasse en Free au bout d&apos;un an, ou tu peux prendre l&apos;abonnement à 49€/an pour garder le Premium. L&apos;accès au service est conservé dans tous les cas.
             </li>
           </ul>
         </section>

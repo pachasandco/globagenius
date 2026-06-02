@@ -277,7 +277,7 @@ export default function MethodologiePage() {
 
           <h3 className="font-semibold text-[var(--color-ink)] text-lg mb-2 mt-6">Pendant la beta publique</h3>
           <p className="text-[var(--color-ink)]/85 leading-relaxed mb-4">
-            <strong>100% gratuit pour les 100 premiers inscrits.</strong> Les fondateurs ont le Premium gratuit pendant la beta (au moins 1 an), renouvelé tant qu&apos;ils participent activement (usage + retours sur les alertes) — c&apos;est l&apos;échange : tu nous aides à calibrer, on te garde en Premium. En cas d&apos;inactivité prolongée, le compte repasse en Free mais l&apos;accès au service est conservé.
+            <strong>100% gratuit pour les 100 premiers inscrits.</strong> Les fondateurs ont le Premium gratuit pendant 1 an. Les vrais testeurs (usage + retours honnêtes sur les alertes) gardent leur Premium <strong>à vie</strong> — c&apos;est l&apos;échange : tu nous aides à calibrer, on te garde en Premium. Les autres repassent en Free au bout d&apos;un an, ou prennent l&apos;abonnement à 49€/an. L&apos;accès au service est conservé dans tous les cas.
           </p>
           <p className="text-[var(--color-ink)]/85 leading-relaxed mb-4">
             Pendant cette phase, GlobeGenius ne génère aucun revenu. Le projet est financé sur fonds personnels du fondateur.
@@ -399,7 +399,7 @@ export default function MethodologiePage() {
             Tu veux tester en conditions réelles ?
           </h2>
           <p className="text-gray-400 text-sm mb-6 max-w-md mx-auto">
-            Il reste des places fondateurs : Premium gratuit pendant la beta (au moins 1 an), renouvelé tant que tu participes activement.
+            Il reste des places fondateurs : Premium gratuit 1 an, à vie pour les vrais testeurs.
           </p>
           <Link
             href="/beta"
