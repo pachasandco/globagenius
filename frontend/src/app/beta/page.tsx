@@ -6,12 +6,12 @@ import { getBetaCount } from "@/lib/api";
 export const metadata: Metadata = {
   title: "Programme Beta Fondateur — GlobeGenius",
   description:
-    "100 places fondateurs disponibles. Accès gratuit à vie ; statut Premium pour les membres actifs de la beta. Couverture Europe + Méditerranée + Afrique du Nord, long-courrier bientôt en beta.",
+    "100 places fondateurs disponibles. Premium gratuit pendant la beta (au moins 1 an), renouvelé tant que tu participes activement. Couverture Europe + Méditerranée + Afrique du Nord, long-courrier bientôt en beta.",
   alternates: { canonical: "https://globegenius.app/beta" },
   openGraph: {
     title: "Programme Beta Fondateur · GlobeGenius",
     description:
-      "100 places fondateurs. Accès gratuit à vie, Premium pour les actifs.",
+      "100 places fondateurs. Premium gratuit pendant la beta, renouvelé tant que tu es actif.",
     url: "https://globegenius.app/beta",
     type: "website",
   },
@@ -53,9 +53,9 @@ export default async function BetaPage() {
           </h1>
           <p className="text-gray-500 text-lg max-w-2xl mx-auto leading-relaxed">
             GlobeGenius est en beta publique depuis mai 2026. Les {max_founders}{" "}
-            premiers inscrits ont un accès fondateur gratuit à vie. Les membres
-            actifs (usage + feedback honnête sur la qualité des alertes) gardent
-            en plus le statut Premium.
+            premiers inscrits ont le statut Membre fondateur et le Premium gratuit
+            pendant la beta (au moins 1 an). Tant que tu participes activement
+            (usage + retours honnêtes sur les alertes), le Premium est renouvelé.
           </p>
         </header>
 
@@ -106,7 +106,7 @@ export default async function BetaPage() {
               ✓ <strong>Préférences personnalisées</strong> : aéroports, seuil de réduction, destinations bloquées
             </li>
             <li>
-              ✓ <strong>Accès fondateur gratuit à vie</strong> — et statut <strong>Premium</strong> tant que tu participes à la beta (usage + feedback), même quand on lancera officiellement à 49€/an
+              ✓ <strong>Premium gratuit pendant la beta</strong> (au moins 1 an), renouvelé tant que tu participes activement (usage + retours), même après le lancement officiel à 49€/an. En cas d&apos;inactivité prolongée, le compte repasse en Free — l&apos;accès au service est conservé.
             </li>
           </ul>
         </section>
@@ -159,7 +159,7 @@ export default async function BetaPage() {
             <div>
               <div className="font-semibold text-[var(--color-ink)] mb-2">Lancement officiel</div>
               <ul className="space-y-1 text-sm text-gray-600">
-                <li>○ Premium à 49€/an (les fondateurs actifs gardent le Premium gratuit ; l&apos;accès reste gratuit à vie pour tous)</li>
+                <li>○ Premium à 49€/an (les fondateurs actifs gardent leur Premium gratuit ; l&apos;accès au service Free reste pour tous)</li>
                 <li>○ Extension Belgique francophone, Suisse romande, Luxembourg</li>
                 <li>○ App PWA installable</li>
               </ul>
@@ -193,7 +193,7 @@ export default async function BetaPage() {
                 href="/signup"
                 className="inline-block mt-6 bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-6 py-3 rounded-xl font-bold text-sm transition-colors"
               >
-                Rejoindre la beta — gratuit à vie
+                Rejoindre la beta — Premium gratuit jusqu&apos;à 1 an
               </Link>
             </>
           ) : (

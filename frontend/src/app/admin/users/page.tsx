@@ -596,8 +596,9 @@ export default function AdminUsersPage() {
               {!badgeUser.badge && (
                 <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
                   Attribuer le badge va : assigner le prochain numéro OG,
-                  accorder le <strong>Premium à vie</strong>, et envoyer un
-                  message Telegram au membre (s’il est connecté).
+                  accorder un grant Premium <strong>sans expiration</strong>
+                  (révocable manuellement via le bouton ↓ Free), et envoyer
+                  un message Telegram au membre (s’il est connecté).
                 </p>
               )}
               <label className="text-sm text-gray-500">

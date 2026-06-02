@@ -579,8 +579,8 @@ export default function ProfilePage() {
               {badgeNumber ? ` #${badgeNumber}` : ""} 🏅
             </h2>
             <p className="text-gray-400 text-sm max-w-md mx-auto mb-5">
-              Membre fondateur de l&apos;Active Beta — Premium à vie et features
-              en avant-première. Partage ton badge :
+              Membre fondateur de l&apos;Active Beta — Premium gratuit et features
+              en avant-première tant que tu restes actif. Partage ton badge :
             </p>
 
             <div className="flex flex-wrap items-center justify-center gap-2">
