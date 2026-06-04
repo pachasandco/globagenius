@@ -1079,6 +1079,15 @@ async def _dispatch_grouped_flight_alerts(
                         ctx = format_competitor_context(comparison)
                         if ctx:
                             offer["competitor_context"] = ctx
+                    # Carry the alert_key inside the offer so a final
+                    # sent_alerts check at flush time can drop any offer
+                    # already alerted in another route_key bucket of the
+                    # same (user,destination) message. Without this, an
+                    # itinerary that re-classifies into a different
+                    # duration/lead-time bucket between two runs slipped
+                    # past the per-bucket dedup and re-appeared in the
+                    # follow-up message — exactly the BVA→OPO duplicate.
+                    offer["_alert_key"] = key
                     offers.append(offer)
                     if key:
                         keys_to_store.append(key)
@@ -1135,6 +1144,54 @@ async def _dispatch_grouped_flight_alerts(
             unique_offers.append(o)
         offers = unique_offers
         if not offers:
+            continue
+
+        # Final safety net: drop offers whose alert_key already lives in
+        # sent_alerts for this user within ALERT_INHIBIT_HOURS. The
+        # per-route_key dedup earlier only checks candidates inside the
+        # current bucket, so an offer that re-qualified under a different
+        # duration/lead-time bucket (e.g. trip 9 days vs 10 days from the
+        # same dates) can slip through. This last pass prevents the
+        # "second message reshows the previous offer" pattern.
+        offer_keys_in_bucket = [
+            o.get("_alert_key") for o in offers if o.get("_alert_key")
+        ]
+        if uid and offer_keys_in_bucket:
+            try:
+                inhibit_since = (
+                    datetime.now(timezone.utc)
+                    - timedelta(hours=ALERT_INHIBIT_HOURS)
+                ).isoformat()
+                sent_resp = (
+                    db.table("sent_alerts")
+                    .select("alert_key")
+                    .eq("user_id", uid)
+                    .in_("alert_key", list(set(offer_keys_in_bucket)))
+                    .gte("created_at", inhibit_since)
+                    .execute()
+                )
+                already_in_sent: set[str] = {
+                    row["alert_key"]
+                    for row in (sent_resp.data or [])
+                    if isinstance(row, dict) and row.get("alert_key")
+                }
+            except Exception as e:
+                logger.warning(
+                    f"final sent_alerts re-check failed for {uid}: {e}"
+                )
+                already_in_sent = set()
+            if already_in_sent:
+                offers = [
+                    o for o in offers
+                    if o.get("_alert_key") not in already_in_sent
+                ]
+        if not offers:
+            # Every offer in this bucket was already alerted recently —
+            # don't send a duplicate message. The deal stays in
+            # qualified_items for /home visibility.
+            logger.info(
+                f"[dedup] skip send {uid}/{grp_dest}: all offers already in sent_alerts"
+            )
             continue
 
         # Sort by discount descending so the most attractive deal lands first.
