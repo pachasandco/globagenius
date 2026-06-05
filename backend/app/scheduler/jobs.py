@@ -1213,6 +1213,7 @@ async def _dispatch_grouped_flight_alerts(
         # on /home) but no Telegram push is sent.
         from app.notifications.dispatch_guards import (
             get_user_caps,
+            is_pepite,
             levier_1_destination_cooldown_blocks,
             levier_2_daily_cap_blocks,
             levier_3_burst_blocks,
@@ -1222,7 +1223,19 @@ async def _dispatch_grouped_flight_alerts(
         best_price = float(best_offer.get("price") or 0)
         best_discount = float(best_offer.get("discount_pct") or 0)
 
-        if uid and levier_1_destination_cooldown_blocks(
+        # Pépite override: price floor (≤30€) OR extreme discount (≥75%)
+        # bypass the fatigue guards L1/L2/L3 — these are the exact deals
+        # users signed up to never miss. The 7-day per-offer dedup
+        # (already_keys / sent_alerts) still applies, so a single offer
+        # is never re-sent twice.
+        is_pepite_deal = is_pepite(best_price, best_discount)
+        if is_pepite_deal:
+            logger.info(
+                f"[pépite] bypass L1/L2/L3 for {uid}/{grp_dest} "
+                f"price={best_price}€ disc={best_discount}%"
+            )
+
+        if not is_pepite_deal and uid and levier_1_destination_cooldown_blocks(
             db=db, user_id=uid, destination=grp_dest, new_price=best_price,
         ):
             logger.info(
@@ -1232,7 +1245,7 @@ async def _dispatch_grouped_flight_alerts(
             continue
 
         caps = get_user_caps(db=db, user_id=uid) if uid else None
-        if uid and levier_3_burst_blocks(
+        if not is_pepite_deal and uid and levier_3_burst_blocks(
             db=db, user_id=uid, destination=grp_dest,
             new_discount_pct=best_discount,
             pending_in_run_alerts=dispatched_burst_ts_by_user,
@@ -1244,7 +1257,7 @@ async def _dispatch_grouped_flight_alerts(
             )
             continue
 
-        if uid and levier_2_daily_cap_blocks(
+        if not is_pepite_deal and uid and levier_2_daily_cap_blocks(
             db=db, user_id=uid, destination=grp_dest,
             new_discount_pct=best_discount,
             pending_in_run_alerts=dispatched_alerts_in_run_by_user.get(uid),

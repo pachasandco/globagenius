@@ -38,6 +38,36 @@ from datetime import datetime, timedelta, timezone
 
 from app.analysis.route_selector import is_long_haul
 
+# ── "Pépite" override ───────────────────────────────────────────────────────
+#
+# A deal qualifies as a "pépite" (must-not-miss) when EITHER:
+#   - its price floor is striking in absolute terms (≤ 30€ A/R), or
+#   - the discount is extreme (≥ 75% off the historical median).
+#
+# Pépites bypass L1/L2/L3 because they're exactly the kind of
+# "I would never have spotted this on my own" deal users signed up
+# for. They DO still respect the per-offer 7-day dedup (alert_key
+# already in sent_alerts is never re-sent — that's the bug we fixed
+# on 2026-06-04 with the final sent_alerts re-check).
+
+PEPITE_PRICE_THRESHOLD_EUR = 30.0
+PEPITE_DISCOUNT_THRESHOLD_PCT = 75.0
+
+
+def is_pepite(price: float | None, discount_pct: float | None) -> bool:
+    """True if a deal deserves to bypass the L1/L2/L3 fatigue guards.
+
+    Floor-price OR extreme discount — both signals strongly correlate
+    with "wow" reactions in the feedback data and are the deals users
+    most regret missing."""
+    try:
+        p = float(price or 0)
+        d = float(discount_pct or 0)
+    except (TypeError, ValueError):
+        return False
+    return (p > 0 and p <= PEPITE_PRICE_THRESHOLD_EUR) or d >= PEPITE_DISCOUNT_THRESHOLD_PCT
+
+
 # ── Levier 1 ────────────────────────────────────────────────────────────────
 
 DESTINATION_COOLDOWN_DAYS = 7

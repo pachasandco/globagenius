@@ -3480,29 +3480,46 @@ def recent_deals():
                 out.append(m)
         return out
 
+    def _wow_score(c: dict) -> int:
+        """Combined attractiveness signal: pure %discount under-weights
+        floor-price pépites (Split 15€ -85% > Madrid 40€ -74% in user
+        perception, but the second wins on % alone). Add bonuses for
+        striking absolute price floors and for aspirational long-haul."""
+        s = int(c.get("discount_pct") or 0)
+        p = int(c.get("price") or 0)
+        if 0 < p <= 25:
+            s += 40
+        elif 0 < p <= 50:
+            s += 20
+        if c.get("is_long_haul"):
+            s += 15
+        return s
+
     def _build(days: int) -> list[dict]:
         since = (now - timedelta(days=days)).isoformat()
-        # De-dup by destination, keeping the higher discount when a
-        # destination shows up in both sources. We do NOT sort
-        # province-first here: that starved long-haul Paris deals (e.g.
-        # Punta Cana) out of the 12-slot pool. Instead we build a single
-        # discount-ranked pool and, below, ensure both province AND
-        # sent-alert (long-haul) deals are represented.
+        # De-dup by destination, keeping the better "wow" variant when a
+        # destination shows up in both sources or twice with different
+        # prices. Pool then sorted by wow_score so floor-price gems land
+        # at the top.
         best: dict[str, dict] = {}
         for c in _from_qualified(since) + _from_sent_alerts(since):
             d = c["destination"]
-            if d not in best or c["discount_pct"] > best[d]["discount_pct"]:
+            if d not in best or _wow_score(c) > _wow_score(best[d]):
                 best[d] = c
-        return sorted(best.values(), key=lambda x: -x["discount_pct"])
+        return sorted(best.values(), key=lambda x: -_wow_score(x))
 
-    pool = _build(7)
+    # Build over a 30-day window so genuine pépites (Split 15€/-85% from
+    # 3 weeks ago) aren't crowded out by fresh-but-less-impressive deals
+    # from the last 7 days. The wow_score sort below picks the best ones
+    # regardless of recency.
+    pool = _build(30)
     if len(pool) < POOL_SIZE:
         seen = {c["destination"] for c in pool}
-        for c in _build(60):
+        for c in _build(90):
             if c["destination"] not in seen:
                 seen.add(c["destination"])
                 pool.append(c)
-            if len(pool) >= POOL_SIZE * 2:  # build a deeper pool to slice from
+            if len(pool) >= POOL_SIZE * 2:
                 break
 
     # Compose the final 12 with guaranteed variety:
@@ -3513,7 +3530,7 @@ def recent_deals():
     #     ≥1 province among the 3 it displays.
     long_haul = sorted(
         [c for c in pool if c["is_long_haul"]],
-        key=lambda x: -x["discount_pct"],
+        key=lambda x: -_wow_score(x),
     )[:RESERVED_LONGHAUL_SLOTS]
     final: list[dict] = []
     seen_dest: set[str] = set()
