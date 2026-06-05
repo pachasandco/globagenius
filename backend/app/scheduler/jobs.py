@@ -1450,13 +1450,16 @@ async def job_expire_stale_data():
     # Purge price_snapshots older than 24h (velocity detector data)
     purge_old_snapshots(db)
 
-    # 2026-05-22: purge raw_flights older than 45 days. The table was
-    # never pruned and had grown to ~900k rows (+100k/day), which (a)
-    # makes deep-offset scans time out and (b) costs storage for data
-    # the pipeline never reads — the baseline recalc window is 30 days,
-    # so 45 days leaves a 15-day safety margin. Delete in capped daily
-    # slices so a single run never locks the table for long.
-    cutoff_45d = (datetime.now(timezone.utc) - timedelta(days=45)).isoformat()
+    # 2026-06-05: tighten retention from 45 → 30 days. raw_flights now
+    # ingests ~240k rows/day (vs ~100k at the original 2026-05-22 tuning),
+    # so a 45-day window held >10M rows and tipped every count/GROUP BY
+    # query past the 8s statement timeout — including the maturity RPC.
+    # The qualifier already rejects baselines >21 days (freshness gate),
+    # and job_recalculate_baselines uses a 30-day window. Aligning the
+    # retention with the recalc window leaves zero functional value in
+    # rows older than 30 days. The 60-iteration slicing loop below is
+    # unchanged and stays safe for one-shot catch-up purges.
+    raw_flights_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     try:
         purged_total = 0
         for _ in range(60):  # cap iterations; 60 × oldest-day slices is plenty
@@ -1464,7 +1467,7 @@ async def job_expire_stale_data():
             oldest = (
                 db.table("raw_flights")
                 .select("scraped_at")
-                .lt("scraped_at", cutoff_45d)
+                .lt("scraped_at", raw_flights_cutoff)
                 .order("scraped_at")
                 .limit(1)
                 .execute()
