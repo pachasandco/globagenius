@@ -813,6 +813,10 @@ async def signup(req: SignupRequest, request: Request, bg_tasks: BackgroundTasks
             "user_id": user_id,
             "airport_codes": ["CDG"],
             "offer_types": ["package", "flight", "accommodation"],
+            # 2026-06-07: ship new signups with BOTH trip types enabled.
+            # The legacy default of ["round_trip"] silently locked 84%
+            # of founders out of every one-way pépite (audit 2026-06-07).
+            "flight_trip_types": ["round_trip", "one_way"],
         }).execute(),
     )
 

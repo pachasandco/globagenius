@@ -2067,15 +2067,42 @@ async def job_scrape_oneway_flights():
     # the median/qualifier may still surface a standing deal we hadn't
     # alerted yet. Skipping when inserted == 0 was leaving qualified
     # one-way items un-dispatched (V9 audit: 17 qualified, 0 sent).
+    # Hard timeout + admin escalation: the one-way pipeline silently
+    # hung for 7+ days in early June 2026 because the candidate fetch
+    # was timing out at 8s (no index), the loose try/except returned,
+    # and nobody noticed. We now bound the run, ESCALATE on timeout,
+    # and re-raise so the scheduler sees the failure.
     try:
-        await _detect_and_dispatch_oneway_alerts()
+        await asyncio.wait_for(_detect_and_dispatch_oneway_alerts(), timeout=600)
+    except asyncio.TimeoutError:
+        logger.error("One-way detection TIMED OUT after 600s — pipeline likely degraded")
+        try:
+            await send_admin_alert(
+                "🚨 One-way detection timeout (600s). Check raw_flights indexes / DB load."
+            )
+        except Exception as ae:
+            logger.error(f"Admin alert about one-way timeout itself failed: {ae}")
     except Exception as e:
-        logger.warning(f"One-way detection failed: {e}")
+        logger.error(f"One-way detection failed: {e}", exc_info=True)
+        try:
+            await send_admin_alert(f"One-way detection crashed: {type(e).__name__}: {e}")
+        except Exception as ae:
+            logger.error(f"Admin alert about one-way crash itself failed: {ae}")
 
     try:
-        await _detect_and_dispatch_split_ticket_combos()
+        await asyncio.wait_for(_detect_and_dispatch_split_ticket_combos(), timeout=600)
+    except asyncio.TimeoutError:
+        logger.error("Split-ticket detection TIMED OUT after 600s")
+        try:
+            await send_admin_alert("🚨 Split-ticket detection timeout (600s).")
+        except Exception as ae:
+            logger.error(f"Admin alert about split-ticket timeout itself failed: {ae}")
     except Exception as e:
-        logger.warning(f"Split-ticket detection failed: {e}")
+        logger.error(f"Split-ticket detection failed: {e}", exc_info=True)
+        try:
+            await send_admin_alert(f"Split-ticket detection crashed: {type(e).__name__}: {e}")
+        except Exception as ae:
+            logger.error(f"Admin alert about split-ticket crash itself failed: {ae}")
 
 
 def _user_passes_discount_floor(sub: dict, deal_discount_pct: float) -> bool:
