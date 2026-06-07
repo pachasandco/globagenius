@@ -1230,11 +1230,16 @@ async def _dispatch_grouped_flight_alerts(
 
         # ── Freshness gate (2026-06-07) ────────────────────────────────
         # A deal that was first scraped more than FRESHNESS_GATE_HOURS
-        # ago is treated as stale: the price has likely moved and the
-        # user would land on a misleading page. We take the MOST RECENT
-        # scrape across the offers in the bucket — a re-scrape resets
-        # the clock. Pépites are NOT exempted; a stale 70% deal is
-        # exactly the kind of "bait and switch" we want to avoid.
+        # ago is treated as stale: the price has likely moved. We take
+        # the MOST RECENT scrape across the offers in the bucket — a
+        # re-scrape resets the clock.
+        #
+        # Two-step policy when stale:
+        #   - Pépite (≤30€ OR ≥75% discount): worth a live re-check.
+        #     If reverify confirms (price within tolerance), we send.
+        #     If reverify fails or times out, we fail closed (skip).
+        #   - Not pépite: skip directly. A fresh equivalent will land
+        #     in the next scrape cycle anyway.
         FRESHNESS_GATE_HOURS = 2
         now_for_gate = datetime.now(timezone.utc)
         cutoff_iso = (now_for_gate - timedelta(hours=FRESHNESS_GATE_HOURS)).isoformat()
@@ -1242,21 +1247,55 @@ async def _dispatch_grouped_flight_alerts(
             (o.get("scraped_at") or "" for o in offers),
             default="",
         )
-        if most_recent_scrape and most_recent_scrape < cutoff_iso:
-            logger.info(
-                f"[freshness] skip stale send {uid}/{grp_dest}: "
-                f"most_recent_scrape={most_recent_scrape} "
-                f"older than {FRESHNESS_GATE_HOURS}h (cutoff={cutoff_iso})"
-            )
-            continue
+        is_stale = bool(most_recent_scrape) and most_recent_scrape < cutoff_iso
 
         # Pépite override: price floor (≤30€) OR extreme discount (≥75%)
         # bypass the fatigue guards L1/L2/L3 — these are the exact deals
         # users signed up to never miss. The 7-day per-offer dedup
         # (already_keys / sent_alerts) still applies, so a single offer
-        # is never re-sent twice. NOTE: pépite does NOT bypass the
-        # freshness gate above — a stale pépite is misleading.
+        # is never re-sent twice.
         is_pepite_deal = is_pepite(best_price, best_discount)
+
+        if is_stale:
+            if not is_pepite_deal:
+                logger.info(
+                    f"[freshness] skip stale non-pépite {uid}/{grp_dest}: "
+                    f"most_recent_scrape={most_recent_scrape} > {FRESHNESS_GATE_HOURS}h"
+                )
+                continue
+            # Stale pépite: live re-check before sending. Fail closed
+            # on any error/timeout — better silence than bait-and-switch.
+            recheck_flight = {
+                "origin": best_offer.get("origin") or best_origin,
+                "destination": grp_dest,
+                "price": best_price,
+                "departure_date": best_offer.get("departure_date"),
+                "return_date": best_offer.get("return_date"),
+                "source": best_offer.get("source", ""),
+                "airline": best_offer.get("airline", ""),
+            }
+            try:
+                from app.scraper.reverify import reverify_flight_price
+                still_valid = await asyncio.wait_for(
+                    reverify_flight_price(recheck_flight),
+                    timeout=15,
+                )
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.info(
+                    f"[freshness] stale pépite reverify FAILED {uid}/{grp_dest} "
+                    f"({type(e).__name__}): skipping send"
+                )
+                continue
+            if not still_valid:
+                logger.info(
+                    f"[freshness] stale pépite reverify REJECTED {uid}/{grp_dest}: "
+                    f"price={best_price}€ disc={best_discount}%"
+                )
+                continue
+            logger.info(
+                f"[freshness] stale pépite reverify OK {uid}/{grp_dest}: "
+                f"price={best_price}€ disc={best_discount}% — sending"
+            )
         if is_pepite_deal:
             logger.info(
                 f"[pépite] bypass L1/L2/L3 for {uid}/{grp_dest} "
