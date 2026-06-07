@@ -24,6 +24,20 @@ Python keeps the code grep-able and stack traces readable.
 # this constant only governs the premium pipeline.)
 GLOBAL_MIN_DISCOUNT_PCT = 40
 
+# ─── DECISION-PENDING (2026-06-07) ────────────────────────────────────
+# After the L1-cooldown loosening (commit 47abdf6: 0.70 → 0.90), we
+# expect alert volume to climb. Plan if any user's volume sustains
+# > 6/day for 3 consecutive days:
+#   - Harden BVA Europe (not is_long_haul) to require >= 50% discount
+#   - Keep all other origins at GLOBAL_MIN_DISCOUNT_PCT
+# Rationale: Beauvais has the densest deal flow already and most
+# duplicates come from BVA→Med (LIS/BCN/AGP/NAP). Other origins (LYS,
+# MRS, BOD, NTE, TLS, CDG, ORY) have thinner deal flow and shouldn't
+# be tightened.
+# NOT implemented yet — keep observing through 2026-06-10 before
+# committing to the policy change. If we never need it, this comment
+# disappears in the next cleanup.
+
 # ─── V9 Free tier policy ───
 #
 # Free users always get one A/R per day in the [20%, 40%) band — the
