@@ -9,6 +9,9 @@ import itertools
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
+import pytest
+
+from app.notifications import dispatch_guards
 from app.notifications.dispatch_guards import (
     DAILY_ALERT_CAP,
     LONG_HAUL_DAILY_CAP,
@@ -17,6 +20,17 @@ from app.notifications.dispatch_guards import (
     levier_1_destination_cooldown_blocks,
     levier_2_daily_cap_blocks,
 )
+
+
+@pytest.fixture(autouse=True)
+def _force_caps_enabled(monkeypatch):
+    """L2 and L3 ship OFF by default (2026-06-07 kill-switch — see
+    dispatch_guards module docstring). The tests below were written to
+    cover the LOGIC of the caps, so we force-enable them here. Anyone
+    introducing a new test that should run against the prod default
+    can override this fixture locally."""
+    monkeypatch.setattr(dispatch_guards, "ENABLE_DAILY_CAP_L2", True)
+    monkeypatch.setattr(dispatch_guards, "ENABLE_BURST_CAP_L3", True)
 
 
 # ── helpers ─────────────────────────────────────────────────────────────

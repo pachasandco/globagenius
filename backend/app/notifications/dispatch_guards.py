@@ -39,9 +39,28 @@ coverage after 24h (Levier 2) and 7 days (Levier 1).
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
 
 from app.analysis.route_selector import is_long_haul
+
+# ── Volume cap kill-switches (2026-06-07) ──────────────────────────────
+#
+# Audit on real user data: 260 alerts were eligible across 37 users in
+# 24h, only 91 actually went out — 35% coverage. The 169 missed alerts
+# were not duplicates and not low-quality; they were qualified deals
+# that the L2 (5/24h pool) and L3 (3h burst) caps hid silently.
+#
+# Product call: prefer raising the discount floor (a transparent
+# definition of "interesting deal") over silently hiding deals that
+# meet the user's stated criteria. The caps are turned off below.
+# L1 (7-day per-destination cooldown) stays — its job is to prevent
+# re-sending the SAME deal, not to throttle the total flow.
+#
+# Set the env var to "1" to re-enable the cap quickly without a deploy.
+# Flip the default back to True if we ever want them enforced again.
+ENABLE_DAILY_CAP_L2 = os.getenv("ENABLE_DAILY_CAP_L2", "0") == "1"
+ENABLE_BURST_CAP_L3 = os.getenv("ENABLE_BURST_CAP_L3", "0") == "1"
 
 # ── "Pépite" override ───────────────────────────────────────────────────────
 #
@@ -252,7 +271,14 @@ def levier_2_daily_cap_blocks(
       the cap on an "exceptional discount" rule. Worst case was 6/day,
       not 5. Replaced by a pooled TOTAL_DAILY_CAP=5 with no exception
       slot — the cap now matches the "3+2" the product promises.
+    - 2026-06-07 (kill-switch added): a per-user coverage audit found
+      we were only delivering 35% of eligible deals to active users —
+      the cap was hiding ~169 qualified alerts/24h across the cohort.
+      The cap is OFF by default until we decide whether to raise the
+      discount floor instead. Set ENABLE_DAILY_CAP_L2=1 to re-enable.
     """
+    if not ENABLE_DAILY_CAP_L2:
+        return False  # cap disabled — see kill-switch note at top of file
     if not db:
         return False
 
@@ -461,7 +487,14 @@ def levier_3_burst_blocks(
     Note on separation of concerns: L3 only enforces TIMING (burst).
     L2 enforces VOLUME (5/24h pool). The dispatcher applies them in
     order L1 → L3 → L2; passing L3 does NOT guarantee L2 will pass.
+
+    2026-06-07: Turned OFF by default (see ENABLE_BURST_CAP_L3 at top
+    of file). The audit that took down L2 also took down L3 — burst
+    silence was hiding legitimate quick-fire pépites. Re-enable via
+    the ENABLE_BURST_CAP_L3=1 env var if we ever want it back.
     """
+    if not ENABLE_BURST_CAP_L3:
+        return False  # burst guard disabled — see kill-switch note at top
     now = now or datetime.now(timezone.utc)
     db_ts = _recent_alert_ts_for_user(db=db, user_id=user_id, now=now)
     in_run_ts = (pending_in_run_alerts or {}).get(user_id)

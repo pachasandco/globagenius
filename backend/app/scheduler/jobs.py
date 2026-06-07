@@ -1050,6 +1050,11 @@ async def _dispatch_grouped_flight_alerts(
                         "discount_pct": anomaly.discount_pct,
                         "score": flight.get("score", 0),
                         "airline": flight.get("airline", ""),
+                        # Carry the scrape timestamp so the dispatcher
+                        # can apply the freshness gate (no Telegram for
+                        # deals seen > FRESHNESS_GATE_HOURS ago — the
+                        # price has likely moved). Added 2026-06-07.
+                        "scraped_at": flight.get("scraped_at"),
                         # Propagate the qualification path so click tracking
                         # can break CTR down by zscore_* vs fallback_discount.
                         "qualification_method": flight.get("_qualification_method"),
@@ -1223,11 +1228,34 @@ async def _dispatch_grouped_flight_alerts(
         best_price = float(best_offer.get("price") or 0)
         best_discount = float(best_offer.get("discount_pct") or 0)
 
+        # ── Freshness gate (2026-06-07) ────────────────────────────────
+        # A deal that was first scraped more than FRESHNESS_GATE_HOURS
+        # ago is treated as stale: the price has likely moved and the
+        # user would land on a misleading page. We take the MOST RECENT
+        # scrape across the offers in the bucket — a re-scrape resets
+        # the clock. Pépites are NOT exempted; a stale 70% deal is
+        # exactly the kind of "bait and switch" we want to avoid.
+        FRESHNESS_GATE_HOURS = 2
+        now_for_gate = datetime.now(timezone.utc)
+        cutoff_iso = (now_for_gate - timedelta(hours=FRESHNESS_GATE_HOURS)).isoformat()
+        most_recent_scrape = max(
+            (o.get("scraped_at") or "" for o in offers),
+            default="",
+        )
+        if most_recent_scrape and most_recent_scrape < cutoff_iso:
+            logger.info(
+                f"[freshness] skip stale send {uid}/{grp_dest}: "
+                f"most_recent_scrape={most_recent_scrape} "
+                f"older than {FRESHNESS_GATE_HOURS}h (cutoff={cutoff_iso})"
+            )
+            continue
+
         # Pépite override: price floor (≤30€) OR extreme discount (≥75%)
         # bypass the fatigue guards L1/L2/L3 — these are the exact deals
         # users signed up to never miss. The 7-day per-offer dedup
         # (already_keys / sent_alerts) still applies, so a single offer
-        # is never re-sent twice.
+        # is never re-sent twice. NOTE: pépite does NOT bypass the
+        # freshness gate above — a stale pépite is misleading.
         is_pepite_deal = is_pepite(best_price, best_discount)
         if is_pepite_deal:
             logger.info(
