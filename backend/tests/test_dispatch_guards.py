@@ -387,11 +387,34 @@ def test_l1_recent_alert_blocks():
 
 
 def test_l1_significant_drop_overrides():
-    """A new price below 70% of the previous alerted price re-fires."""
+    """A new price ≤ 90% of the previous alerted price re-fires.
+
+    Threshold loosened from 0.70 to 0.90 on 2026-06-07 after a user-data
+    audit (17/20 missed deals over 24h were legitimate improvements that
+    fell between −10% and −30% better than the prior alert)."""
     db = _make_db([{"price": 200.0, "created_at": datetime.now(timezone.utc).isoformat()}])
+    # 130 ≤ 200 × 0.90 = 180 → meaningful improvement → push allowed
     assert levier_1_destination_cooldown_blocks(
         db=db, user_id="u", destination="LIS", new_price=130.0
-    ) is False  # 130 < 200 * 0.7 = 140 → significant drop → allow
+    ) is False
+
+
+def test_l1_boundary_exactly_10pct_off_passes():
+    """Exactly 10% off the previous alert is allowed (≤ not <)."""
+    db = _make_db([{"price": 100.0, "created_at": datetime.now(timezone.utc).isoformat()}])
+    # 90.0 == 100.0 × 0.90 → still passes
+    assert levier_1_destination_cooldown_blocks(
+        db=db, user_id="u", destination="LIS", new_price=90.0
+    ) is False
+
+
+def test_l1_marginal_drop_still_blocks():
+    """A 5% improvement isn't enough to re-fire — blocks."""
+    db = _make_db([{"price": 100.0, "created_at": datetime.now(timezone.utc).isoformat()}])
+    # 95 > 100 × 0.90 = 90 → not meaningful enough → still blocks
+    assert levier_1_destination_cooldown_blocks(
+        db=db, user_id="u", destination="LIS", new_price=95.0
+    ) is True
 
 
 def test_l1_legacy_row_without_price_fails_open():

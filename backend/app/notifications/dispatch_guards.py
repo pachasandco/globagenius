@@ -6,8 +6,13 @@ Two leviers, applied in order at the per-user × per-destination level
     Levier 1 — same-destination dedup over 7 days
         For each (user_id, destination) pair, suppress the new alert if
         we already pushed one in the last 7 days, UNLESS the new price
-        is below 70% of the previously alerted price (= a real chute
-        that's worth re-pinging the user about).
+        is at least 10% lower than the previously alerted price (= a
+        genuine price improvement that's worth re-pinging the user
+        about). This was tightened from 30% to 10% on 2026-06-07 after
+        a user-data audit showed 17 of 20 missed deals over 24h were
+        legitimate price improvements (-40% to -73%) silently blocked
+        by the 7-day cooldown because the previous threshold required
+        an improbable additional 30% chute on top of the first alert.
 
     Levier 2 — rolling 24h cap of 5 total notifications per user
         At most 3 short-haul + 2 long-haul alerts per user in any 24h
@@ -71,7 +76,13 @@ def is_pepite(price: float | None, discount_pct: float | None) -> bool:
 # ── Levier 1 ────────────────────────────────────────────────────────────────
 
 DESTINATION_COOLDOWN_DAYS = 7
-SIGNIFICANT_DROP_RATIO = 0.70  # new price < 70% of previous alert → override
+# 2026-06-07: was 0.70 (need −30% to override). Audit on a real user
+# showed 17/20 missed deals in 24h were genuine improvements −40% to
+# −73% over their previous alert — silently blocked because they were
+# "only" −15%, −25%, −40% better, not −30% better. Loosened to 0.90 so
+# any improvement ≥ 10% pings the user. L2 (5/24h pooled) and L3 (3h
+# burst) still cap total volume, so we can't actually spam.
+SIGNIFICANT_DROP_RATIO = 0.90  # new price ≤ 90% of previous alert → override
 
 
 def levier_1_destination_cooldown_blocks(
@@ -86,11 +97,11 @@ def levier_1_destination_cooldown_blocks(
 
     Returns False (= push allowed) when:
       - no alert was sent for (user, destination) in the cooldown window
-      - or the new price is < 70% of the most recent alerted price
-        (significant drop override)
+      - or the new price is ≤ 90% of the most recent alerted price
+        (genuine improvement override — see SIGNIFICANT_DROP_RATIO)
 
     Returns True (= block) when an alert was sent recently and the new
-    price isn't a meaningful improvement.
+    price isn't a meaningful improvement (< 10% off the previous alert).
     """
     if not db:
         return False  # fail open — never block on missing DB
@@ -124,9 +135,11 @@ def levier_1_destination_cooldown_blocks(
         # with price populated, the guard becomes effective naturally.
         return False
 
-    if new_price < float(previous_price) * SIGNIFICANT_DROP_RATIO:
-        return False  # significant drop → push allowed
-    return True  # already alerted, no significant drop → block
+    # ≤ (not <) so the boundary case "exactly 10% off" passes — matches
+    # the user-facing wording "at least 10% lower".
+    if new_price <= float(previous_price) * SIGNIFICANT_DROP_RATIO:
+        return False  # genuine improvement → push allowed
+    return True  # already alerted, not enough improvement → block
 
 
 # ── Levier 2 ────────────────────────────────────────────────────────────────
