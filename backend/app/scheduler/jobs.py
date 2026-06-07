@@ -2357,6 +2357,30 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
             logger.warning(f"One-way qualified_item upsert failed: {e}")
             continue
 
+        # ── One-way Telegram push gate (2026-06-07) ──────────────────
+        # One-way fares only solve a problem for users already needing
+        # to be in city X on date Y. For everyone else they're noise.
+        # We KEEP the qualified_items row (above) so /home and the
+        # landing page surface it, but we ONLY push to Telegram when
+        # the deal is striking enough to function as an impulse-buy.
+        # See ONEWAY_PUSH_WOW_* in thresholds.py for rationale.
+        from app.thresholds import (
+            ONEWAY_PUSH_WOW_PRICE_EUR,
+            ONEWAY_PUSH_WOW_DISCOUNT_PCT,
+        )
+        ow_price = float(qualification.price or 0)
+        ow_disc = float(qualification.discount_pct or 0)
+        if not (
+            (ow_price > 0 and ow_price <= ONEWAY_PUSH_WOW_PRICE_EUR)
+            or ow_disc >= ONEWAY_PUSH_WOW_DISCOUNT_PCT
+        ):
+            logger.info(
+                f"[one_way] qualified but not pushed (not wow): "
+                f"{origin}->{destination} {direction} "
+                f"{ow_price}€ -{ow_disc:.0f}% — visible on /home only"
+            )
+            continue
+
         # Dispatch Telegram alerts to opt-in users tracking this airport.
         # For inbound, the user's home airport is the destination of the
         # candidate (since we flipped origin/destination at scrape time).

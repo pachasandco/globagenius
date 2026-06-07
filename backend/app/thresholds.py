@@ -112,3 +112,24 @@ SPLIT_MAX_STAY_DAYS = 30
 ONEWAY_DISCOUNT_PCT_FLOOR = 60
 ONEWAY_MEDIAN_LOOKBACK_DAYS = 30
 ONEWAY_MIN_OBSERVATIONS = 5
+
+# ─── One-way Telegram push gate (2026-06-07) ───
+#
+# A one-way fare only solves a problem when the user already needs to
+# be in city X on date Y. For a generic user without that constraint,
+# a one-way alert is noise — they can't act on it. Product call: we
+# qualify every one-way deal (so it appears on /home and feeds
+# analytics), but we ONLY push a Telegram notification when it's
+# striking enough to function as an impulse-buy "wow" — a true price
+# anomaly someone might book just because it exists.
+#
+# A one-way Telegram push fires iff:
+#   - absolute price ≤ ONEWAY_PUSH_WOW_PRICE_EUR (20€), OR
+#   - discount ≥ ONEWAY_PUSH_WOW_DISCOUNT_PCT (80%)
+#
+# Note: these are stricter than the L1/L2/L3 pépite thresholds
+# (≤30€ OR ≥75%) on purpose — round-trip pépites still ride the
+# qualifier-default rules, one-way pépites need to clear a higher bar
+# because the user-action friction is much higher.
+ONEWAY_PUSH_WOW_PRICE_EUR = 20.0
+ONEWAY_PUSH_WOW_DISCOUNT_PCT = 80.0
