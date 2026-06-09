@@ -204,6 +204,19 @@ def get_scheduler_jobs() -> list[dict]:
             "hour": h,
             "minute": 15,  # offset des autres jobs
         } for h in [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23]],
+        # ── BASELINE STALENESS WATCHDOG : 1x/jour à 7h30 ──
+        # Le qualifier rejette silencieusement toute baseline > 21 jours
+        # (rejected_stale_baseline) : si le recalc nocturne meurt, des
+        # routes entières cessent d'alerter sans aucun signal. Ce job
+        # alerte l'admin quand >20% des baselines sont périmées ou quand
+        # plus AUCUNE baseline n'a été recalculée depuis 2 jours.
+        {
+            "id": "monitor_baseline_staleness",
+            "func": job_monitor_baseline_staleness,
+            "trigger": "cron",
+            "hour": 7,
+            "minute": 30,
+        },
     ]
 
 
@@ -1051,9 +1064,10 @@ async def _dispatch_grouped_flight_alerts(
                         "score": flight.get("score", 0),
                         "airline": flight.get("airline", ""),
                         # Carry the scrape timestamp so the dispatcher
-                        # can apply the freshness gate (no Telegram for
-                        # deals seen > FRESHNESS_GATE_HOURS ago — the
-                        # price has likely moved). Added 2026-06-07.
+                        # can apply the source-aware freshness gate (no
+                        # Telegram for deals older than their source's
+                        # refresh window — the price has likely moved).
+                        # Added 2026-06-07, source-aware 2026-06-09.
                         "scraped_at": flight.get("scraped_at"),
                         # Propagate the qualification path so click tracking
                         # can break CTR down by zscore_* vs fallback_discount.
@@ -1217,8 +1231,9 @@ async def _dispatch_grouped_flight_alerts(
         # When a guard blocks, the deal stays in qualified_items (visible
         # on /home) but no Telegram push is sent.
         from app.notifications.dispatch_guards import (
+            bva_europe_floor_blocks,
             get_user_caps,
-            is_pepite,
+            is_pepite_for_route,
             levier_1_destination_cooldown_blocks,
             levier_2_daily_cap_blocks,
             levier_3_burst_blocks,
@@ -1228,39 +1243,66 @@ async def _dispatch_grouped_flight_alerts(
         best_price = float(best_offer.get("price") or 0)
         best_discount = float(best_offer.get("discount_pct") or 0)
 
-        # ── Freshness gate (2026-06-07) ────────────────────────────────
-        # A deal that was first scraped more than FRESHNESS_GATE_HOURS
-        # ago is treated as stale: the price has likely moved. We take
-        # the MOST RECENT scrape across the offers in the bucket — a
-        # re-scrape resets the clock.
-        #
-        # Two-step policy when stale:
-        #   - Pépite (≤30€ OR ≥75% discount): worth a live re-check.
-        #     If reverify confirms (price within tolerance), we send.
-        #     If reverify fails or times out, we fail closed (skip).
-        #   - Not pépite: skip directly. A fresh equivalent will land
-        #     in the next scrape cycle anyway.
-        FRESHNESS_GATE_HOURS = 2
-        now_for_gate = datetime.now(timezone.utc)
-        cutoff_iso = (now_for_gate - timedelta(hours=FRESHNESS_GATE_HOURS)).isoformat()
-        most_recent_scrape = max(
-            (o.get("scraped_at") or "" for o in offers),
-            default="",
-        )
-        is_stale = bool(most_recent_scrape) and most_recent_scrape < cutoff_iso
-
-        # Pépite override: price floor (≤30€) OR extreme discount (≥75%)
-        # bypass the fatigue guards L1/L2/L3 — these are the exact deals
-        # users signed up to never miss. The 7-day per-offer dedup
+        # Pépite override: price floor (≤30€, tightened to ≤15€ for BVA
+        # short-haul) OR extreme discount (≥75%) bypass the fatigue
+        # guards L1/L2/L3 AND the BVA Europe floor — these are the exact
+        # deals users signed up to never miss. The 7-day per-offer dedup
         # (already_keys / sent_alerts) still applies, so a single offer
         # is never re-sent twice.
-        is_pepite_deal = is_pepite(best_price, best_discount)
+        is_pepite_deal = is_pepite_for_route(
+            bucket["best_origin"], grp_dest, best_price, best_discount,
+        )
+
+        # ── BVA Europe floor (2026-06-09) ──────────────────────────────
+        # Beauvais short-haul pushes need ≥50% discount — 25-40€ A/R on
+        # BVA→Med is Ryanair's normal price, not a deal. Blocked deals
+        # stay in qualified_items / on /home. See thresholds.py.
+        if not is_pepite_deal and bva_europe_floor_blocks(
+            origin=bucket["best_origin"],
+            destination=grp_dest,
+            discount_pct=best_discount,
+        ):
+            logger.info(
+                f"[bva_floor] blocked BVA short-haul push: user={uid} "
+                f"dest={grp_dest} price={best_price}€ disc={best_discount}%"
+            )
+            continue
+
+        # ── Freshness gate (2026-06-07, source-aware since 2026-06-09) ─
+        # A deal whose latest scrape is older than its source's gate is
+        # treated as stale: the price has likely moved. We take the MOST
+        # RECENT scrape across the offers in the bucket — a re-scrape
+        # resets the clock. The gate is source-aware: Tier 1 endpoints
+        # refresh every 20 min, so a fare absent for 1.5h has genuinely
+        # vanished from the feed; Travelpayouts refreshes every 2h, so a
+        # fixed 2h gate was discarding valid Tier 2 deals that were
+        # simply waiting on their next scrape cycle (2h02 = dropped).
+        #
+        # Two-step policy when stale:
+        #   - Pépite: worth a live re-check. If reverify confirms
+        #     (price within tolerance), we send. If reverify fails or
+        #     times out, we fail closed (skip).
+        #   - Not pépite: skip directly. A fresh equivalent will land
+        #     in the next scrape cycle anyway.
+        TIER1_SOURCES = ("ryanair_direct", "vueling_direct", "transavia_direct")
+        FRESHNESS_GATE_HOURS_TIER1 = 1.5
+        FRESHNESS_GATE_HOURS_TIER2 = 3
+        now_for_gate = datetime.now(timezone.utc)
+        freshest_offer = max(offers, key=lambda o: o.get("scraped_at") or "")
+        most_recent_scrape = freshest_offer.get("scraped_at") or ""
+        gate_hours = (
+            FRESHNESS_GATE_HOURS_TIER1
+            if freshest_offer.get("source") in TIER1_SOURCES
+            else FRESHNESS_GATE_HOURS_TIER2
+        )
+        cutoff_iso = (now_for_gate - timedelta(hours=gate_hours)).isoformat()
+        is_stale = bool(most_recent_scrape) and most_recent_scrape < cutoff_iso
 
         if is_stale:
             if not is_pepite_deal:
                 logger.info(
                     f"[freshness] skip stale non-pépite {uid}/{grp_dest}: "
-                    f"most_recent_scrape={most_recent_scrape} > {FRESHNESS_GATE_HOURS}h"
+                    f"most_recent_scrape={most_recent_scrape} > {gate_hours}h"
                 )
                 continue
             # Stale pépite: live re-check before sending. Fail closed
@@ -1627,6 +1669,92 @@ async def job_daily_admin_report():
 
     if qual_rate < 5 and total_scraped > 0:
         await send_admin_alert(f"Taux qualification bas : {qual_rate}%")
+
+
+async def job_monitor_baseline_staleness():
+    """Daily watchdog on baseline freshness (2026-06-09).
+
+    The qualifier silently rejects any baseline older than
+    BASELINE_MAX_AGE_DAYS (rejected_stale_baseline counter) — by design,
+    so dead routes go quiet. But that same mechanism means a dead
+    job_recalculate_baselines starves the whole pipeline with zero
+    visible symptom: deals just stop qualifying route by route as
+    baselines age past 21 days. Two escalation triggers:
+
+      1. > 20% of flight baselines are past BASELINE_MAX_AGE_DAYS
+         (routes are dropping out of coverage at scale), or
+      2. the FRESHEST baseline is > 2 days old (the nightly recalc
+         itself is dead — it normally touches rows every night).
+    """
+    if not db:
+        return
+    now = datetime.now(timezone.utc)
+    stale_cutoff = (now - timedelta(days=BASELINE_MAX_AGE_DAYS)).isoformat()
+
+    try:
+        total_resp = (
+            db.table("price_baselines")
+            .select("id", count="exact")
+            .eq("type", "flight")
+            .limit(1)
+            .execute()
+        )
+        stale_resp = (
+            db.table("price_baselines")
+            .select("id", count="exact")
+            .eq("type", "flight")
+            .lt("calculated_at", stale_cutoff)
+            .limit(1)
+            .execute()
+        )
+        newest_resp = (
+            db.table("price_baselines")
+            .select("calculated_at")
+            .eq("type", "flight")
+            .order("calculated_at", desc=True, nullsfirst=False)
+            .limit(1)
+            .execute()
+        )
+    except Exception as e:
+        logger.warning(f"Baseline staleness watchdog query failed: {e}")
+        return
+
+    total = total_resp.count or 0
+    stale = stale_resp.count or 0
+    if total == 0:
+        return
+    stale_pct = stale / total * 100
+
+    newest_age_days: float | None = None
+    newest_rows = newest_resp.data or []
+    if newest_rows and newest_rows[0].get("calculated_at"):
+        try:
+            newest_dt = datetime.fromisoformat(
+                str(newest_rows[0]["calculated_at"]).replace("Z", "+00:00")
+            )
+            newest_age_days = (now - newest_dt).total_seconds() / 86400
+        except (ValueError, TypeError):
+            pass
+
+    problems: list[str] = []
+    if stale_pct > 20:
+        problems.append(
+            f"{stale}/{total} baselines vol ({stale_pct:.0f}%) ont dépassé "
+            f"{BASELINE_MAX_AGE_DAYS}j — ces routes ne qualifient plus aucun deal "
+            "(rejected_stale_baseline)."
+        )
+    if newest_age_days is not None and newest_age_days > 2:
+        problems.append(
+            f"Aucune baseline recalculée depuis {newest_age_days:.1f}j — "
+            "job_recalculate_baselines semble mort."
+        )
+
+    if problems:
+        await send_admin_alert("⚠️ Baselines périmées :\n" + "\n".join(problems))
+    logger.info(
+        f"Baseline staleness check: {stale}/{total} stale ({stale_pct:.1f}%), "
+        f"freshest={newest_age_days if newest_age_days is not None else '?'}d"
+    )
 
 
 async def job_weekly_baseline_maturity():
@@ -2105,6 +2233,53 @@ async def job_scrape_oneway_flights():
             # don't stall during the scrape pass.
             await asyncio.sleep(0)
 
+    # ── Stopover connector legs (phase 1, 2026-06-09) ──────────────────
+    # The 3-leg stopover matcher needs hub→spoke one-ways (e.g. MAD→LPA)
+    # that the MVP-origin loop above never covers. One extra Travelpayouts
+    # call per curated pair per run (~10 calls). Stored as regular
+    # outbound one-ways; the standalone one-way alert lane filters them
+    # out because their origin isn't an MVP airport.
+    from app.config import STOPOVER_HUB_PAIRS
+    for hub, spoke in STOPOVER_HUB_PAIRS:
+        try:
+            connector_entries = get_oneway_calendar(hub, spoke)
+        except Exception as e:
+            logger.warning(f"Stopover connector fetch failed {hub}->{spoke}: {e}")
+            errors += 1
+            continue
+        for entry in connector_entries:
+            departure_at = entry.get("departure_at") or ""
+            if not departure_at:
+                continue
+            try:
+                from app.notifications.aviasales import build_aviasales_oneway_url
+                conn_url = build_aviasales_oneway_url(
+                    hub, spoke, departure_at[:10],
+                    marker=settings.TRAVELPAYOUTS_MARKER or None,
+                )
+                flight = normalize_flight(
+                    {
+                        "origin": hub,
+                        "destination": spoke,
+                        "departureDate": departure_at[:10],
+                        "returnDate": None,
+                        "price": entry.get("price", 0),
+                        "currency": "EUR",
+                        "airline": entry.get("airline"),
+                        "stops": entry.get("transfers", 0),
+                        "tripType": "one_way",
+                        "direction": "outbound",
+                        "url": conn_url,
+                    },
+                    source="travelpayouts",
+                )
+                db.table("raw_flights").upsert(flight, on_conflict="hash").execute()
+                inserted += 1
+            except Exception as e:
+                logger.warning(f"Stopover connector insert failed {hub}->{spoke}: {e}")
+                errors += 1
+        await asyncio.sleep(0)
+
     completed_at = datetime.now(timezone.utc)
     duration_ms = int((completed_at - started_at).total_seconds() * 1000)
     status = "success" if errors == 0 else ("partial" if inserted > 0 else "failed")
@@ -2134,42 +2309,59 @@ async def job_scrape_oneway_flights():
     # the median/qualifier may still surface a standing deal we hadn't
     # alerted yet. Skipping when inserted == 0 was leaving qualified
     # one-way items un-dispatched (V9 audit: 17 qualified, 0 sent).
-    # Hard timeout + admin escalation: the one-way pipeline silently
-    # hung for 7+ days in early June 2026 because the candidate fetch
-    # was timing out at 8s (no index), the loose try/except returned,
-    # and nobody noticed. We now bound the run, ESCALATE on timeout,
-    # and re-raise so the scheduler sees the failure.
-    try:
-        await asyncio.wait_for(_detect_and_dispatch_oneway_alerts(), timeout=600)
-    except asyncio.TimeoutError:
-        logger.error("One-way detection TIMED OUT after 600s — pipeline likely degraded")
-        try:
-            await send_admin_alert(
-                "🚨 One-way detection timeout (600s). Check raw_flights indexes / DB load."
-            )
-        except Exception as ae:
-            logger.error(f"Admin alert about one-way timeout itself failed: {ae}")
-    except Exception as e:
-        logger.error(f"One-way detection failed: {e}", exc_info=True)
-        try:
-            await send_admin_alert(f"One-way detection crashed: {type(e).__name__}: {e}")
-        except Exception as ae:
-            logger.error(f"Admin alert about one-way crash itself failed: {ae}")
+    # Hard timeout + ONE retry + admin escalation: the one-way pipeline
+    # silently hung for 7+ days in early June 2026 because the candidate
+    # fetch was timing out at 8s (no index), the loose try/except
+    # returned, and nobody noticed. A single timeout used to kill the
+    # whole cycle (users got nothing for 4h) — transient DB load spikes
+    # deserve one more shot before we give up and escalate.
+    await _run_detection_with_retry(_detect_and_dispatch_oneway_alerts, "One-way detection")
+    await _run_detection_with_retry(_detect_and_dispatch_split_ticket_combos, "Split-ticket detection")
+    await _run_detection_with_retry(_detect_and_dispatch_stopover_chains, "Stopover detection")
 
-    try:
-        await asyncio.wait_for(_detect_and_dispatch_split_ticket_combos(), timeout=600)
-    except asyncio.TimeoutError:
-        logger.error("Split-ticket detection TIMED OUT after 600s")
+
+async def _run_detection_with_retry(
+    factory,
+    name: str,
+    timeout: int = 600,
+    retry_delay: int = 30,
+) -> None:
+    """Run a detection coroutine with a hard timeout and one retry.
+
+    `factory` is a zero-arg callable returning a FRESH coroutine (a
+    coroutine object can't be awaited twice). Timeouts get one retry
+    after `retry_delay`s — they're usually transient DB load. Crashes
+    are NOT retried (a deterministic bug fails identically twice);
+    both terminal outcomes escalate to the admin chat.
+    """
+    attempts = 2
+    for attempt in range(attempts):
         try:
-            await send_admin_alert("🚨 Split-ticket detection timeout (600s).")
-        except Exception as ae:
-            logger.error(f"Admin alert about split-ticket timeout itself failed: {ae}")
-    except Exception as e:
-        logger.error(f"Split-ticket detection failed: {e}", exc_info=True)
-        try:
-            await send_admin_alert(f"Split-ticket detection crashed: {type(e).__name__}: {e}")
-        except Exception as ae:
-            logger.error(f"Admin alert about split-ticket crash itself failed: {ae}")
+            await asyncio.wait_for(factory(), timeout=timeout)
+            return
+        except asyncio.TimeoutError:
+            if attempt < attempts - 1:
+                logger.warning(
+                    f"{name} timed out after {timeout}s — retrying once in {retry_delay}s"
+                )
+                await asyncio.sleep(retry_delay)
+                continue
+            logger.error(f"{name} TIMED OUT after {timeout}s twice — pipeline likely degraded")
+            try:
+                await send_admin_alert(
+                    f"🚨 {name} timeout ({timeout}s, 2 attempts). "
+                    "Check raw_flights indexes / DB load."
+                )
+            except Exception as ae:
+                logger.error(f"Admin alert about {name} timeout itself failed: {ae}")
+            return
+        except Exception as e:
+            logger.error(f"{name} failed: {e}", exc_info=True)
+            try:
+                await send_admin_alert(f"{name} crashed: {type(e).__name__}: {e}")
+            except Exception as ae:
+                logger.error(f"Admin alert about {name} crash itself failed: {ae}")
+            return
 
 
 def _user_passes_discount_floor(sub: dict, deal_discount_pct: float) -> bool:
@@ -2281,6 +2473,16 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
     for c in candidates:
         key = (c.get("origin", ""), c.get("destination", ""), c.get("direction", ""))
         if not all(key):
+            continue
+        # Stopover connector legs (hub→spoke, e.g. MAD→LPA) live in
+        # raw_flights as ordinary outbound one-ways, but neither end is
+        # a user origin — they exist only to feed the stopover matcher.
+        # Keep the standalone one-way alert lane anchored to MVP origins
+        # (outbound departs one, inbound returns to one).
+        origin_c, dest_c, direction_c = key
+        if direction_c == "outbound" and origin_c not in settings.MVP_AIRPORTS:
+            continue
+        if direction_c == "inbound" and dest_c not in settings.MVP_AIRPORTS:
             continue
         existing = cells.get(key)
         if existing is None or (c.get("price") or 0) < (existing.get("price") or 0):
@@ -2847,6 +3049,273 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
             await asyncio.sleep(0)
 
     logger.info(f"Split-ticket detection complete: {combos_dispatched} alerts dispatched")
+
+
+async def _detect_and_dispatch_stopover_chains() -> None:
+    """Stopover phase 1 (2026-06-09): scan recent one-way rows for 3-leg
+    two-destination chains — origin → hub (2-5 days) → final destination
+    → origin — cheaper than the direct round-trip baseline.
+
+    Hubs and final destinations come from the curated STOPOVER_HUB_PAIRS
+    whitelist (config.py). Legs 1 and 3 are the regular MVP-origin
+    one-way scrape; leg 2 (hub→spoke connector) is scraped by the
+    dedicated block in job_scrape_oneway_flights. Qualified chains are
+    persisted to qualified_items (deal_subtype='stopover') and dispatched
+    to users who opted in to split-ticket combos — same multi-booking
+    consent, the chain is just 3 tickets instead of 2.
+    """
+    if not db:
+        return
+
+    from app.analysis.stopover_matcher import find_stopover_chains
+    from app.config import STOPOVER_HUB_PAIRS
+    from app.notifications.dedup import compute_stopover_alert_key
+    from app.notifications.dispatch_guards import (
+        get_user_caps,
+        levier_1_destination_cooldown_blocks,
+        levier_2_daily_cap_blocks,
+        levier_3_burst_blocks,
+    )
+    from app.notifications.telegram import send_stopover_alert
+    from app.thresholds import ALERT_INHIBIT_HOURS as _INHIBIT
+
+    fresh_cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    chains_dispatched = 0
+
+    dispatched_alerts_in_run_by_user: dict[str, list[dict]] = {}
+    dispatched_burst_ts_by_user: dict[str, datetime] = {}
+
+    # Same opt-in contract as split-ticket combos: the user accepted
+    # multi-booking deals and wants A/R-style trips.
+    opt_in_subs: list[dict] = []
+    try:
+        prefs_resp = (
+            db.table("user_preferences")
+            .select("user_id,telegram_chat_id,airport_codes,flight_trip_types,blocked_destinations,include_split_tickets,min_discount")
+            .eq("telegram_connected", True)
+            .execute()
+        )
+        for pref in (prefs_resp.data or []):
+            ftt = pref.get("flight_trip_types") or ["round_trip"]
+            if (
+                pref.get("include_split_tickets") is True
+                and "round_trip" in ftt
+                and pref.get("telegram_chat_id")
+            ):
+                opt_in_subs.append(pref)
+    except Exception as e:
+        logger.warning(f"Stopover: failed to load opt-in users: {e}")
+        return
+
+    if not opt_in_subs:
+        logger.info("Stopover: no users opted in to combo alerts, skipping")
+        return
+
+    def _fetch_legs(leg_origin: str, leg_dest: str, direction: str) -> list[dict]:
+        resp = (
+            db.table("raw_flights")
+            .select("id,origin,destination,departure_date,price,airline,source_url")
+            .eq("origin", leg_origin)
+            .eq("destination", leg_dest)
+            .eq("trip_type", "one_way")
+            .eq("direction", direction)
+            .gte("scraped_at", fresh_cutoff)
+            .order("price")
+            .limit(20)
+            .execute()
+        )
+        return resp.data or []
+
+    for origin in settings.MVP_AIRPORTS:
+        for hub, spoke in STOPOVER_HUB_PAIRS:
+            if origin in (hub, spoke):
+                continue
+            try:
+                leg1s = _fetch_legs(origin, hub, "outbound")
+                leg2s = _fetch_legs(hub, spoke, "outbound")
+                leg3s = _fetch_legs(spoke, origin, "inbound")
+            except Exception as e:
+                logger.warning(f"Stopover: leg query failed {origin}-{hub}-{spoke}: {e}")
+                continue
+            if not leg1s or not leg2s or not leg3s:
+                continue
+
+            # Chain measured against the DIRECT round-trip baseline for
+            # origin → final destination — "two cities for less than the
+            # usual price of one".
+            baseline_avg = _lookup_roundtrip_baseline_avg(origin, spoke)
+            if baseline_avg is None or baseline_avg <= 0:
+                continue
+
+            chains = find_stopover_chains(
+                leg1s=leg1s,
+                leg2s=leg2s,
+                leg3s=leg3s,
+                roundtrip_baseline=baseline_avg,
+            )
+            if not chains:
+                continue
+            chain = chains[0]
+            chain_savings_pct = (
+                (chain.roundtrip_baseline - chain.total)
+                / chain.roundtrip_baseline
+                * 100.0
+            ) if chain.roundtrip_baseline > 0 else 0
+
+            # Persist for /home + analytics regardless of who gets the
+            # push — qualification and dispatch stay decoupled, like
+            # every other deal type. item_id anchors on leg 1.
+            leg1_id = chain.leg1.get("id")
+            if leg1_id:
+                try:
+                    db.table("qualified_items").upsert(
+                        {
+                            "type": "flight",
+                            "deal_subtype": "stopover",
+                            "item_id": leg1_id,
+                            "price": float(chain.total),
+                            "baseline_price": float(chain.roundtrip_baseline),
+                            "discount_pct": round(chain_savings_pct, 2),
+                            "score": int(chain_savings_pct),
+                            "status": "active",
+                            "reverified_at": datetime.now(timezone.utc).isoformat(),
+                            "metadata": {
+                                "hub": hub,
+                                "final_destination": spoke,
+                                "hub_days": chain.hub_days,
+                                "dest_days": chain.dest_days,
+                                "savings_eur": chain.savings,
+                                "legs": [
+                                    {
+                                        "origin": leg.get("origin"),
+                                        "destination": leg.get("destination"),
+                                        "departure_date": leg.get("departure_date"),
+                                        "price": float(leg.get("price") or 0),
+                                        "airline": leg.get("airline"),
+                                        "booking_url": leg.get("source_url"),
+                                    }
+                                    for leg in (chain.leg1, chain.leg2, chain.leg3)
+                                ],
+                            },
+                        },
+                        on_conflict="item_id",
+                    ).execute()
+                except Exception as e:
+                    logger.warning(f"Stopover qualified_items upsert failed {origin}-{hub}-{spoke}: {e}")
+
+            for sub in opt_in_subs:
+                if origin not in (sub.get("airport_codes") or []):
+                    continue
+                blocked = set(sub.get("blocked_destinations") or [])
+                if spoke in blocked or hub in blocked:
+                    continue
+                # Per-user floor on the savings vs the direct A/R. Chains
+                # in the 30-40% band stay /home-only for now (every
+                # premium floor starts at 40) — the audit window will
+                # tell us whether to surface them more aggressively.
+                if not _user_passes_discount_floor(sub, chain_savings_pct):
+                    continue
+                chat_id = sub["telegram_chat_id"]
+                sub_user_id = sub.get("user_id")
+
+                if sub_user_id and levier_1_destination_cooldown_blocks(
+                    db=db, user_id=sub_user_id, destination=spoke,
+                    new_price=float(chain.total or 0),
+                ):
+                    continue
+                caps = get_user_caps(db=db, user_id=sub_user_id) if sub_user_id else None
+                if sub_user_id and levier_3_burst_blocks(
+                    db=db, user_id=sub_user_id, destination=spoke,
+                    new_discount_pct=float(chain_savings_pct or 0),
+                    pending_in_run_alerts=dispatched_burst_ts_by_user,
+                    caps=caps,
+                ):
+                    continue
+                if sub_user_id and levier_2_daily_cap_blocks(
+                    db=db, user_id=sub_user_id, destination=spoke,
+                    new_discount_pct=float(chain_savings_pct or 0),
+                    pending_in_run_alerts=dispatched_alerts_in_run_by_user.get(sub_user_id),
+                    caps=caps,
+                ):
+                    continue
+
+                alert_key = (
+                    compute_stopover_alert_key(
+                        user_id=sub_user_id,
+                        origin=origin,
+                        hub=hub,
+                        destination=spoke,
+                        leg1_date=chain.leg1.get("departure_date") or "",
+                        leg3_date=chain.leg3.get("departure_date") or "",
+                        total_price=chain.total,
+                    )
+                    if sub_user_id
+                    else None
+                )
+                if sub_user_id and alert_key:
+                    try:
+                        inhibit_since = (
+                            datetime.now(timezone.utc) - timedelta(hours=_INHIBIT)
+                        ).isoformat()
+                        dup = (
+                            db.table("sent_alerts")
+                            .select("id")
+                            .eq("user_id", sub_user_id)
+                            .eq("alert_key", alert_key)
+                            .gte("created_at", inhibit_since)
+                            .limit(1)
+                            .execute()
+                        )
+                        if dup.data:
+                            continue
+                    except Exception as e:
+                        logger.warning(f"Stopover dedup check failed: {e}")
+
+                sent_ok = False
+                message_id = str(uuid.uuid4())
+                try:
+                    sent_ok = await send_stopover_alert(
+                        chat_id=chat_id,
+                        leg1=chain.leg1,
+                        leg2=chain.leg2,
+                        leg3=chain.leg3,
+                        roundtrip_baseline=chain.roundtrip_baseline,
+                        user_id=sub_user_id,
+                        alert_key=alert_key,
+                        message_id=message_id,
+                    )
+                    if sent_ok:
+                        chains_dispatched += 1
+                        if sub_user_id:
+                            dispatched_alerts_in_run_by_user.setdefault(sub_user_id, []).append({
+                                "discount_pct": float(chain_savings_pct or 0),
+                                "destination": spoke,
+                            })
+                            dispatched_burst_ts_by_user[sub_user_id] = datetime.now(timezone.utc)
+                except Exception as e:
+                    logger.warning(f"Stopover alert failed user={sub_user_id}: {e}")
+
+                if sent_ok and sub_user_id and alert_key:
+                    try:
+                        db.table("sent_alerts").upsert(
+                            {
+                                "user_id": sub_user_id,
+                                "chat_id": chat_id,
+                                "alert_key": alert_key,
+                                "destination": spoke,
+                                "alert_type": "stopover",
+                                "price": float(chain.total or 0),
+                                "discount_pct": float(chain_savings_pct or 0),
+                                "message_id": message_id,
+                            },
+                            on_conflict="user_id,alert_key",
+                        ).execute()
+                    except Exception as e:
+                        logger.warning(f"Stopover sent_alerts upsert failed user={sub_user_id}: {e}")
+
+            await asyncio.sleep(0)
+
+    logger.info(f"Stopover detection complete: {chains_dispatched} alerts dispatched")
 
 
 def _lookup_roundtrip_baseline_avg(origin: str, dest: str) -> float | None:

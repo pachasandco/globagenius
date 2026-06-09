@@ -124,6 +124,29 @@ class Settings:
                 )
 
 
+# ── Stopover phase 1 (2026-06-09) ──────────────────────────────────────
+# Curated (hub, final destination) pairs for stopover chains. The hub is
+# a city users want to visit for 2-5 days on the way; the spoke is the
+# final destination. Both must be reachable as one-ways from MVP origins
+# (hub via the regular outbound scrape, spoke→origin via the inbound
+# scrape) — only the hub→spoke connector leg needs dedicated scraping
+# (~1 extra Travelpayouts call per pair per one-way run).
+# Keep this list short and high-conviction: every pair adds API calls
+# and matcher work. All pairs are LCC-dense so 3 cheap one-ways exist.
+STOPOVER_HUB_PAIRS: list[tuple[str, str]] = [
+    ("MAD", "LPA"),   # Madrid + Las Palmas
+    ("MAD", "TFS"),   # Madrid + Ténérife
+    ("LIS", "FNC"),   # Lisbonne + Madère
+    ("LIS", "PDL"),   # Lisbonne + Açores
+    ("BCN", "PMI"),   # Barcelone + Majorque
+    ("BCN", "IBZ"),   # Barcelone + Ibiza
+    ("FCO", "CTA"),   # Rome + Sicile (Catane)
+    ("FCO", "CAG"),   # Rome + Sardaigne (Cagliari)
+    ("ATH", "JTR"),   # Athènes + Santorin
+    ("ATH", "HER"),   # Athènes + Crète
+]
+
+
 IATA_TO_CITY = {
     # ── Aéroports de départ français ──
     "CDG": "Paris CDG",

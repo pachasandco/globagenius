@@ -92,16 +92,75 @@ def is_pepite(price: float | None, discount_pct: float | None) -> bool:
     return (p > 0 and p <= PEPITE_PRICE_THRESHOLD_EUR) or d >= PEPITE_DISCOUNT_THRESHOLD_PCT
 
 
+def is_pepite_for_route(
+    origin: str | None,
+    destination: str | None,
+    price: float | None,
+    discount_pct: float | None,
+) -> bool:
+    """Route-aware pépite check (2026-06-09).
+
+    Same as is_pepite() except for BVA short-haul, where the price bar
+    tightens from 30€ to BVA_PEPITE_PRICE_THRESHOLD_EUR (15€): a 25-30€
+    A/R out of Beauvais is Ryanair's everyday price floor, not a pépite,
+    and letting it bypass the BVA Europe dispatch floor would defeat the
+    floor entirely. The ≥75% discount path is unchanged for all routes.
+    """
+    if (origin or "").upper() == "BVA" and not is_long_haul(destination or ""):
+        from app.thresholds import BVA_PEPITE_PRICE_THRESHOLD_EUR
+        try:
+            p = float(price or 0)
+            d = float(discount_pct or 0)
+        except (TypeError, ValueError):
+            return False
+        return (p > 0 and p <= BVA_PEPITE_PRICE_THRESHOLD_EUR) or d >= PEPITE_DISCOUNT_THRESHOLD_PCT
+    return is_pepite(price, discount_pct)
+
+
+# ── BVA Europe dispatch floor (2026-06-09) ─────────────────────────────────
+#
+# Beauvais short-haul needs ≥50% discount to push (vs 40% everywhere
+# else) — see thresholds.py BVA_EUROPE_MIN_DISCOUNT_PCT for the full
+# rationale. Dispatch-time only: blocked deals stay in qualified_items
+# and on /home, exactly like deals blocked by L1/L2/L3.
+
+
+def bva_europe_floor_blocks(
+    *,
+    origin: str | None,
+    destination: str | None,
+    discount_pct: float | None,
+) -> bool:
+    """Return True if the BVA Europe floor says this push should NOT go out.
+
+    Only applies to BVA-origin short-haul. Callers must check the pépite
+    override (is_pepite_for_route) BEFORE this guard — a true BVA pépite
+    (≤15€ or ≥75%) bypasses the floor like it bypasses L1/L2/L3.
+    """
+    if (origin or "").upper() != "BVA":
+        return False
+    if is_long_haul(destination or ""):
+        return False
+    from app.thresholds import BVA_EUROPE_MIN_DISCOUNT_PCT
+    try:
+        d = float(discount_pct or 0)
+    except (TypeError, ValueError):
+        return True  # unparseable discount on the tightened route → block
+    return d < BVA_EUROPE_MIN_DISCOUNT_PCT
+
+
 # ── Levier 1 ────────────────────────────────────────────────────────────────
 
 DESTINATION_COOLDOWN_DAYS = 7
-# 2026-06-07: was 0.70 (need −30% to override). Audit on a real user
-# showed 17/20 missed deals in 24h were genuine improvements −40% to
-# −73% over their previous alert — silently blocked because they were
-# "only" −15%, −25%, −40% better, not −30% better. Loosened to 0.90 so
-# any improvement ≥ 10% pings the user. L2 (5/24h pooled) and L3 (3h
-# burst) still cap total volume, so we can't actually spam.
-SIGNIFICANT_DROP_RATIO = 0.90  # new price ≤ 90% of previous alert → override
+# 2026-06-07: was 0.70 (need −30% to override) → 0.90 after a user-data
+# audit showed 17/20 missed deals in 24h were genuine improvements −40%
+# to −73% over their previous alert, silently blocked.
+# 2026-06-09: 0.90 → 0.95. The same audit class shows real improvements
+# in the −5%..−10% band still being swallowed, and the spam pressure
+# this loosening adds is now absorbed at the source by the BVA Europe
+# dispatch floor (see bva_europe_floor_blocks below) rather than by
+# generic throttling. Any improvement ≥ 5% pings the user.
+SIGNIFICANT_DROP_RATIO = 0.95  # new price ≤ 95% of previous alert → override
 
 
 def levier_1_destination_cooldown_blocks(
@@ -286,7 +345,7 @@ def levier_2_daily_cap_blocks(
     cutoff = (now - timedelta(hours=DAILY_CAP_WINDOW_HOURS)).isoformat()
 
     # Only count actual deal alerts in the cap, not system / teaser ones.
-    allowed_alert_types = ["flight", "one_way", "split_ticket"]
+    allowed_alert_types = ["flight", "one_way", "split_ticket", "stopover"]
 
     try:
         resp = (
@@ -433,7 +492,7 @@ def _recent_alert_ts_for_user(
             db.table("sent_alerts")
             .select("created_at")
             .eq("user_id", user_id)
-            .in_("alert_type", ["flight", "one_way", "split_ticket"])
+            .in_("alert_type", ["flight", "one_way", "split_ticket", "stopover"])
             .gte("created_at", cutoff)
             .order("created_at", desc=True)
             .limit(1)

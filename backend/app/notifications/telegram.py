@@ -584,6 +584,158 @@ def format_split_ticket_alert(
     return "\n".join(lines)
 
 
+def format_stopover_alert(
+    leg1: dict,
+    leg2: dict,
+    leg3: dict,
+    roundtrip_baseline: float,
+    user_id: str | None = None,
+    alert_key: str | None = None,
+    has_guide: bool = False,
+) -> str:
+    """Stopover phase 1: format a 3-leg two-destination chain alert.
+
+    leg1 = origin → hub, leg2 = hub → final destination, leg3 = final
+    destination → origin. Visually aligned with format_split_ticket_alert
+    (same badge ladder, strike-through baseline, per-leg deal links).
+
+    All legs must include origin, destination, departure_date, price;
+    airline and source_url are optional (Aviasales fallback link built
+    per leg when missing).
+    """
+    from app.config import iata_label
+    from app.notifications.airlines import (
+        normalize_airline_name,
+        is_agency,
+        baggage_url,
+    )
+    from app.notifications.aviasales import build_aviasales_oneway_url
+
+    origin = leg1["origin"]
+    hub = leg1["destination"]
+    dest = leg2["destination"]
+    origin_label = iata_label(origin)
+    hub_label = iata_label(hub)
+    dest_label = iata_label(dest)
+
+    total = int(round(leg1["price"] + leg2["price"] + leg3["price"]))
+    rt_baseline = int(round(roundtrip_baseline))
+    savings = max(0, rt_baseline - total)
+    saving_pct = int(round((savings / rt_baseline) * 100)) if rt_baseline > 0 else 0
+    badge = _deal_badge(saving_pct)
+
+    def _carrier_label(raw: str | None) -> str:
+        name = normalize_airline_name(raw)
+        if not name or is_agency(name):
+            return "—"
+        bag = baggage_url(name)
+        if bag:
+            return f"{name} · [🎒]({bag})"
+        return name
+
+    def _leg_url(leg: dict) -> str:
+        url = leg.get("source_url") or ""
+        if not url or url == "N/A":
+            try:
+                url = build_aviasales_oneway_url(
+                    leg["origin"], leg["destination"],
+                    leg.get("departure_date", ""),
+                    marker=settings.TRAVELPAYOUTS_MARKER or None,
+                )
+            except Exception:
+                url = ""
+        return url
+
+    def _wrap(url: str) -> str:
+        # All legs share the same alert_key — a click on any leg counts
+        # as engagement on the chain (same product decision as combos).
+        if user_id and alert_key:
+            return _make_redirect_token(
+                user_id, alert_key, origin, dest, url,
+                trip_type="stopover",
+                qualification_method="stopover_chain",
+            )
+        return _add_utms(url, origin, dest)
+
+    lines = [
+        f"*{badge} · 🧳 Stopover malin — 2 destinations*",
+        "",
+        f"🗺️ *{origin_label} → {hub_label} → {dest_label} → {origin_label}*",
+        "",
+        f"💰 *{total} € total · -{saving_pct} %*",
+        f"   Prix habituel A/R direct {origin_label} → {dest_label} : ~{rt_baseline} €~",
+        f"   Économie : {savings} € — et vous visitez {hub_label} en bonus",
+        "   ✅ 3 billets vérifiés",
+        "",
+    ]
+    for label, leg in (
+        (f"Étape 1 — {origin_label} → {hub_label}", leg1),
+        (f"Étape 2 — {hub_label} → {dest_label}", leg2),
+        (f"Retour — {dest_label} → {origin_label}", leg3),
+    ):
+        carrier = _carrier_label(leg.get("airline"))
+        price = int(round(leg["price"]))
+        dep = _fmt_date_fr(leg.get("departure_date", ""))
+        lines.append(f"✈️ *{label}*")
+        lines.append(f"   {carrier} · {price} € · {dep}")
+        url = _leg_url(leg)
+        if url and url != "N/A":
+            lines.append(f"   👉 [Voir le billet]({_wrap(url)})")
+        lines.append("")
+
+    lines.append("⚠️ 3 billets séparés : bagages et annulation gérés indépendamment.")
+    if has_guide:
+        lines += ["", f"📖 [Le guide complet de {dest_label}]({settings.FRONTEND_URL}/destination/{dest.lower()})"]
+    return "\n".join(lines)
+
+
+async def send_stopover_alert(
+    chat_id: int,
+    leg1: dict,
+    leg2: dict,
+    leg3: dict,
+    roundtrip_baseline: float,
+    user_id: str | None = None,
+    alert_key: str | None = None,
+    has_guide: bool = False,
+    message_id: str | None = None,
+) -> bool:
+    """Stopover phase 1: send a Telegram alert for a 3-leg stopover chain.
+
+    Same tracking/feedback contract as send_split_ticket_alert: a click
+    on any leg counts as engagement; message_id (when set) enables the
+    [👍/👎/⏱️] feedback row.
+    """
+    bot = _get_bot()
+    if not bot:
+        logger.warning("Telegram bot not configured, skipping stopover alert")
+        return False
+    msg = format_stopover_alert(
+        leg1, leg2, leg3, roundtrip_baseline,
+        user_id=user_id, alert_key=alert_key, has_guide=has_guide,
+    )
+    # Chain destination = the FINAL destination (leg2's arrival) — the
+    # hub is a bonus stop, the user's travel intent is the spoke city.
+    dest_iata = leg2.get("destination", "")
+    reply_markup = _build_alert_keyboard(
+        user_id=user_id,
+        destination_iata=dest_iata,
+        dest_label=_city_for_iata(dest_iata),
+        message_id=message_id,
+    )
+    try:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=msg,
+            parse_mode="Markdown",
+            reply_markup=reply_markup,
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send stopover alert to {chat_id}: {e}")
+        return False
+
+
 async def send_oneway_deal_alert(
     chat_id: int,
     flight: dict,

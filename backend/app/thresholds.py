@@ -24,19 +24,24 @@ Python keeps the code grep-able and stack traces readable.
 # this constant only governs the premium pipeline.)
 GLOBAL_MIN_DISCOUNT_PCT = 40
 
-# ─── DECISION-PENDING (2026-06-07) ────────────────────────────────────
-# After the L1-cooldown loosening (commit 47abdf6: 0.70 → 0.90), we
-# expect alert volume to climb. Plan if any user's volume sustains
-# > 6/day for 3 consecutive days:
-#   - Harden BVA Europe (not is_long_haul) to require >= 50% discount
-#   - Keep all other origins at GLOBAL_MIN_DISCOUNT_PCT
-# Rationale: Beauvais has the densest deal flow already and most
-# duplicates come from BVA→Med (LIS/BCN/AGP/NAP). Other origins (LYS,
-# MRS, BOD, NTE, TLS, CDG, ORY) have thinner deal flow and shouldn't
-# be tightened.
-# NOT implemented yet — keep observing through 2026-06-10 before
-# committing to the policy change. If we never need it, this comment
-# disappears in the next cleanup.
+# ─── BVA Europe floor (decided 2026-06-09, was DECISION-PENDING) ──────
+# Beauvais is a Ryanair hub: 25-40€ A/R on BVA→Med (LIS/BCN/AGP/NAP)
+# is the NORMAL price there, not a deal, and BVA produces the densest
+# (and noisiest) qualified-deal flow of all origins. Short-haul alerts
+# from BVA therefore need a higher bar than the global 40% floor.
+# Applied at DISPATCH time only (Telegram push) — the deal stays in
+# qualified_items and visible on /home, consistent with how L1/L2/L3
+# treat blocked deals. Other origins (LYS, MRS, BOD, NTE, TLS, CDG,
+# ORY) keep GLOBAL_MIN_DISCOUNT_PCT — their deal flow is thinner.
+# Long-haul from BVA (rare) is NOT tightened.
+BVA_EUROPE_MIN_DISCOUNT_PCT = 50
+
+# Pépite price bar for BVA short-haul. The generic pépite override
+# (≤30€ A/R) would bypass the floor above on virtually every Ryanair
+# sale fare — 25-30€ is Beauvais's everyday price floor, not a "wow".
+# A true BVA pépite must be ≤15€ A/R (or clear the generic ≥75%
+# discount bar, which still applies unchanged).
+BVA_PEPITE_PRICE_THRESHOLD_EUR = 15.0
 
 # ─── V9 Free tier policy ───
 #
@@ -102,6 +107,26 @@ SPLIT_SAVINGS_EUR_FLOOR = 100.0
 # days don't match the round-trip baseline cell they're compared to.
 SPLIT_MIN_STAY_DAYS = 4
 SPLIT_MAX_STAY_DAYS = 30
+
+
+# ─── Stopover chain qualification (phase 1, 2026-06-09) ───
+
+# A stopover chain is 3 one-way tickets: origin → hub (a few days),
+# hub → final destination, destination → origin. Compared against the
+# round-trip baseline for origin → destination DIRECT. The bar is lower
+# than the split-ticket 40%/100€ on purpose: the chain includes a bonus
+# second destination, so "cheaper than the direct A/R at all" is already
+# a strong story — 30% under the direct baseline is a clear win.
+STOPOVER_SAVINGS_RATIO_FLOOR = 0.30
+STOPOVER_SAVINGS_EUR_FLOOR = 80.0
+
+# Stay-shape constraints. The hub visit must be a real city stop
+# (2-5 days, not an airport transfer) and the whole trip must stay
+# comparable to the round-trip baseline cell it's measured against.
+STOPOVER_MIN_HUB_DAYS = 2
+STOPOVER_MAX_HUB_DAYS = 5
+STOPOVER_MIN_DEST_DAYS = 3
+STOPOVER_MAX_TOTAL_DAYS = 30
 
 
 # ─── One-way qualification (V5+ option C, pre-baseline) ───
