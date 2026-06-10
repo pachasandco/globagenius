@@ -106,66 +106,111 @@ def _get_bot() -> Bot | None:
 
 
 def format_deal_alert(package: dict, flight: dict, accommodation: dict) -> str:
+    """Vol + hôtel package alert.
+
+    Harmonised 2026-06-10 with the other deal templates: same badge
+    ladder (_deal_badge), Markdown bold price + "-XX %" always present,
+    strike-through baseline, FR dates, per-item CTA links. The internal
+    score and the "GLOBE GENIUS" banner are gone — no other alert type
+    exposes them. AI-enriched fields (description / reason / tip) keep
+    their slots when present.
+    """
     from app.config import iata_label
-    origin_city = iata_label(package["origin"])
-    dest_city = iata_label(package["destination"])
+    origin_label = iata_label(package["origin"])
+    dest_label = iata_label(package["destination"])
 
-    # Alert level badge
-    alert_level = package.get("ai_alert_level", "good_deal")
-    if alert_level == "fare_mistake":
-        alert_badge = "🔴 ERREUR DE PRIX"
-    elif alert_level == "flash_promo":
-        alert_badge = "🟠 PROMO FLASH"
-    else:
-        alert_badge = "🟡 BON DEAL"
+    disc = int(round(package.get("discount_pct") or 0))
+    total = int(round(package.get("total_price") or 0))
+    badge = _deal_badge(disc)
+    dep_str = _fmt_date_fr(str(package.get("departure_date") or "")[:10])
+    ret_str = _fmt_date_fr(str(package.get("return_date") or "")[:10])
 
-    # Check if AI-enriched
+    lines = [
+        f"*{badge} · 🏝 Vol + hôtel*",
+        "",
+        f"🛫 *{origin_label} → {dest_label}*",
+        "",
+        f"💰 *{total} € · -{disc} %*",
+        f"📅 {dep_str} – {ret_str}",
+    ]
+    baseline_total = package.get("baseline_total")
+    if baseline_total:
+        lines.append(f"   Prix habituel : ~{int(round(baseline_total))} €~")
+
     ai_desc = package.get("ai_description")
-    ai_reason = package.get("ai_reason")
-    ai_tip = package.get("ai_tip")
-    ai_tags = package.get("ai_tags")
-
     if ai_desc:
-        # Enriched format
-        tags_str = " ".join(ai_tags) if ai_tags else ""
-        return (
-            f"✈️ GLOBE GENIUS — {alert_badge}\n\n"
-            f"🌍 {origin_city} → {dest_city}\n"
-            f"📅 {package['departure_date']} – {package['return_date']}\n\n"
-            f"{ai_desc}\n\n"
-            f"💰 {package['total_price']}€ au lieu de {package['baseline_total']}€ · -{package['discount_pct']}%\n"
-            f"📊 {ai_reason}\n\n"
-            f"💡 {ai_tip}\n\n"
-            f"🎯 Score : {package['score']}/100\n"
-            f"{tags_str}\n\n"
-            f"👉 Vol : {flight.get('source_url', 'N/A')}\n"
-            f"👉 Hotel : {accommodation.get('source_url', 'N/A')}"
-        )
-    else:
-        # Basic format (fallback)
-        return (
-            f"✈️ GLOBE GENIUS — {alert_badge}\n\n"
-            f"🌍 {origin_city} → {dest_city}\n"
-            f"📅 {package['departure_date']} – {package['return_date']}\n"
-            f"🏨 {accommodation['name']} ⭐ {accommodation.get('rating', 'N/A')}/5\n"
-            f"💰 {package['total_price']}€  |  🔥 -{package['discount_pct']}% vs marche\n"
-            f"🎯 Score : {package['score']}/100\n\n"
-            f"👉 Vol : {flight.get('source_url', 'N/A')}\n"
-            f"👉 Hotel : {accommodation.get('source_url', 'N/A')}"
-        )
+        lines += ["", ai_desc]
+    ai_reason = package.get("ai_reason")
+    if ai_reason:
+        lines.append(f"📊 {ai_reason}")
+    ai_tip = package.get("ai_tip")
+    if ai_tip:
+        lines += ["", f"💡 {ai_tip}"]
+
+    lines += [
+        "",
+        f"🏨 {accommodation['name']} ⭐ {accommodation.get('rating', 'N/A')}/5",
+    ]
+    flight_url = flight.get("source_url") or ""
+    if flight_url and flight_url != "N/A":
+        lines.append(f"👉 [Voir le vol]({flight_url})")
+    hotel_url = accommodation.get("source_url") or ""
+    if hotel_url and hotel_url != "N/A":
+        lines.append(f"👉 [Voir l'hôtel]({hotel_url})")
+
+    return "\n".join(lines)
+
+
+# Per-deal-subtype prefix for the digest lines — mirrors the headers of
+# the dedicated alert templates so the digest reads as a summary of the
+# same products, not a different one.
+_DIGEST_SUBTYPE_PREFIX = {
+    "roundtrip": "🛫",
+    "oneway_exceptional": "➡️ Aller simple ·",
+    "split_ticket": "💡 Combo malin ·",
+    "stopover": "🧳 Stopover ·",
+}
 
 
 def format_digest(packages: list[dict]) -> str:
+    """Daily digest — top deals of the day, all subtypes mixed.
+
+    Harmonised 2026-06-10 with the alert templates: Markdown, city
+    labels via iata_label, FR dates, always a discount %, no internal
+    score. Each entry needs: origin, destination, price (or legacy
+    total_price), discount_pct, departure_date; optional: return_date,
+    deal_subtype, metadata (stopover entries carry hub /
+    final_destination there).
+    """
+    from app.config import iata_label
+
     today = datetime.now().strftime("%d/%m/%Y")
-    lines = [f"📬 GLOBE GENIUS DIGEST — {today}\n"]
-    lines.append(f"Top {len(packages)} deals du jour :\n")
+    lines = [f"📬 *Le digest GlobeGenius — {today}*", ""]
     for i, pkg in enumerate(packages, 1):
-        lines.append(
-            f"{i}. {pkg['origin']} → {pkg['destination']} | "
-            f"{pkg['total_price']}€ (-{pkg['discount_pct']}%) | "
-            f"Score {pkg['score']}/100 | "
-            f"{pkg['departure_date']} → {pkg['return_date']}"
-        )
+        subtype = pkg.get("deal_subtype") or "roundtrip"
+        prefix = _DIGEST_SUBTYPE_PREFIX.get(subtype, "🛫")
+        price = int(round(pkg.get("price") or pkg.get("total_price") or 0))
+        disc = int(round(pkg.get("discount_pct") or 0))
+
+        origin_label = iata_label(pkg.get("origin") or "")
+        dest_label = iata_label(pkg.get("destination") or "")
+        # Stopover chains show the full 2-destination routing — the hub
+        # is the selling point, not an implementation detail.
+        metadata = pkg.get("metadata") or {}
+        if subtype == "stopover" and metadata.get("hub"):
+            hub_label = iata_label(metadata["hub"])
+            final_label = iata_label(metadata.get("final_destination") or "")
+            route = f"{origin_label} → {hub_label} → {final_label or dest_label}"
+        else:
+            route = f"{origin_label} → {dest_label}"
+
+        dep = _fmt_date_fr((pkg.get("departure_date") or "")[:10])
+        ret = _fmt_date_fr((pkg.get("return_date") or "")[:10]) if pkg.get("return_date") else ""
+        dates = f"{dep} – {ret}" if ret else dep
+
+        lines.append(f"{i}. {prefix} *{route}*")
+        lines.append(f"   💰 *{price} € · -{disc} %* · 📅 {dates}")
+    lines += ["", f"👉 [Toutes les offres]({settings.FRONTEND_URL}/home)"]
     return "\n".join(lines)
 
 
@@ -923,12 +968,14 @@ def format_grouped_flight_alerts(
     verification_line = _price_verification_line(
         price_confidences, any_young_baseline
     )
-    # When we softened the badge because the baseline is young, drop the
-    # "-XX %" claim from each offer line and use a softer "Prix observé
-    # récemment" framing for the strikethrough. The discount number is
-    # not a lie per se, but with very few observations it's a statistical
-    # artefact more than a defensible promise.
-    show_discount_pct = not any_young_baseline
+    # 2026-06-10 (homogénéité): the discount % is now ALWAYS shown —
+    # users flagged that some alerts carried "-XX %" and others didn't,
+    # which read as two different products. The young-baseline honesty
+    # safeguard (2026-05) survives as a "≈" prefix + the softer "Prix
+    # observé récemment" framing instead of dropping the number: with
+    # very few observations the figure is an estimate, and we say so,
+    # but the presentation stays uniform across every alert type.
+    approx_discount = any_young_baseline
 
     from app.config import iata_label
 
@@ -1005,15 +1052,14 @@ def format_grouped_flight_alerts(
             if multi_origin and o.get("origin"):
                 origin_tag = f"  ·  via {o['origin']}"
 
-            # 2026-05: drop the "-XX %" claim when the baseline behind
-            # this alert is young — the savings figure rests on too few
-            # observations to be defensible. The price stays prominent
-            # so users see the absolute number, which is what they'll
-            # pay regardless of baseline maturity.
+            # 2026-06-10: the "-XX %" claim is always present. When the
+            # baseline behind this alert is young the figure rests on
+            # few observations, so it's framed as an estimate ("≈")
+            # rather than dropped — see approx_discount above.
             price_line = (
-                f"\n💰 *{price} € A/R · -{disc} %*{origin_tag}"
-                if show_discount_pct
-                else f"\n💰 *{price} € A/R*{origin_tag}"
+                f"\n💰 *{price} € A/R · ≈ -{disc} %*{origin_tag}"
+                if approx_discount
+                else f"\n💰 *{price} € A/R · -{disc} %*{origin_tag}"
             )
 
             # 2026-05-21: surface the operating carrier + a 🎒 link to
@@ -1220,7 +1266,10 @@ async def send_deal_alert(chat_id: int, package: dict, flight: dict, accommodati
             "Créez un compte premium pour débloquer ce deal."
         )
     try:
-        await bot.send_message(chat_id=chat_id, text=msg)
+        # parse_mode added 2026-06-10 — the harmonised template uses the
+        # same Markdown (bold price, ~strike~ baseline) as every other
+        # alert type.
+        await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
         return True
     except Exception as e:
         logger.error(f"Failed to send Telegram alert to {chat_id}: {e}")
@@ -1231,11 +1280,13 @@ async def send_digest(chat_id: int, packages: list[dict]) -> bool:
     bot = _get_bot()
     if not bot:
         return False
-    msg = format_digest(packages)
     try:
-        await bot.send_message(chat_id=chat_id, text=msg)
+        msg = format_digest(packages)
+        await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
         return True
     except Exception as e:
+        # Formatting errors are caught too — a malformed deal row must
+        # not crash the whole digest loop for every subscriber.
         logger.error(f"Failed to send digest to {chat_id}: {e}")
         return False
 

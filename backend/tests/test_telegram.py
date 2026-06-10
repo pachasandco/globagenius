@@ -24,8 +24,10 @@ def test_format_deal_alert():
     msg = format_deal_alert(package, flight, accommodation)
     assert "Lisbon" in msg or "CDG" in msg  # City name or IATA code
     assert "509" in msg
-    assert "47.9" in msg
-    assert "84" in msg
+    # Harmonised 2026-06-10: rounded "-XX %" like every other template,
+    # and the internal score is no longer exposed to users.
+    assert "-48 %" in msg
+    assert "/100" not in msg
     assert "https://flights.example.com" in msg
     assert "https://hotel.example.com" in msg
 
@@ -72,7 +74,31 @@ def test_format_digest():
     msg = format_digest(packages)
     assert "CDG" in msg
     assert "LYS" in msg
-    assert "Top" in msg or "top" in msg or "DIGEST" in msg
+    assert "digest" in msg.lower()
+    # Harmonised template: rounded discount always present, no score.
+    assert "-48 %" in msg
+    assert "-52 %" in msg
+    assert "/100" not in msg
+
+
+def test_format_digest_stopover_entry_shows_full_routing():
+    """A stopover digest line shows origin → hub → final destination —
+    the hub is the selling point of the product."""
+    entries = [{
+        "origin": "CDG",
+        "destination": "MAD",
+        "price": 155.0,
+        "discount_pct": 61.0,
+        "departure_date": "2026-09-01",
+        "return_date": "2026-09-11",
+        "deal_subtype": "stopover",
+        "metadata": {"hub": "MAD", "final_destination": "LPA"},
+    }]
+    msg = format_digest(entries)
+    assert "Stopover" in msg
+    assert "Madrid (MAD)" in msg
+    assert "Las Palmas (LPA)" in msg
+    assert "-61 %" in msg
 
 
 @pytest.mark.asyncio
@@ -88,7 +114,7 @@ async def test_send_deal_alert_premium_tier_includes_booking_link():
     sent_messages = []
 
     mock_bot = MagicMock()
-    mock_bot.send_message = AsyncMock(side_effect=lambda chat_id, text: sent_messages.append(text))
+    mock_bot.send_message = AsyncMock(side_effect=lambda chat_id, text, parse_mode=None: sent_messages.append(text))
 
     with patch("app.notifications.telegram._get_bot", return_value=mock_bot):
         await send_deal_alert("123", pkg, flight_data, acc_data, tier="premium")
@@ -113,7 +139,7 @@ async def test_send_deal_alert_free_tier_includes_upgrade_cta():
     sent_messages = []
 
     mock_bot = MagicMock()
-    mock_bot.send_message = AsyncMock(side_effect=lambda chat_id, text: sent_messages.append(text))
+    mock_bot.send_message = AsyncMock(side_effect=lambda chat_id, text, parse_mode=None: sent_messages.append(text))
 
     with patch("app.notifications.telegram._get_bot", return_value=mock_bot):
         await send_deal_alert("123", pkg, flight_data, acc_data, tier="free")
@@ -137,7 +163,7 @@ async def test_send_deal_alert_default_tier_is_premium_for_backward_compat():
     sent_messages = []
 
     mock_bot = MagicMock()
-    mock_bot.send_message = AsyncMock(side_effect=lambda chat_id, text: sent_messages.append(text))
+    mock_bot.send_message = AsyncMock(side_effect=lambda chat_id, text, parse_mode=None: sent_messages.append(text))
 
     with patch("app.notifications.telegram._get_bot", return_value=mock_bot):
         await send_deal_alert("123", pkg, flight_data, acc_data)
@@ -557,10 +583,10 @@ def test_grouped_alert_caps_badge_when_baseline_is_young():
     assert "Erreur de prix" not in msg
 
 
-def test_grouped_alert_drops_discount_pct_when_baseline_is_young():
-    """The "-XX %" claim requires a defensible baseline. With <15
-    observations we keep the absolute price prominent but drop the
-    savings-percentage advertisement."""
+def test_grouped_alert_marks_discount_as_estimate_when_baseline_is_young():
+    """2026-06-10 (homogénéité): the "-XX %" is ALWAYS shown — hiding it
+    on young baselines made alerts look like two different products.
+    The honesty safeguard survives as a "≈" estimate marker instead."""
     from app.notifications.telegram import format_grouped_flight_alerts
     offers = [{
         "departure_date": "2026-09-01", "return_date": "2026-09-10",
@@ -571,7 +597,22 @@ def test_grouped_alert_drops_discount_pct_when_baseline_is_young():
     msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers,
                                        tier="premium")
     assert "50 € A/R" in msg
-    assert "-65 %" not in msg
+    assert "≈ -65 %" in msg
+
+
+def test_grouped_alert_exact_discount_with_mature_baseline():
+    """Mature baseline → exact "-XX %" with no estimate marker."""
+    from app.notifications.telegram import format_grouped_flight_alerts
+    offers = [{
+        "departure_date": "2026-09-01", "return_date": "2026-09-10",
+        "price": 50, "discount_pct": 65,
+        "price_confidence": "confirmed_tp",
+        "baseline_sample_count": 40,
+    }]
+    msg = format_grouped_flight_alerts("Paris", "Lisbonne", "LIS", offers,
+                                       tier="premium")
+    assert "-65 %" in msg
+    assert "≈" not in msg
 
 
 def test_grouped_alert_uses_softer_baseline_label_when_young():

@@ -1607,26 +1607,67 @@ async def job_expire_stale_data():
 
 
 async def job_daily_digest():
+    """Daily digest of the top active deals (all subtypes incl. stopover).
+
+    2026-06-10 fix: qualified_items rows don't carry origin/destination/
+    dates (those live on the raw_flights row referenced by item_id), so
+    the previous version crashed format_digest with a KeyError on the
+    first run with data — the digest never went out. We now join each
+    deal with its raw_flights row before formatting, and skip rows whose
+    flight has been purged (30-day retention).
+    """
     if not db:
         return
 
     deals_resp = (
         db.table("qualified_items")
-        .select("*")
+        .select("item_id,price,discount_pct,score,deal_subtype,metadata")
         .eq("status", "active")
         .eq("type", "flight")
         .gte("score", settings.MIN_SCORE_DIGEST)
         .order("score", desc=True)
-        .limit(5)
+        .limit(10)
         .execute()
     )
-
     if not deals_resp.data:
+        return
+
+    entries: list[dict] = []
+    for deal in deals_resp.data:
+        try:
+            flight_resp = (
+                db.table("raw_flights")
+                .select("origin,destination,departure_date,return_date")
+                .eq("id", deal["item_id"])
+                .limit(1)
+                .execute()
+            )
+        except Exception as e:
+            logger.warning(f"Digest: raw_flights lookup failed for {deal.get('item_id')}: {e}")
+            continue
+        flights = flight_resp.data or []
+        if not flights:
+            continue  # flight purged since qualification
+        flight = flights[0]
+        entries.append({
+            "origin": flight.get("origin"),
+            "destination": flight.get("destination"),
+            "departure_date": flight.get("departure_date"),
+            "return_date": flight.get("return_date"),
+            "price": deal.get("price"),
+            "discount_pct": deal.get("discount_pct"),
+            "deal_subtype": deal.get("deal_subtype") or "roundtrip",
+            "metadata": deal.get("metadata") or {},
+        })
+        if len(entries) >= 5:
+            break
+
+    if not entries:
         return
 
     subscribers = db.table("telegram_subscribers").select("chat_id").execute()
     for sub in (subscribers.data or []):
-        await send_digest(sub["chat_id"], deals_resp.data)
+        await send_digest(sub["chat_id"], entries)
 
 
 async def job_daily_admin_report():
