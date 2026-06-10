@@ -147,26 +147,41 @@ class Settings:
                 )
 
 
-# ── Stopover phase 1 (2026-06-09) ──────────────────────────────────────
+# ── Stopover phase 1 (2026-06-09, pairs redesigned 2026-06-12) ─────────
 # Curated (hub, final destination) pairs for stopover chains. The hub is
 # a city users want to visit for 2-5 days on the way; the spoke is the
-# final destination. Both must be reachable as one-ways from MVP origins
-# (hub via the regular outbound scrape, spoke→origin via the inbound
-# scrape) — only the hub→spoke connector leg needs dedicated scraping
-# (~1 extra Travelpayouts call per pair per one-way run).
-# Keep this list short and high-conviction: every pair adds API calls
-# and matcher work. All pairs are LCC-dense so 3 cheap one-ways exist.
+# final destination.
+#
+# ECONOMICS LESSON (48h audit, 2026-06-12): the original pairs were all
+# ultra-low-cost European routes (BCN+PMI, MAD+Canaries…) chosen for
+# data availability — and produced a structural zero. On those routes
+# the direct A/R is already at the Ryanair price floor (~66€ ORY→PMI):
+# three separate tickets (≥67€) can NEVER undercut it by the 30%/80€
+# qualification bar. A stopover chain only beats the direct A/R where
+# the direct A/R is EXPENSIVE — i.e. long-haul or poorly-served routes
+# — and where the hub has cheap onward capacity (TAP via LIS, LEVEL /
+# Air Europa via MAD, Pegasus via IST).
+#
+# Constraints per pair: the spoke must be in the priority destinations
+# (its inbound spoke→origin legs come from the regular one-way scrape)
+# and a direct A/R baseline origin→spoke must exist — today long-haul
+# baselines only exist from CDG, so provincial chains stay quiet until
+# LONG_HAUL_ORIGINS opens more origins. The stopover_detection funnel
+# counters (no_leg3 / no_baseline) make any starving stage visible.
 STOPOVER_HUB_PAIRS: list[tuple[str, str]] = [
-    ("MAD", "LPA"),   # Madrid + Las Palmas
-    ("MAD", "TFS"),   # Madrid + Ténérife
-    ("LIS", "FNC"),   # Lisbonne + Madère
+    # Transatlantic via Iberia/TAP hubs — cheap legs on LEVEL / TAP.
+    ("MAD", "BOG"),   # Madrid + Bogotá
+    ("MAD", "LIM"),   # Madrid + Lima
+    ("LIS", "GRU"),   # Lisbonne + São Paulo
+    ("LIS", "GIG"),   # Lisbonne + Rio
+    ("LIS", "YUL"),   # Lisbonne + Montréal
+    # Middle East via Istanbul — Pegasus/flydubai onward capacity.
+    ("IST", "DXB"),   # Istanbul + Dubaï
+    # Kept from phase 1: the only European pairs where the direct A/R
+    # from France is genuinely expensive (no LCC saturation).
     ("LIS", "PDL"),   # Lisbonne + Açores
-    ("BCN", "PMI"),   # Barcelone + Majorque
-    ("BCN", "IBZ"),   # Barcelone + Ibiza
-    ("FCO", "CTA"),   # Rome + Sicile (Catane)
-    ("FCO", "CAG"),   # Rome + Sardaigne (Cagliari)
+    ("LIS", "FNC"),   # Lisbonne + Madère
     ("ATH", "JTR"),   # Athènes + Santorin
-    ("ATH", "HER"),   # Athènes + Crète
 ]
 
 
