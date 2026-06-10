@@ -1999,7 +1999,19 @@ async def job_daily_admin_health():
 
         scrape_resp = _db.table("scrape_logs").select("started_at,type").order("started_at", desc=True).limit(1).execute()
         last_scrape = scrape_resp.data[0] if scrape_resp.data else None
-        raw_24h = _db.table("raw_flights").select("id", count="exact").gte("scraped_at", cutoff_24h).limit(1).execute()
+        # raw_flights is the only big table in this snapshot (~7M rows,
+        # ~240k/24h). count="exact" walks the index and can blow the 8s
+        # statement timeout, killing the WHOLE health report ("Daily
+        # health crashed: 57014", observed 2026-06-10 on the first run
+        # after deploy). A planner estimate is instant and amply
+        # accurate for a dashboard metric; on any failure we degrade to
+        # -1 instead of dying.
+        try:
+            raw_24h = _db.table("raw_flights").select("id", count="estimated").gte("scraped_at", cutoff_24h).limit(1).execute()
+            raw_flights_24h = raw_24h.count or 0
+        except Exception as raw_err:
+            logger.warning(f"daily health: raw_flights 24h count failed: {raw_err}")
+            raw_flights_24h = -1
 
         health = {
             "timestamp": now.isoformat(),
@@ -2025,7 +2037,7 @@ async def job_daily_admin_health():
             },
             "pipeline": {
                 "last_scrape_at": last_scrape["started_at"] if last_scrape else None,
-                "raw_flights_24h": raw_24h.count or 0,
+                "raw_flights_24h": raw_flights_24h,
             },
         }
         msg = _format_admin_health(health)

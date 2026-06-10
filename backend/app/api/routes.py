@@ -344,11 +344,13 @@ def history_stats(request: Request):
     if not db:
         return {"error": "no db"}
 
-    total_flights = db.table("raw_flights").select("id", count="exact").execute()
+    # Estimated counts on the big tables — a full-table exact count on
+    # raw_flights (~7M rows) far exceeds the 8s statement timeout.
+    total_flights = db.table("raw_flights").select("id", count="estimated").limit(1).execute()
     total_hotels = db.table("raw_accommodations").select("id", count="exact").execute()
     total_baselines = db.table("price_baselines").select("id", count="exact").execute()
     total_packages = db.table("packages").select("id", count="exact").execute()
-    total_qualified = db.table("qualified_items").select("id", count="exact").execute()
+    total_qualified = db.table("qualified_items").select("id", count="estimated").limit(1).execute()
 
     # Distinct routes
     routes = db.table("raw_flights").select("origin, destination").execute()
@@ -3659,8 +3661,10 @@ def admin_health(request: Request):
         "started_at,type"
     ).order("started_at", desc=True).limit(1).execute()
     last_scrape = scrape_resp.data[0] if scrape_resp.data else None
+    # Estimated count: exact counting on raw_flights (~7M rows) can blow
+    # the 8s statement timeout (57014) — see job_daily_admin_health.
     raw_24h = db.table("raw_flights").select(
-        "id", count="exact"
+        "id", count="estimated"
     ).gte("scraped_at", cutoff_24h).limit(1).execute()
 
     return {
