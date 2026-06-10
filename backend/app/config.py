@@ -92,6 +92,22 @@ class Settings:
     ADMIN_EMAILS: list = field(default_factory=lambda: [
         e.strip() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()
     ])
+    # Origins allowed to scrape LONG-HAUL destinations (2026-06-10,
+    # was a hardcoded `origin != "CDG"` in 3 call sites). Historical
+    # rationale ("only French hub with direct transatlantic service")
+    # undersells ORY (French Bee / Corsair / Transat: DOM-TOM, YUL…)
+    # and provincial leisure long-haul. Default keeps the historical
+    # behaviour; activation = env change on Railway, no deploy:
+    #   LONG_HAUL_ORIGINS=CDG,ORY
+    # Each added origin ≈ +15-20 long-haul routes × 12 scrapes/day on
+    # Travelpayouts + matching raw_flights volume — add origins ONE at
+    # a time and watch DB growth. New routes are cold-started by the
+    # *-DEST wildcard baselines (CDG history) and seeded properly by
+    # the daily enrichment job within a few days; the ≥5-samples and
+    # 21-day-freshness gates keep them quiet until then.
+    LONG_HAUL_ORIGINS: list = field(default_factory=lambda: [
+        o.strip().upper() for o in os.getenv("LONG_HAUL_ORIGINS", "CDG").split(",") if o.strip()
+    ])
     TRAVELPAYOUTS_MARKER: str = os.getenv("TRAVELPAYOUTS_MARKER", "")
 
     def __post_init__(self):

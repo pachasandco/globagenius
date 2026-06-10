@@ -123,8 +123,9 @@ def scrape_flights_for_route(origin: str, destination: str) -> list[dict]:
 def scrape_flights_for_airport(origin: str, passive: bool = False) -> list[dict]:
     """Scrape all priority destinations for one origin airport.
 
-    Long-haul destinations are only scraped from CDG — the only French hub
-    with direct transatlantic/long-haul service.
+    Long-haul destinations are only scraped from LONG_HAUL_ORIGINS
+    (default: CDG alone). Add origins via the env var to open new
+    long-haul markets — see the comment on settings.LONG_HAUL_ORIGINS.
 
     passive=True tags every row with passive=true so the alert dispatcher
     never reads them. Used for francophone-expansion origins (BRU, GVA,
@@ -135,7 +136,7 @@ def scrape_flights_for_airport(origin: str, passive: bool = False) -> list[dict]
     for dest in destinations:
         if dest == origin:
             continue
-        if is_long_haul(dest) and origin != "CDG":
+        if is_long_haul(dest) and origin not in settings.LONG_HAUL_ORIGINS:
             continue
         try:
             flights = scrape_flights_for_route(origin, dest)

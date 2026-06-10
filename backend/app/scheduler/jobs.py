@@ -3355,8 +3355,11 @@ async def job_travelpayouts_enrichment():
         for dest in destinations:
             if dest == origin:
                 continue
-            # Long-haul routes only from CDG — the only French hub with direct transatlantic service
-            if is_long_haul(dest) and origin != "CDG":
+            # Long-haul routes only from LONG_HAUL_ORIGINS (default CDG).
+            # Must stay aligned with the scraper gate in
+            # travelpayouts_flights.py so every scraped long-haul route
+            # also gets its baseline enriched here.
+            if is_long_haul(dest) and origin not in settings.LONG_HAUL_ORIGINS:
                 continue
 
             try:
