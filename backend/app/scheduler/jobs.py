@@ -2292,13 +2292,19 @@ async def job_scrape_oneway_flights():
     # call per curated pair per run (~10 calls). Stored as regular
     # outbound one-ways; the standalone one-way alert lane filters them
     # out because their origin isn't an MVP airport.
+    # 2026-06-12: own scrape_logs actor ("stopover_connectors") — a 48h
+    # audit couldn't tell whether this block ran at all because its
+    # inserts were folded into the flights_oneway count.
     from app.config import STOPOVER_HUB_PAIRS
+    conn_started = datetime.now(timezone.utc)
+    conn_inserted = 0
+    conn_errors = 0
     for hub, spoke in STOPOVER_HUB_PAIRS:
         try:
             connector_entries = get_oneway_calendar(hub, spoke)
         except Exception as e:
             logger.warning(f"Stopover connector fetch failed {hub}->{spoke}: {e}")
-            errors += 1
+            conn_errors += 1
             continue
         for entry in connector_entries:
             departure_at = entry.get("departure_at") or ""
@@ -2327,11 +2333,31 @@ async def job_scrape_oneway_flights():
                     source="travelpayouts",
                 )
                 db.table("raw_flights").upsert(flight, on_conflict="hash").execute()
-                inserted += 1
+                conn_inserted += 1
             except Exception as e:
                 logger.warning(f"Stopover connector insert failed {hub}->{spoke}: {e}")
-                errors += 1
+                conn_errors += 1
         await asyncio.sleep(0)
+
+    conn_completed = datetime.now(timezone.utc)
+    try:
+        db.table("scrape_logs").insert({
+            "actor_id": "stopover_connectors",
+            "source": "travelpayouts",
+            "type": "flights",
+            "items_count": conn_inserted,
+            "errors_count": conn_errors,
+            "duration_ms": int((conn_completed - conn_started).total_seconds() * 1000),
+            "status": "success" if conn_errors == 0 else ("partial" if conn_inserted > 0 else "failed"),
+            "started_at": conn_started.isoformat(),
+            "completed_at": conn_completed.isoformat(),
+        }).execute()
+    except Exception as e:
+        logger.warning(f"Failed to write stopover_connectors scrape_log: {e}")
+    logger.info(
+        f"Stopover connectors: {conn_inserted} fares upserted, {conn_errors} errors "
+        f"across {len(STOPOVER_HUB_PAIRS)} hub pairs"
+    )
 
     completed_at = datetime.now(timezone.utc)
     duration_ms = int((completed_at - started_at).total_seconds() * 1000)
@@ -3132,8 +3158,23 @@ async def _detect_and_dispatch_stopover_chains() -> None:
     from app.notifications.telegram import send_stopover_alert
     from app.thresholds import ALERT_INHIBIT_HOURS as _INHIBIT
 
-    fresh_cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    detect_started = datetime.now(timezone.utc)
+    fresh_cutoff = (detect_started - timedelta(hours=24)).isoformat()
     chains_dispatched = 0
+    # 2026-06-12: step-by-step funnel counters. A 48h audit found 0
+    # stopover rows with no way to tell WHICH stage produced the zero
+    # (no legs scraped? no baseline? thresholds too strict? no opt-in
+    # users?). Summarised in the completion log and in a scrape_logs
+    # row (actor stopover_detection) so the next audit reads it from DB.
+    detect_counters = {
+        "routes_scanned": 0,
+        "no_leg1": 0,
+        "no_leg2": 0,
+        "no_leg3": 0,
+        "no_baseline": 0,
+        "no_chain": 0,
+        "chains_qualified": 0,
+    }
 
     dispatched_alerts_in_run_by_user: dict[str, list[dict]] = {}
     dispatched_burst_ts_by_user: dict[str, datetime] = {}
@@ -3162,6 +3203,23 @@ async def _detect_and_dispatch_stopover_chains() -> None:
 
     if not opt_in_subs:
         logger.info("Stopover: no users opted in to combo alerts, skipping")
+        # Still leave a liveness trace in scrape_logs — without it, this
+        # early return is indistinguishable from "the job never ran".
+        try:
+            now_skip = datetime.now(timezone.utc)
+            db.table("scrape_logs").insert({
+                "actor_id": "stopover_detection",
+                "source": "raw_flights",
+                "type": "flights",
+                "items_count": 0,
+                "errors_count": 0,
+                "duration_ms": int((now_skip - detect_started).total_seconds() * 1000),
+                "status": "success",
+                "started_at": detect_started.isoformat(),
+                "completed_at": now_skip.isoformat(),
+            }).execute()
+        except Exception as e:
+            logger.warning(f"Failed to write stopover_detection skip log: {e}")
         return
 
     def _fetch_legs(leg_origin: str, leg_dest: str, direction: str) -> list[dict]:
@@ -3183,6 +3241,7 @@ async def _detect_and_dispatch_stopover_chains() -> None:
         for hub, spoke in STOPOVER_HUB_PAIRS:
             if origin in (hub, spoke):
                 continue
+            detect_counters["routes_scanned"] += 1
             try:
                 leg1s = _fetch_legs(origin, hub, "outbound")
                 leg2s = _fetch_legs(hub, spoke, "outbound")
@@ -3190,7 +3249,14 @@ async def _detect_and_dispatch_stopover_chains() -> None:
             except Exception as e:
                 logger.warning(f"Stopover: leg query failed {origin}-{hub}-{spoke}: {e}")
                 continue
-            if not leg1s or not leg2s or not leg3s:
+            if not leg1s:
+                detect_counters["no_leg1"] += 1
+                continue
+            if not leg2s:
+                detect_counters["no_leg2"] += 1
+                continue
+            if not leg3s:
+                detect_counters["no_leg3"] += 1
                 continue
 
             # Chain measured against the DIRECT round-trip baseline for
@@ -3198,6 +3264,7 @@ async def _detect_and_dispatch_stopover_chains() -> None:
             # usual price of one".
             baseline_avg = _lookup_roundtrip_baseline_avg(origin, spoke)
             if baseline_avg is None or baseline_avg <= 0:
+                detect_counters["no_baseline"] += 1
                 continue
 
             chains = find_stopover_chains(
@@ -3207,8 +3274,10 @@ async def _detect_and_dispatch_stopover_chains() -> None:
                 roundtrip_baseline=baseline_avg,
             )
             if not chains:
+                detect_counters["no_chain"] += 1
                 continue
             chain = chains[0]
+            detect_counters["chains_qualified"] += 1
             chain_savings_pct = (
                 (chain.roundtrip_baseline - chain.total)
                 / chain.roundtrip_baseline
@@ -3368,7 +3437,25 @@ async def _detect_and_dispatch_stopover_chains() -> None:
 
             await asyncio.sleep(0)
 
-    logger.info(f"Stopover detection complete: {chains_dispatched} alerts dispatched")
+    detect_completed = datetime.now(timezone.utc)
+    logger.info(
+        f"Stopover detection complete: {chains_dispatched} alerts dispatched — "
+        f"funnel {detect_counters}"
+    )
+    try:
+        db.table("scrape_logs").insert({
+            "actor_id": "stopover_detection",
+            "source": "raw_flights",
+            "type": "flights",
+            "items_count": detect_counters["chains_qualified"],
+            "errors_count": 0,
+            "duration_ms": int((detect_completed - detect_started).total_seconds() * 1000),
+            "status": "success",
+            "started_at": detect_started.isoformat(),
+            "completed_at": detect_completed.isoformat(),
+        }).execute()
+    except Exception as e:
+        logger.warning(f"Failed to write stopover_detection scrape_log: {e}")
 
 
 def _lookup_roundtrip_baseline_avg(origin: str, dest: str) -> float | None:
