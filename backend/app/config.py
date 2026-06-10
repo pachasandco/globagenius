@@ -54,6 +54,13 @@ class Settings:
     BREVO_FEEDBACK_NURTURE_J7_TEMPLATE_ID: int = int(os.getenv("BREVO_FEEDBACK_NURTURE_J7_TEMPLATE_ID", "10") or 0)
     BREVO_FEEDBACK_NURTURE_J14_TEMPLATE_ID: int = int(os.getenv("BREVO_FEEDBACK_NURTURE_J14_TEMPLATE_ID", "11") or 0)
     BREVO_OPEN_FEEDBACK_J15_TEMPLATE_ID: int = int(os.getenv("BREVO_OPEN_FEEDBACK_J15_TEMPLATE_ID", "12") or 0)
+    # "Lettre de la beta" (2026-06-10) — monthly recap for every tester
+    # who has received at least one alert. Static content (changelog,
+    # "your feedback shipped X", mission of the month) is hand-edited in
+    # the Brevo template each month; per-user params injected by the
+    # cron: ALERTS_MONTH, BEST_DISCOUNT, BEST_DESTINATION. Default 0 =
+    # disabled until the template exists on Brevo's side.
+    BREVO_BETA_RECAP_TEMPLATE_ID: int = int(os.getenv("BREVO_BETA_RECAP_TEMPLATE_ID", "0") or 0)
     # Sent when an admin manually downgrades an inactive founder back to
     # the free tier ("you didn't activate, your Premium is removed, your
     # free account stays"). 0 = template not configured yet → the

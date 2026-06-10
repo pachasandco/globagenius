@@ -3698,6 +3698,24 @@ def admin_health(request: Request):
     }
 
 
+# ── Beta activation funnel (2026-06-10) ─────────────────────────────────────
+
+
+@router.get("/api/admin/funnel")
+def admin_funnel(request: Request, dormant_days: int = 14):
+    """Segment every signed-up user by activation stage, with the emails
+    of each segment, so relance campaigns can target the actual blocker
+    (not connected / no alerts / never engaged / dormant) instead of
+    blasting everyone with the same message. See app/analysis/beta_funnel.
+    """
+    _require_admin(request)
+    if not db:
+        return {"error": "no db"}
+    from app.analysis.beta_funnel import build_funnel_report
+    dormant_days = max(1, min(dormant_days, 90))
+    return build_funnel_report(db, dormant_days=dormant_days)
+
+
 # ── Admin messages per user (chantier 7, 2026-05-17) ───────────────────────
 
 

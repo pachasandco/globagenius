@@ -1114,7 +1114,19 @@ def format_grouped_flight_alerts(
         )
 
     msg_parts.append("")
-    msg_parts.append(f"👉 [Toutes les offres {destination_iata}]({settings.FRONTEND_URL}/home?dest={destination_iata})")
+    # 2026-06-10: the catalogue link goes through /r/:token like the
+    # deal links. It was the only untracked click path in the alert —
+    # testers who browsed deals via /home registered ZERO "openings",
+    # which made half the 👍 feedback look like "liked without opening"
+    # and contradicted the survey ("j'ai déjà cliqué, si si !" at 57%).
+    catalogue_url = f"{settings.FRONTEND_URL}/home?dest={destination_iata}"
+    if user_id and alert_key:
+        catalogue_url = _make_redirect_token(
+            user_id, alert_key, origin_iata or "", destination_iata, catalogue_url,
+            trip_type="catalogue",
+            qualification_method=None,
+        )
+    msg_parts.append(f"👉 [Toutes les offres {destination_iata}]({catalogue_url})")
 
     msg = "\n".join(msg_parts)
 

@@ -286,19 +286,35 @@ def _users_no_feedback_since_first_alert(*, min_days: int, max_days: int) -> lis
     end = (now - timedelta(days=min_days)).isoformat()
     start = (now - timedelta(days=max_days)).isoformat()
 
-    # Pull every user's first alert timestamp via a min() aggregation —
-    # the supabase-py SDK doesn't support GROUP BY directly so we fetch
-    # rows in the window and de-duplicate by user_id, then verify the
-    # earliest row really falls in the target window.
+    # Pull alert timestamps via an explicit pagination loop. Two fixes
+    # (2026-06-10) over the previous single .execute():
+    #   1. PostgREST caps un-ranged queries at 1000 rows, sorted ASC —
+    #      so only the 1000 OLDEST sent_alerts were ever scanned and
+    #      recent signups never entered the cohort (silent mistargeting
+    #      that worsened as the table grew).
+    #   2. We now bound the scan to the catch-up window instead of the
+    #      whole table. Edge case accepted: a user whose true first
+    #      alert predates the window can look "first-alerted" inside it
+    #      — at worst they get one nurture mail, once ever (the
+    #      onboarding_email_log one-shot still applies).
     try:
-        rows = (
-            db.table("sent_alerts")
-            .select("user_id,sent_at,feedback")
-            .order("sent_at")
-            .execute()
-            .data
-            or []
-        )
+        rows: list[dict] = []
+        offset = 0
+        for _ in range(30):  # hard cap: 30k rows per run
+            page = (
+                db.table("sent_alerts")
+                .select("user_id,sent_at,feedback")
+                .gte("sent_at", start)
+                .order("sent_at")
+                .range(offset, offset + 999)
+                .execute()
+                .data
+                or []
+            )
+            rows.extend(page)
+            if len(page) < 1000:
+                break
+            offset += 1000
     except Exception as e:
         logger.error("sent_alerts scan for feedback nurture failed: %s", e)
         return []
@@ -375,6 +391,106 @@ def _users_for_open_feedback_15d() -> list[dict]:
         logger.error("users J+15 open-feedback cohort query failed: %s", e)
         return []
     return u.data or []
+
+
+# ── Lettre de la beta — monthly recap (2026-06-10) ─────────────────────────
+#
+# Beta testers are recruited for SIGNAL, not revenue: the retention
+# lever is impact ("your feedback changed X"), not FOMO. The static
+# part of the letter (changelog, what shipped because of tester
+# feedback, mission of the month) lives in the Brevo template and is
+# edited by hand each month; this module only injects the per-user
+# stats. Recurring — once per user per calendar month — unlike every
+# other email in this file, which is once per user per lifetime. The
+# idempotence key embeds the month: beta_recap_2026_06.
+
+
+def _users_for_beta_recap() -> list[dict]:
+    """Every user who has EVER received at least one alert, with their
+    current-month stats (alerts received, best discount + destination).
+    Testers who never received an alert are excluded — the letter's
+    per-user stats would be empty and the J+1/J+7 cohorts already
+    target them with the right message (finish the setup)."""
+    if not db:
+        return []
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+    # All-time recipients (paginated user_id scan, deduped in Python).
+    recipients: set[str] = set()
+    try:
+        offset = 0
+        for _ in range(60):
+            page = (
+                db.table("sent_alerts")
+                .select("user_id")
+                .order("sent_at", desc=True)
+                .range(offset, offset + 999)
+                .execute()
+                .data
+                or []
+            )
+            recipients.update(r["user_id"] for r in page if r.get("user_id"))
+            if len(page) < 1000:
+                break
+            offset += 1000
+    except Exception as e:
+        logger.error("sent_alerts scan for beta recap failed: %s", e)
+        return []
+    if not recipients:
+        return []
+
+    # Current-month stats per user.
+    month_count: dict[str, int] = {}
+    best_deal: dict[str, tuple[float, str]] = {}  # uid -> (discount, destination)
+    try:
+        offset = 0
+        for _ in range(30):
+            page = (
+                db.table("sent_alerts")
+                .select("user_id,destination,discount_pct")
+                .gte("sent_at", month_start)
+                .range(offset, offset + 999)
+                .execute()
+                .data
+                or []
+            )
+            for r in page:
+                uid = r.get("user_id")
+                if not uid:
+                    continue
+                month_count[uid] = month_count.get(uid, 0) + 1
+                disc = float(r.get("discount_pct") or 0)
+                if disc > best_deal.get(uid, (0.0, ""))[0]:
+                    best_deal[uid] = (disc, r.get("destination") or "")
+            if len(page) < 1000:
+                break
+            offset += 1000
+    except Exception as e:
+        logger.warning("month stats scan for beta recap failed (%s) — stats will be 0", e)
+
+    try:
+        users_resp = (
+            db.table("users")
+            .select("id,email")
+            .in_("id", list(recipients))
+            .execute()
+        )
+    except Exception as e:
+        logger.error("users hydration for beta recap failed: %s", e)
+        return []
+
+    out = []
+    for u in (users_resp.data or []):
+        disc, dest = best_deal.get(u["id"], (0.0, ""))
+        out.append({
+            "id": u["id"],
+            "email": u["email"],
+            "alerts_month": month_count.get(u["id"], 0),
+            "best_discount": int(round(disc)),
+            "best_destination": dest,
+        })
+    return out
 
 
 # ── Public entry point used by the daily cron ──────────────────────────────
@@ -501,5 +617,33 @@ async def send_onboarding_emails_once() -> dict:
             counts["j15_open_feedback_sent"] += 1
         else:
             counts["j15_open_feedback_skipped"] += 1
+
+    # Lettre de la beta — monthly, recurring (once per user per month).
+    # The daily cron + month-keyed idempotence give catch-up for free:
+    # if the 1st falls on a scheduler outage, the letter goes out on
+    # the next successful run instead of skipping the month.
+    counts["beta_recap_sent"] = 0
+    counts["beta_recap_skipped"] = 0
+    if settings.BREVO_BETA_RECAP_TEMPLATE_ID:
+        month_key = f"beta_recap_{datetime.now(timezone.utc).strftime('%Y_%m')}"
+        for user in _users_for_beta_recap():
+            uid = user["id"]
+            if _already_sent(uid, month_key):
+                counts["beta_recap_skipped"] += 1
+                continue
+            ok = await _send_brevo_template(
+                to_email=user["email"],
+                template_id=settings.BREVO_BETA_RECAP_TEMPLATE_ID,
+                params={
+                    "ALERTS_MONTH": user.get("alerts_month", 0),
+                    "BEST_DISCOUNT": user.get("best_discount", 0),
+                    "BEST_DESTINATION": user.get("best_destination", ""),
+                },
+            )
+            if ok:
+                _mark_sent(uid, month_key)
+                counts["beta_recap_sent"] += 1
+            else:
+                counts["beta_recap_skipped"] += 1
 
     return counts
