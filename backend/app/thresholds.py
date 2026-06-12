@@ -83,7 +83,17 @@ PREMIUM_DEFAULT_MIN_DISCOUNT = 40
 MIN_BASELINE_SAMPLE_COUNT = 5
 
 
-# ─── Dedup (Telegram alerts) ───
+# ─── Dispatch stay-length floor ───
+
+# Minimum nights for a round-trip to be PUSHED (Telegram). Was a
+# hardcoded `4` buried in the dispatcher since 2026-04-20 — and the
+# 2026-06-12 ghost-deal audit showed it silently binning fully
+# qualified weekend deals (CDG→VCE 93€ −49%, 3 nights; ORY→CPH 141€
+# −40%, 3 nights…) that users were meant to receive. 2-3 night city
+# breaks are a core use case; 0-1 night round-trips are almost never
+# actionable leisure trips. The qualifier already buckets baselines by
+# duration, so short stays are compared apples-to-apples upstream.
+MIN_STAY_NIGHTS = 2
 
 # How long after sending an alert we suppress re-alerts for the same
 # (user, dest, dep_date, ret_date, price_bucket). 7 days = the natural

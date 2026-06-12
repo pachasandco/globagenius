@@ -690,6 +690,7 @@ async def _dispatch_grouped_flight_alerts(
     drop_counts = {
         "trip_type": 0, "wishlist_price": 0, "premium_floor": 0,
         "free_band": 0, "free_no_room": 0, "offer_dedup": 0,
+        "min_stay": 0, "bad_dates": 0,
         "sent": 0, "send_failed": 0,
     }
 
@@ -1122,15 +1123,23 @@ async def _dispatch_grouped_flight_alerts(
                     if key and key in already_keys:
                         continue
 
-                    # Filter: minimum 4 days stay
+                    # Stay-length floor — see thresholds.MIN_STAY_NIGHTS.
+                    # 2026-06-12 ghost-deal audit: the previous hardcoded
+                    # `< 4` silently binned every qualified 2-3 night
+                    # weekend deal (5 ghosts in 24h, e.g. CDG→VCE 93€
+                    # −49%) with no log and no counter. Now 2 nights,
+                    # centralised, and counted in the dispatch summary.
+                    from app.thresholds import MIN_STAY_NIGHTS
                     try:
                         departure = datetime.fromisoformat(flight["departure_date"])
                         return_date = datetime.fromisoformat(flight["return_date"])
                         nights = (return_date - departure).days
-                        if nights < 4:
-                            continue  # Skip trips shorter than 4 days
+                        if nights < MIN_STAY_NIGHTS:
+                            drop_counts["min_stay"] += 1
+                            continue
                     except (ValueError, KeyError, TypeError):
-                        continue  # Skip if dates invalid
+                        drop_counts["bad_dates"] += 1
+                        continue
 
                     offer: dict = {
                         "departure_date": flight["departure_date"],
@@ -1657,42 +1666,84 @@ async def job_expire_stale_data():
     # retention with the recalc window leaves zero functional value in
     # rows older than 30 days. The 60-iteration slicing loop below is
     # unchanged and stays safe for one-shot catch-up purges.
+    # 2026-06-12: the day-slice DELETE below silently died for ~8 days —
+    # at ~240k rows/day a single whole-day PostgREST DELETE exceeds the
+    # 8s statement timeout, the exception was swallowed as "non-fatal",
+    # and the table grew to 40 days of history (full-app audit finding).
+    # Primary path is now the purge_raw_flights_batch RPC (migration
+    # 056): bounded 5k-row server-side deletes, minimal payload, each
+    # call well under the timeout. Fallback (RPC not deployed yet):
+    # 1-HOUR slices instead of 1-day (~10k rows/slice at current rates).
+    # A purge that still fails after retries now pages the admin —
+    # uncontrolled raw_flights growth is exactly what caused the June
+    # one-way pipeline timeouts.
     raw_flights_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    purged_total = 0
+    purge_failed = False
     try:
-        purged_total = 0
-        for _ in range(60):  # cap iterations; 60 × oldest-day slices is plenty
-            # Find the oldest day still present beyond the cutoff and delete it.
-            oldest = (
-                db.table("raw_flights")
-                .select("scraped_at")
-                .lt("scraped_at", raw_flights_cutoff)
-                .order("scraped_at")
-                .limit(1)
+        # ── Primary: batched server-side deletes via RPC ──
+        for _ in range(400):  # 400 × 5k = 2M rows ceiling per night
+            deleted = (
+                db.rpc(
+                    "purge_raw_flights_batch",
+                    {"cutoff": raw_flights_cutoff, "batch_size": 5000},
+                )
                 .execute()
                 .data
             )
-            if not oldest:
-                break
-            oldest_ts = oldest[0]["scraped_at"]
-            # Delete everything up to the end of that oldest day.
-            slice_end = (
-                datetime.fromisoformat(oldest_ts.replace("Z", "+00:00"))
-                + timedelta(days=1)
-            ).isoformat()
-            resp = (
-                db.table("raw_flights")
-                .delete()
-                .lt("scraped_at", slice_end)
-                .execute()
-            )
-            deleted = len(resp.data or [])
+            deleted = int(deleted or 0)
             purged_total += deleted
             await asyncio.sleep(0)
-            if deleted == 0:
+            if deleted < 5000:
                 break
-        logger.info(f"Purged {purged_total} raw_flights rows older than 45 days")
-    except Exception as e:
-        logger.warning(f"raw_flights 45d purge failed (non-fatal): {e}")
+        logger.info(f"Purged {purged_total} raw_flights rows older than 30 days (RPC)")
+    except Exception as rpc_err:
+        logger.warning(
+            f"purge_raw_flights_batch RPC unavailable ({rpc_err}) — "
+            f"falling back to hour-slice deletes"
+        )
+        try:
+            for _ in range(960):  # 960 hour-slices = 40 days of catch-up
+                oldest = (
+                    db.table("raw_flights")
+                    .select("scraped_at")
+                    .lt("scraped_at", raw_flights_cutoff)
+                    .order("scraped_at")
+                    .limit(1)
+                    .execute()
+                    .data
+                )
+                if not oldest:
+                    break
+                slice_end = (
+                    datetime.fromisoformat(
+                        oldest[0]["scraped_at"].replace("Z", "+00:00")
+                    )
+                    + timedelta(hours=1)
+                ).isoformat()
+                resp = (
+                    db.table("raw_flights")
+                    .delete()
+                    .lt("scraped_at", min(slice_end, raw_flights_cutoff))
+                    .execute()
+                )
+                purged_total += len(resp.data or [])
+                await asyncio.sleep(0)
+            logger.info(
+                f"Purged {purged_total} raw_flights rows older than 30 days (hour-slice fallback)"
+            )
+        except Exception as e:
+            purge_failed = True
+            logger.error(f"raw_flights 30d purge FAILED on both paths: {e}")
+    if purge_failed:
+        try:
+            await send_admin_alert(
+                "⚠️ raw_flights purge failed (RPC + fallback). Table growth "
+                "will re-trigger statement timeouts — apply migration 056 "
+                "and/or investigate."
+            )
+        except Exception as ae:
+            logger.error(f"Admin alert about purge failure also failed: {ae}")
 
 
 async def job_daily_digest():
