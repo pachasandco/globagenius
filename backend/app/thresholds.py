@@ -85,15 +85,19 @@ MIN_BASELINE_SAMPLE_COUNT = 5
 
 # ─── Dispatch stay-length floor ───
 
-# Minimum nights for a round-trip to be PUSHED (Telegram). Was a
-# hardcoded `4` buried in the dispatcher since 2026-04-20 — and the
-# 2026-06-12 ghost-deal audit showed it silently binning fully
-# qualified weekend deals (CDG→VCE 93€ −49%, 3 nights; ORY→CPH 141€
-# −40%, 3 nights…) that users were meant to receive. 2-3 night city
-# breaks are a core use case; 0-1 night round-trips are almost never
-# actionable leisure trips. The qualifier already buckets baselines by
-# duration, so short stays are compared apples-to-apples upstream.
-MIN_STAY_NIGHTS = 2
+# Minimum nights for a round-trip to be PUSHED (Telegram).
+# PRODUCT RULE (founder, 2026-06-12, non-negotiable): trips under 4
+# nights must NOT alert — short-stay fares are so frequent that pushing
+# them would flood users. Deals under the floor still qualify and stay
+# visible on /home; only the push is suppressed, and the drop is
+# counted as `min_stay` in the dispatch summary line so the volume
+# discarded by this rule stays measurable.
+# History: this was a hardcoded `4` buried in the dispatcher since
+# 2026-04-20 with no log/counter — the 2026-06-12 "ghost deal" audit
+# spent hours rediscovering it. Centralised + counted that day; the
+# threshold itself was briefly lowered to 2 and immediately reverted
+# to 4 on founder decision.
+MIN_STAY_NIGHTS = 4
 
 # How long after sending an alert we suppress re-alerts for the same
 # (user, dest, dep_date, ret_date, price_bucket). 7 days = the natural
