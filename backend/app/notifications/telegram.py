@@ -3,6 +3,7 @@ import secrets
 from datetime import datetime
 from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import TimedOut
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -776,6 +777,11 @@ async def send_stopover_alert(
             reply_markup=reply_markup,
         )
         return True
+    except TimedOut:
+        # See send_grouped_flight_alerts: a read-timeout after dispatch
+        # almost always means delivered — record it so dedup holds.
+        logger.warning(f"Stopover send to {chat_id} timed out post-dispatch — assuming delivered")
+        return True
     except Exception as e:
         logger.error(f"Failed to send stopover alert to {chat_id}: {e}")
         return False
@@ -820,6 +826,9 @@ async def send_oneway_deal_alert(
             parse_mode="Markdown",
             reply_markup=reply_markup,
         )
+        return True
+    except TimedOut:
+        logger.warning(f"One-way send to {chat_id} timed out post-dispatch — assuming delivered")
         return True
     except Exception as e:
         logger.error(f"Failed to send one-way alert to {chat_id}: {e}")
@@ -867,6 +876,9 @@ async def send_split_ticket_alert(
             parse_mode="Markdown",
             reply_markup=reply_markup,
         )
+        return True
+    except TimedOut:
+        logger.warning(f"Split-ticket send to {chat_id} timed out post-dispatch — assuming delivered")
         return True
     except Exception as e:
         logger.error(f"Failed to send split-ticket alert to {chat_id}: {e}")
@@ -1259,6 +1271,20 @@ async def send_grouped_flight_alerts(
             text=msg,
             parse_mode="Markdown",
             reply_markup=reply_markup,
+        )
+        return True
+    except TimedOut:
+        # PTB read-timeout AFTER Telegram processed the send: the message
+        # is almost always delivered, only our HTTP response was slow.
+        # Returning False here is what caused the 2026-06-12 duplicate
+        # storm (same AGP alert delivered 5× in 100 min to two users):
+        # the caller skipped the sent_alerts persist, so every following
+        # cycle re-sent a message the user already had. Treat as
+        # delivered: worst case (genuinely dropped send) is one missed
+        # alert, vs a guaranteed duplicate every 20 min otherwise.
+        logger.warning(
+            f"Telegram send to {chat_id} timed out AFTER dispatch — "
+            f"assuming delivered (returning True so dedup records it)"
         )
         return True
     except Exception as e:
