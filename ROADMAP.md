@@ -489,6 +489,44 @@ custom domain (e.g. `api.globegenius.app`) so the webhook URL never
 drifts again. The custom-domain route is the durable fix; the manual
 re-register is the band-aid.
 
+### Rotating the Telegram bot token (BotFather /revoke)
+
+**Paid for on 2026-06-10/11:** a token rotation left the Railway worker
+on the old (revoked) token. Every outbound send 401'd silently for
+~27h — zero user alerts, zero admin report — while scraping and
+qualification kept running normally. Separately, the webhook attached
+to the old token vanished with it, so the inline buttons (👍/👎/Pause)
+were dead for 4 days before anyone noticed: Telegram had nowhere to
+deliver the callbacks, and our backend logged nothing because nothing
+ever reached it.
+
+**Symptom checklist:** deals qualify (`qualified_items` grows), redirect
+tokens get created, but `sent_alerts` stays empty AND the 9:00 admin
+report doesn't arrive → all outbound Telegram is failing, think token.
+Buttons doing nothing → think webhook.
+
+**A rotation is a 3-step procedure — ALL steps, same sitting:**
+
+1. **BotFather `/revoke`** → copy the new token immediately.
+2. **Update the token in all THREE places** (paste carefully — a
+   trailing space or newline silently breaks auth):
+   - local `backend/.env` → `TELEGRAM_BOT_TOKEN`
+   - Railway **worker** service → Variables → `TELEGRAM_BOT_TOKEN`
+   - Railway **backend** service → Variables → `TELEGRAM_BOT_TOKEN`
+   (each Railway variable edit triggers a redeploy — that's expected)
+3. **Re-register the webhook** — it does NOT survive the rotation:
+   ```
+   curl -X POST "https://api.telegram.org/bot${NEW_TOKEN}/setWebhook" \
+     -d "url=https://<current-backend-domain>/api/telegram/webhook" \
+     -d "secret_token=${TELEGRAM_WEBHOOK_SECRET}" \
+     --data-urlencode "allowed_updates=[\"message\",\"callback_query\"]"
+   ```
+
+**Verify (2 min):** `getWebhookInfo` shows the URL with no
+`last_error_message`; click 👍 on any past alert and check the row in
+`sent_alerts.feedback`; wait for the next dispatch cycle and confirm
+new rows land in `sent_alerts`.
+
 ### Frontend NEXT_PUBLIC_API_URL on Railway
 
 **Same drift risk** as the Telegram webhook. The frontend's
