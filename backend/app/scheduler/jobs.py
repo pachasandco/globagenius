@@ -624,10 +624,24 @@ async def _persist_sent_alerts_with_retry(rows, *, context: str) -> bool:
     retry once (transient PostgREST errors are the common case), and
     page the admin when the retry also fails so the duplicate-to-come
     is at least a known event, not a silent one.
+
+    TIMESTAMP STAMPING (the actual AGP root cause, 2026-06-12): the
+    upsert conflicts on (user_id, alert_key), and alert_keys are stable
+    across months for the same (dest, travel dates, price bucket). For
+    long-tenured users the "insert" silently UPDATES a row from weeks
+    ago — leaving created_at at its original value, OUTSIDE the 7-day
+    dedup window. The dispatcher then re-sent the same alert at every
+    20-min cycle (5× in 100 min observed) because dedup never saw a
+    recent row. Stamping sent_at/created_at explicitly makes the upsert
+    mean "this offer was (re)sent NOW" regardless of insert-vs-update.
     """
     if not rows:
         return True
     payload = rows if isinstance(rows, list) else [rows]
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for r in payload:
+        r["sent_at"] = now_iso
+        r["created_at"] = now_iso
     last_err: Exception | None = None
     for attempt in (1, 2):
         try:
