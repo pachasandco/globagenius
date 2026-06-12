@@ -170,16 +170,25 @@ def levier_1_destination_cooldown_blocks(
     destination: str,
     new_price: float,
     now: datetime | None = None,
+    alert_types: list[str] | None = None,
 ) -> bool:
     """Return True if levier 1 says this destination should NOT be pushed.
 
     Returns False (= push allowed) when:
       - no alert was sent for (user, destination) in the cooldown window
-      - or the new price is ≤ 90% of the most recent alerted price
-        (genuine improvement override — see SIGNIFICANT_DROP_RATIO)
+      - or the new price beats the most recent alerted price by at least
+        the SIGNIFICANT_DROP_RATIO margin (genuine improvement override)
 
     Returns True (= block) when an alert was sent recently and the new
-    price isn't a meaningful improvement (< 10% off the previous alert).
+    price isn't a meaningful improvement.
+
+    `alert_types` (2026-06-12): restrict which prior alerts count toward
+    the cooldown. The A/R dispatcher passes ["flight", "split_ticket"]
+    so a one-way alert (a different product at an incomparable price —
+    a 17€ CPH one-way was silently muting a 197€ −40% CPH round-trip)
+    never suppresses a round-trip push. One-way and stopover dispatchers
+    pass None (all history counts) — product call: A/R takes priority,
+    a recent A/R on the destination is reason enough to mute a one-way.
     """
     if not db:
         return False  # fail open — never block on missing DB
@@ -187,16 +196,16 @@ def levier_1_destination_cooldown_blocks(
     cutoff = (now - timedelta(days=DESTINATION_COOLDOWN_DAYS)).isoformat()
 
     try:
-        resp = (
+        query = (
             db.table("sent_alerts")
             .select("price,created_at")
             .eq("user_id", user_id)
             .eq("destination", destination)
             .gte("created_at", cutoff)
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
         )
+        if alert_types:
+            query = query.in_("alert_type", alert_types)
+        resp = query.order("created_at", desc=True).limit(1).execute()
     except Exception:
         # On DB error, fail open: better a duplicate alert than silence.
         return False

@@ -1344,8 +1344,12 @@ async def _dispatch_grouped_flight_alerts(
                 f"price={best_price}€ disc={best_discount}%"
             )
 
+        # alert_types: a prior ONE-WAY alert must not mute a round-trip —
+        # different product, incomparable price (audit 2026-06-12: a 17€
+        # CPH one-way was silently blocking a 197€ −40% CPH A/R for 7 days).
         if not is_pepite_deal and uid and levier_1_destination_cooldown_blocks(
             db=db, user_id=uid, destination=grp_dest, new_price=best_price,
+            alert_types=["flight", "split_ticket"],
         ):
             logger.info(
                 f"V10 dispatch blocked (L1 dest cooldown): "
@@ -2996,9 +3000,13 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                     levier_2_daily_cap_blocks,
                     levier_3_burst_blocks,
                 )
+                # Same rationale as the A/R dispatcher: a prior one-way
+                # alert must not mute a split combo (full-trip product,
+                # comparable to flight/split prices only).
                 if sub_user_id and levier_1_destination_cooldown_blocks(
                     db=db, user_id=sub_user_id, destination=dest,
                     new_price=float(combo.total or 0),
+                    alert_types=["flight", "split_ticket"],
                 ):
                     continue
                 caps = get_user_caps(db=db, user_id=sub_user_id) if sub_user_id else None

@@ -24,7 +24,9 @@ Python keeps the code grep-able and stack traces readable.
 # this constant only governs the premium pipeline.)
 GLOBAL_MIN_DISCOUNT_PCT = 40
 
-# ─── BVA Europe floor (decided 2026-06-09, was DECISION-PENDING) ──────
+# ─── BVA Europe floor (2026-06-09; validated by the 48h audit of
+# 2026-06-12: no user exceeded 6 messages/day over 5 days, so no
+# further tightening is needed) ───────────────────────────────────────
 # Beauvais is a Ryanair hub: 25-40€ A/R on BVA→Med (LIS/BCN/AGP/NAP)
 # is the NORMAL price there, not a deal, and BVA produces the densest
 # (and noisiest) qualified-deal flow of all origins. Short-haul alerts

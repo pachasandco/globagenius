@@ -432,6 +432,31 @@ def test_l1_marginal_drop_still_blocks():
     ) is True
 
 
+def test_l1_alert_types_filter_is_applied_to_query():
+    """REGRESSION (2026-06-12): a 17€ CPH one-way alert was muting a
+    197€ −40% CPH round-trip for 7 days. The A/R dispatcher now passes
+    alert_types=["flight", "split_ticket"] and the guard must forward
+    that filter to the sent_alerts query via .in_("alert_type", …)."""
+    db = _make_db([{"price": 17.0, "created_at": datetime.now(timezone.utc).isoformat()}])
+    levier_1_destination_cooldown_blocks(
+        db=db, user_id="u", destination="CPH", new_price=197.0,
+        alert_types=["flight", "split_ticket"],
+    )
+    chain = db.table.return_value
+    chain.in_.assert_called_once_with("alert_type", ["flight", "split_ticket"])
+
+
+def test_l1_no_alert_types_means_no_type_filter():
+    """Default (one-way / stopover dispatchers): all history counts,
+    no .in_ filter on the query — A/R history keeps muting one-ways."""
+    db = _make_db([{"price": 100.0, "created_at": datetime.now(timezone.utc).isoformat()}])
+    levier_1_destination_cooldown_blocks(
+        db=db, user_id="u", destination="CPH", new_price=99.0,
+    )
+    chain = db.table.return_value
+    chain.in_.assert_not_called()
+
+
 def test_l1_legacy_row_without_price_fails_open():
     """Pre-migration 037 rows with NULL price can't be compared. The
     guard fails open — at most one duplicate; future rows fix it."""
