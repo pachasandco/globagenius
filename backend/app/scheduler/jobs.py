@@ -681,6 +681,18 @@ async def _dispatch_grouped_flight_alerts(
     if not db or not qualified_flights:
         return
 
+    # Per-run drop accounting (2026-06-12). Every silent `continue` in
+    # the eligibility filters below increments a counter, and ONE summary
+    # line logs the funnel at the end of the run. Added after a 2h hunt
+    # for "why did nobody get the ORY→CPH deal": reverify said OK, then
+    # the deal vanished without a trace because user-eligibility drops
+    # were unlogged. Never again — grep "dispatch summary" answers it.
+    drop_counts = {
+        "trip_type": 0, "wishlist_price": 0, "premium_floor": 0,
+        "free_band": 0, "free_no_room": 0, "offer_dedup": 0,
+        "sent": 0, "send_failed": 0,
+    }
+
     groups: dict[tuple[str, str], list[tuple[dict, object, str]]] = defaultdict(list)
     for flight, anomaly, tier in qualified_flights:
         groups[(flight["origin"], flight["destination"])].append((flight, anomaly, tier))
@@ -990,16 +1002,19 @@ async def _dispatch_grouped_flight_alerts(
                 for flight, anomaly, tier in flight_tuples:
                     flight_trip_type = flight.get("trip_type") or "round_trip"
                     if flight_trip_type not in user_allowed_trip_types:
+                        drop_counts["trip_type"] += 1
                         continue
                     if matching_wl is not None:
                         max_price = matching_wl.get("max_price")
                         if max_price is not None and flight.get("price", 9999) > max_price:
+                            drop_counts["wishlist_price"] += 1
                             continue
                     else:
                         # V9 — branch on tier for the discount gate.
                         disc = anomaly.discount_pct
                         if sub_tier == "premium":
                             if disc < premium_floor:
+                                drop_counts["premium_floor"] += 1
                                 continue
                         else:
                             # Free: anything in [20, ∞) is potentially relevant —
@@ -1010,6 +1025,7 @@ async def _dispatch_grouped_flight_alerts(
                                 FREE_TIER_DAILY_BAND_MIN_PCT as _FREE_DAY_MIN,
                             )
                             if disc < _FREE_DAY_MIN:
+                                drop_counts["free_band"] += 1
                                 continue
                     key = None
                     if user_id:
@@ -1033,6 +1049,7 @@ async def _dispatch_grouped_flight_alerts(
                 if sub_tier == "free":
                     room = free_lane_room.get(user_id, {"daily": 0, "weekly": 0}) if user_id else {"daily": 0, "weekly": 0}
                     if room["daily"] <= 0 and room["weekly"] <= 0:
+                        drop_counts["free_no_room"] += 1
                         continue
                     weekly_pool = []
                     daily_pool = []
@@ -1272,6 +1289,7 @@ async def _dispatch_grouped_flight_alerts(
             logger.info(
                 f"[dedup] skip send {uid}/{grp_dest}: all offers already in sent_alerts"
             )
+            drop_counts["offer_dedup"] += 1
             continue
 
         # Sort by discount descending so the most attractive deal lands first.
@@ -1491,6 +1509,7 @@ async def _dispatch_grouped_flight_alerts(
                 message_id=message_id,
             )
             if success:
+                drop_counts["sent"] += 1
                 logger.info(
                     f"✅ V8.2 sent merged alert: {len(offers)} offers, "
                     f"{len({o.get('origin') for o in offers})} origins → {grp_dest} "
@@ -1502,9 +1521,12 @@ async def _dispatch_grouped_flight_alerts(
                         {"discount_pct": best_discount, "destination": grp_dest}
                     )
                     dispatched_burst_ts_by_user[uid] = datetime.now(timezone.utc)
+            else:
+                drop_counts["send_failed"] += 1
         except Exception as e:
             logger.warning(f"V8.2 merged dispatch failed for {uid}/{grp_dest}: {e}")
             success = False
+            drop_counts["send_failed"] += 1
 
         if success and uid and keys_to_store:
             # V9: tag the alert_key with the free-tier lane prefix when
@@ -1532,6 +1554,11 @@ async def _dispatch_grouped_flight_alerts(
             await _persist_sent_alerts_with_retry(
                 rows, context=f"grouped A/R {uid}/{grp_dest}"
             )
+
+    # One greppable line per run — answers "why didn't user X get deal Y"
+    # without a 2-hour archaeology session. The guard blocks (L1/L3/L2,
+    # freshness, pépite) already log individually above.
+    logger.info(f"dispatch summary: {drop_counts}")
 
 
 async def job_recalculate_baselines():
