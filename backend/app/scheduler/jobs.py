@@ -609,6 +609,53 @@ def _deal_label(discount_pct: float) -> str:
         return "🟡 BON DEAL"
 
 
+async def _persist_sent_alerts_with_retry(rows, *, context: str) -> bool:
+    """Upsert sent_alerts rows AFTER a successful Telegram send, with one
+    retry and admin escalation on final failure.
+
+    The send→persist pair is not atomic: when the upsert fails the
+    message is already in the user's chat but the dedup layer has no
+    record of it, so the next dispatch run re-sends the exact same deal
+    (P0-6 in the 2026-06-07 audit; materialised on 2026-06-12 when a
+    user received the AGP grouped alert twice 21 minutes apart — the
+    07:02 upsert failed silently and the 07:23 run found no history).
+
+    The message can't be unsent, so the only honest mitigations are:
+    retry once (transient PostgREST errors are the common case), and
+    page the admin when the retry also fails so the duplicate-to-come
+    is at least a known event, not a silent one.
+    """
+    if not rows:
+        return True
+    payload = rows if isinstance(rows, list) else [rows]
+    last_err: Exception | None = None
+    for attempt in (1, 2):
+        try:
+            db.table("sent_alerts").upsert(
+                payload, on_conflict="user_id,alert_key"
+            ).execute()
+            return True
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                f"sent_alerts upsert failed ({context}, attempt {attempt}/2): {e}"
+            )
+            if attempt == 1:
+                await asyncio.sleep(0.5)
+    logger.error(
+        f"sent_alerts upsert FAILED after retry ({context}) — dedup has no "
+        f"record of this send, the next run WILL duplicate it: {last_err}"
+    )
+    try:
+        await send_admin_alert(
+            f"⚠️ sent_alerts persist failed after Telegram send ({context}). "
+            f"Dedup is blind on this message — expect a duplicate next run."
+        )
+    except Exception as ae:
+        logger.error(f"Admin alert about sent_alerts persist failure also failed: {ae}")
+    return False
+
+
 async def _dispatch_grouped_flight_alerts(
     qualified_flights: list[tuple[dict, object, str]],
 ) -> None:
@@ -1468,12 +1515,9 @@ async def _dispatch_grouped_flight_alerts(
                     "discount_pct": best_discount,
                     "message_id": message_id,
                 })
-            try:
-                db.table("sent_alerts").upsert(
-                    rows, on_conflict="user_id,alert_key"
-                ).execute()
-            except Exception as e:
-                logger.warning(f"Failed to upsert sent_alerts: {e}")
+            await _persist_sent_alerts_with_retry(
+                rows, context=f"grouped A/R {uid}/{grp_dest}"
+            )
 
 
 async def job_recalculate_baselines():
@@ -2818,27 +2862,22 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
             # the dispatcher even ran. message_id was generated above
             # before the send so the feedback callback can resolve it.
             if sent_ok and sub_user_id and alert_key:
-                try:
-                    db.table("sent_alerts").upsert(
-                        {
-                            "user_id": sub_user_id,
-                            "chat_id": chat_id,
-                            "alert_key": alert_key,
-                            # Use travel_dest (where the user actually goes)
-                            # so the L1 cooldown groups one-way alerts on the
-                            # same city as round-trip alerts.
-                            "destination": travel_dest,
-                            "alert_type": "one_way",
-                            "price": float(qualification.price or 0),
-                            "discount_pct": float(qualification.discount_pct or 0),
-                            "message_id": message_id,
-                        },
-                        on_conflict="user_id,alert_key",
-                    ).execute()
-                except Exception as e:
-                    logger.warning(
-                        f"One-way sent_alerts upsert failed user={sub_user_id}: {e}"
-                    )
+                await _persist_sent_alerts_with_retry(
+                    {
+                        "user_id": sub_user_id,
+                        "chat_id": chat_id,
+                        "alert_key": alert_key,
+                        # Use travel_dest (where the user actually goes)
+                        # so the L1 cooldown groups one-way alerts on the
+                        # same city as round-trip alerts.
+                        "destination": travel_dest,
+                        "alert_type": "one_way",
+                        "price": float(qualification.price or 0),
+                        "discount_pct": float(qualification.discount_pct or 0),
+                        "message_id": message_id,
+                    },
+                    context=f"one-way {sub_user_id}/{travel_dest}",
+                )
 
         await asyncio.sleep(0)
 
@@ -3114,24 +3153,19 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                 # message_id was generated above before the send so the
                 # feedback callback can resolve it.
                 if sent_ok and sub_user_id and alert_key:
-                    try:
-                        db.table("sent_alerts").upsert(
-                            {
-                                "user_id": sub_user_id,
-                                "chat_id": chat_id,
-                                "alert_key": alert_key,
-                                "destination": dest,
-                                "alert_type": "split_ticket",
-                                "price": float(combo.total or 0),
-                                "discount_pct": float(combo_savings_pct or 0),
-                                "message_id": message_id,
-                            },
-                            on_conflict="user_id,alert_key",
-                        ).execute()
-                    except Exception as e:
-                        logger.warning(
-                            f"Combo sent_alerts upsert failed user={sub_user_id}: {e}"
-                        )
+                    await _persist_sent_alerts_with_retry(
+                        {
+                            "user_id": sub_user_id,
+                            "chat_id": chat_id,
+                            "alert_key": alert_key,
+                            "destination": dest,
+                            "alert_type": "split_ticket",
+                            "price": float(combo.total or 0),
+                            "discount_pct": float(combo_savings_pct or 0),
+                            "message_id": message_id,
+                        },
+                        context=f"split-ticket {sub_user_id}/{dest}",
+                    )
 
             await asyncio.sleep(0)
 
@@ -3426,22 +3460,19 @@ async def _detect_and_dispatch_stopover_chains() -> None:
                     logger.warning(f"Stopover alert failed user={sub_user_id}: {e}")
 
                 if sent_ok and sub_user_id and alert_key:
-                    try:
-                        db.table("sent_alerts").upsert(
-                            {
-                                "user_id": sub_user_id,
-                                "chat_id": chat_id,
-                                "alert_key": alert_key,
-                                "destination": spoke,
-                                "alert_type": "stopover",
-                                "price": float(chain.total or 0),
-                                "discount_pct": float(chain_savings_pct or 0),
-                                "message_id": message_id,
-                            },
-                            on_conflict="user_id,alert_key",
-                        ).execute()
-                    except Exception as e:
-                        logger.warning(f"Stopover sent_alerts upsert failed user={sub_user_id}: {e}")
+                    await _persist_sent_alerts_with_retry(
+                        {
+                            "user_id": sub_user_id,
+                            "chat_id": chat_id,
+                            "alert_key": alert_key,
+                            "destination": spoke,
+                            "alert_type": "stopover",
+                            "price": float(chain.total or 0),
+                            "discount_pct": float(chain_savings_pct or 0),
+                            "message_id": message_id,
+                        },
+                        context=f"stopover {sub_user_id}/{spoke}",
+                    )
 
             await asyncio.sleep(0)
 
