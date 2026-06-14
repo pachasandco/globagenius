@@ -24,6 +24,17 @@ Python keeps the code grep-able and stack traces readable.
 # this constant only governs the premium pipeline.)
 GLOBAL_MIN_DISCOUNT_PCT = 40
 
+# Long-haul push floor (2026-06-13). Long-haul fares move on tight
+# yield management, so genuine −40% errors are rare (≈ a handful/month).
+# But the EUR saving dwarfs short-haul: −30% on a 427€ CDG→New York is
+# ~180€ off, far more actionable than −40% on a 50€ BVA→Lisbonne. So
+# long-haul (is_long_haul(destination)) pushes at a lower bar. Applied
+# at DISPATCH only and as a FLOOR override: a premium user who
+# explicitly picked a higher min_discount keeps it (we never push them
+# something below THEIR chosen bar) — this only lowers the default 40.
+# Founder decision: 30%.
+LONG_HAUL_MIN_DISCOUNT_PCT = 30
+
 # ─── BVA Europe floor (2026-06-09; validated by the 48h audit of
 # 2026-06-12: no user exceeded 6 messages/day over 5 days, so no
 # further tightening is needed) ───────────────────────────────────────

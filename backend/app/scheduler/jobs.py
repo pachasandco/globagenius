@@ -1014,7 +1014,15 @@ async def _dispatch_grouped_flight_alerts(
                         # V9 — branch on tier for the discount gate.
                         disc = anomaly.discount_pct
                         if sub_tier == "premium":
-                            if disc < premium_floor:
+                            # Long-haul pushes at a lower floor (rare deals,
+                            # big EUR savings — see LONG_HAUL_MIN_DISCOUNT_PCT).
+                            # We only LOWER the default; a user who explicitly
+                            # chose a higher min_discount keeps their bar.
+                            effective_floor = premium_floor
+                            if is_long_haul(flight["destination"]):
+                                from app.thresholds import LONG_HAUL_MIN_DISCOUNT_PCT
+                                effective_floor = min(premium_floor, LONG_HAUL_MIN_DISCOUNT_PCT)
+                            if disc < effective_floor:
                                 drop_counts["premium_floor"] += 1
                                 continue
                         else:
