@@ -168,6 +168,14 @@ class Settings:
 # baselines only exist from CDG, so provincial chains stay quiet until
 # LONG_HAUL_ORIGINS opens more origins. The stopover_detection funnel
 # counters (no_leg3 / no_baseline) make any starving stage visible.
+# 2026-06-14 (founder decision): the final destination (spoke) must be
+# LONG-HAUL. A stopover only beats the direct A/R when the direct A/R is
+# expensive — that's long-haul by definition. The phase-1 European
+# spokes (PDL/FNC/JTR) were dropped: their connector legs cost scraping
+# budget while their direct A/R is too cheap for a 3-ticket chain to
+# ever undercut by 30%. Every spoke below is in LONG_HAUL_DESTINATIONS;
+# a startup assertion (see below) enforces this so a future edit can't
+# silently re-introduce a short-haul spoke.
 STOPOVER_HUB_PAIRS: list[tuple[str, str]] = [
     # Transatlantic via Iberia/TAP hubs — cheap legs on LEVEL / TAP.
     ("MAD", "BOG"),   # Madrid + Bogotá
@@ -177,11 +185,6 @@ STOPOVER_HUB_PAIRS: list[tuple[str, str]] = [
     ("LIS", "YUL"),   # Lisbonne + Montréal
     # Middle East via Istanbul — Pegasus/flydubai onward capacity.
     ("IST", "DXB"),   # Istanbul + Dubaï
-    # Kept from phase 1: the only European pairs where the direct A/R
-    # from France is genuinely expensive (no LCC saturation).
-    ("LIS", "PDL"),   # Lisbonne + Açores
-    ("LIS", "FNC"),   # Lisbonne + Madère
-    ("ATH", "JTR"),   # Athènes + Santorin
 ]
 
 

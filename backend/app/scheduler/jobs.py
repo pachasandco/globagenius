@@ -158,16 +158,21 @@ def get_scheduler_jobs() -> list[dict]:
             "minute": 0,
             "timezone": "Europe/Paris",
         },
-        # ── TIER 1 : toutes les 20 min (CDG + ORY via endpoints directs LCC) ──
+        # ── TIER 1 : toutes les 40 min (CDG + ORY via endpoints directs LCC) ──
         # Ryanair + Transavia directs → données quasi temps-réel pour les routes chaudes.
-        # Polling intensif justifié : ces routes contiennent les mistake fares éphémères.
-        *[{
-            "id": f"scrape_tier1_{h:02d}h{m:02d}",
+        # 2026-06-14: passé de 20 → 40 min pour alléger raw_flights (la table
+        # atteignait ~1M lignes / count proche du timeout 8s). Compensé par le
+        # resserrement du freshness gate (2h → 30 min) : un deal scrapé est
+        # re-vérifié live s'il a plus de 30 min au moment du push, donc espacer
+        # le scrape ne dégrade pas la fraîcheur garantie à l'utilisateur.
+        # Intervalle (pas cron) pour un vrai pas régulier de 40 min — des
+        # minutes cron fixes [0,40] laisseraient un trou de 80 min à chaque heure.
+        {
+            "id": "scrape_tier1",
             "func": job_scrape_tier1,
-            "trigger": "cron",
-            "hour": h,
-            "minute": m,
-        } for h in range(24) for m in [0, 20, 40]],
+            "trigger": "interval",
+            "minutes": 40,
+        },
         # ── DESTINATION SELECTOR : 1x/semaine le lundi a 3h ──
         # Requête Travelpayouts + scoring saisonnier → met à jour priority_destinations en DB
         {
@@ -1383,6 +1388,13 @@ async def _dispatch_grouped_flight_alerts(
         TIER1_SOURCES = ("ryanair_direct", "vueling_direct", "transavia_direct")
         FRESHNESS_GATE_HOURS_TIER1 = 1.5
         FRESHNESS_GATE_HOURS_TIER2 = 3
+        # 2026-06-14: Tier 1 scrape spaced 20→40 min. To keep the user
+        # guarantee "no alert without a recently-confirmed price", any
+        # deal whose latest scrape is older than this is re-verified LIVE
+        # before sending — for EVERY deal, not just pépites, and we send
+        # if (and only if) the price still holds. Fresh deals (< this)
+        # skip the extra call. Founder decision: re-check, never blind-drop.
+        REVERIFY_BEFORE_SEND_MINUTES = 30
         now_for_gate = datetime.now(timezone.utc)
         freshest_offer = max(offers, key=lambda o: o.get("scraped_at") or "")
         most_recent_scrape = freshest_offer.get("scraped_at") or ""
@@ -1393,6 +1405,48 @@ async def _dispatch_grouped_flight_alerts(
         )
         cutoff_iso = (now_for_gate - timedelta(hours=gate_hours)).isoformat()
         is_stale = bool(most_recent_scrape) and most_recent_scrape < cutoff_iso
+
+        # Mid-age re-check: between REVERIFY_BEFORE_SEND_MINUTES and the
+        # stale gate, the deal is still "fresh enough" to keep, but old
+        # enough that we confirm the live price before pushing. Skip if
+        # already stale (handled below) or if it'll be reverified there.
+        recheck_cutoff_iso = (
+            now_for_gate - timedelta(minutes=REVERIFY_BEFORE_SEND_MINUTES)
+        ).isoformat()
+        needs_recheck = (
+            bool(most_recent_scrape)
+            and not is_stale
+            and most_recent_scrape < recheck_cutoff_iso
+        )
+        if needs_recheck:
+            recheck_flight = {
+                "origin": best_offer.get("origin") or best_origin,
+                "destination": grp_dest,
+                "price": best_price,
+                "departure_date": best_offer.get("departure_date"),
+                "return_date": best_offer.get("return_date"),
+                "source": best_offer.get("source", ""),
+                "airline": best_offer.get("airline", ""),
+            }
+            try:
+                from app.scraper.reverify import reverify_flight_price
+                still_valid = await asyncio.wait_for(
+                    reverify_flight_price(recheck_flight), timeout=15
+                )
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.info(
+                    f"[freshness] >{REVERIFY_BEFORE_SEND_MINUTES}min recheck FAILED "
+                    f"{uid}/{grp_dest} ({type(e).__name__}): skipping send"
+                )
+                drop_counts["recheck_failed"] = drop_counts.get("recheck_failed", 0) + 1
+                continue
+            if not still_valid:
+                logger.info(
+                    f"[freshness] >{REVERIFY_BEFORE_SEND_MINUTES}min recheck REJECTED "
+                    f"{uid}/{grp_dest}: price moved"
+                )
+                drop_counts["recheck_rejected"] = drop_counts.get("recheck_rejected", 0) + 1
+                continue
 
         if is_stale:
             if not is_pepite_deal:
@@ -2448,6 +2502,12 @@ async def job_scrape_oneway_flights():
     conn_inserted = 0
     conn_errors = 0
     for hub, spoke in STOPOVER_HUB_PAIRS:
+        # 2026-06-14 (founder decision): only scrape connectors for
+        # long-haul spokes — short-haul chains never qualify, so their
+        # connector legs are pure scraping waste. Mirror of the guard in
+        # _detect_and_dispatch_stopover_chains.
+        if not is_long_haul(spoke):
+            continue
         try:
             connector_entries = get_oneway_calendar(hub, spoke)
         except Exception as e:
@@ -3382,6 +3442,11 @@ async def _detect_and_dispatch_stopover_chains() -> None:
     for origin in settings.MVP_AIRPORTS:
         for hub, spoke in STOPOVER_HUB_PAIRS:
             if origin in (hub, spoke):
+                continue
+            # 2026-06-14 (founder decision): only chains whose FINAL
+            # destination is long-haul. Short-haul spokes can't beat the
+            # direct A/R by the qualification bar and just waste scraping.
+            if not is_long_haul(spoke):
                 continue
             detect_counters["routes_scanned"] += 1
             try:
