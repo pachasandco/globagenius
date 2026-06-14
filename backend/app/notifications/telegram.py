@@ -217,21 +217,34 @@ def format_digest(packages: list[dict]) -> str:
 
 def format_admin_report(stats: dict) -> str:
     today = datetime.now().strftime("%d/%m/%Y")
+
+    def _breakdown(d: dict) -> str:
+        if not d:
+            return ""
+        # e.g. "280 A/R · 23 split · 10 OW"
+        label = {"flight": "A/R", "round_trip": "A/R", "one_way": "OW",
+                 "split_ticket": "split", "stopover": "stopover"}
+        parts = [f"{n} {label.get(k, k)}" for k, n in sorted(d.items(), key=lambda x: -x[1])]
+        return " · ".join(parts)
+
+    qi_bd = _breakdown(stats.get("qualified_by_type", {}))
+    sa_bd = _breakdown(stats.get("alerts_by_type", {}))
     lines = [
         f"📊 GLOBE GENIUS — Rapport {today}\n",
-        f"Scrapes : {stats['flight_scrapes']} vols ✅ | {stats['accommodation_scrapes']} hebergements ✅",
-        f"Donnees : {stats['total_flights']} vols | {stats['total_accommodations']} hebergements",
+        f"Scrapes : {stats['flight_scrapes']} runs · {stats['total_flights']} vols collectés",
         f"Erreurs : {stats['errors']}",
-        f"Packages qualifies : {stats['packages_qualified']} (taux : {stats['qualification_rate']}%)",
-        f"Alertes envoyees : {stats['alerts_sent']}",
+        f"Deals qualifiés : {stats.get('qualified', 0)}" + (f"  ({qi_bd})" if qi_bd else ""),
+        f"Alertes envoyées : {stats['alerts_sent']}" + (f"  ({sa_bd})" if sa_bd else ""),
+        f"Users touchés : {stats.get('users_reached', 0)}",
         f"Baselines actives : {stats['active_baselines']} routes",
     ]
 
     warnings = []
-    if stats["qualification_rate"] < 5:
-        warnings.append("⚠️ Taux qualification < 5% — surveiller les baselines")
-    if stats["errors"] > 0:
-        warnings.append(f"⚠️ {stats['errors']} erreurs detectees")
+    # Real red flag: scraping ran but nothing reached users.
+    if stats["flight_scrapes"] > 0 and stats["alerts_sent"] == 0:
+        warnings.append("🚨 0 alerte envoyée alors que le scraping tourne — dispatch à vérifier")
+    if stats["errors"] > 30:
+        warnings.append(f"⚠️ {stats['errors']} erreurs (au-delà du bruit de queue habituel)")
 
     if warnings:
         lines.append("")

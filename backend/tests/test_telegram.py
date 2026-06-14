@@ -33,21 +33,38 @@ def test_format_deal_alert():
 
 
 def test_format_admin_report():
+    # 2026-06-14: report rewritten to measure the live pipeline (real
+    # alerts/qualified deals by type) instead of the abandoned vol+hôtel
+    # packages product.
     stats = {
-        "flight_scrapes": 12,
-        "accommodation_scrapes": 6,
-        "total_flights": 2340,
-        "total_accommodations": 1890,
-        "errors": 2,
-        "packages_qualified": 47,
-        "qualification_rate": 3.2,
-        "alerts_sent": 12,
-        "active_baselines": 186,
+        "flight_scrapes": 50,
+        "total_flights": 85873,
+        "errors": 21,
+        "qualified": 55,
+        "qualified_by_type": {"round_trip": 50, "one_way": 5},
+        "alerts_sent": 313,
+        "alerts_by_type": {"flight": 280, "split_ticket": 23, "one_way": 10},
+        "users_reached": 37,
+        "active_baselines": 4024,
     }
     msg = format_admin_report(stats)
-    assert "12" in msg
-    assert "47" in msg
-    assert "3.2" in msg
+    assert "313" in msg            # real alerts sent
+    assert "55" in msg             # qualified deals
+    assert "37" in msg             # users reached
+    assert "A/R" in msg            # type breakdown rendered
+    assert "0 alerte" not in msg   # no false panic when alerts ARE sent
+
+
+def test_format_admin_report_flags_zero_alerts():
+    """Real red flag: scraping ran but nothing reached users."""
+    stats = {
+        "flight_scrapes": 50, "total_flights": 80000, "errors": 0,
+        "qualified": 0, "qualified_by_type": {},
+        "alerts_sent": 0, "alerts_by_type": {}, "users_reached": 0,
+        "active_baselines": 4024,
+    }
+    msg = format_admin_report(stats)
+    assert "0 alerte" in msg or "🚨" in msg
 
 
 def test_format_digest():

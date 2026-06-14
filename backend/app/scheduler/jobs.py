@@ -1882,36 +1882,52 @@ async def job_daily_admin_report():
     logs = db.table("scrape_logs").select("*").gte("started_at", yesterday).execute()
     log_data = logs.data or []
 
-    flight_scrapes = sum(1 for l in log_data if l["type"] == "flights")
-    acc_scrapes = sum(1 for l in log_data if l["type"] == "accommodations")
-    total_flights = sum(l.get("items_count", 0) for l in log_data if l["type"] == "flights")
-    total_acc = sum(l.get("items_count", 0) for l in log_data if l["type"] == "accommodations")
+    # 2026-06-14: rewritten. The old report counted the abandoned
+    # vol+hôtel "packages" product (always 0) and hardcoded alerts_sent=0
+    # — every morning it screamed "0 alertes / 0% / taux bas" while the
+    # app sent 300+ real alerts. A report that always cries wolf hides the
+    # real problem the day there is one. Now it measures the LIVE pipeline:
+    # qualified_items in (round_trip/one_way/split) and sent_alerts by type.
+    flight_scrapes = sum(1 for l in log_data if l.get("type") == "flights")
+    total_flights = sum(l.get("items_count", 0) for l in log_data if l.get("type") == "flights")
     errors = sum(l.get("errors_count", 0) for l in log_data)
 
-    packages_resp = db.table("packages").select("id", count="exact").gte("created_at", yesterday).execute()
-    pkg_count = packages_resp.count or 0
+    # Real deals qualified in the window (the qualifier's actual output).
+    qi_resp = db.table("qualified_items").select("trip_type").gte("created_at", yesterday).execute()
+    qi_rows = qi_resp.data or []
+    qualified = len(qi_rows)
+    from collections import Counter as _C
+    qi_by_type = dict(_C((q.get("trip_type") or "round_trip") for q in qi_rows))
 
-    total_scraped = total_flights + total_acc
-    qual_rate = round(pkg_count / total_scraped * 100, 1) if total_scraped > 0 else 0
+    # Real Telegram alerts sent in the window, by type.
+    sa_resp = db.table("sent_alerts").select("alert_type,user_id").gte("sent_at", yesterday).execute()
+    sa_rows = sa_resp.data or []
+    alerts_sent = len(sa_rows)
+    sa_by_type = dict(_C((s.get("alert_type") or "flight") for s in sa_rows))
+    users_reached = len({s.get("user_id") for s in sa_rows if s.get("user_id")})
 
     baselines_resp = db.table("price_baselines").select("id", count="exact").execute()
 
     stats = {
         "flight_scrapes": flight_scrapes,
-        "accommodation_scrapes": acc_scrapes,
         "total_flights": total_flights,
-        "total_accommodations": total_acc,
         "errors": errors,
-        "packages_qualified": pkg_count,
-        "qualification_rate": qual_rate,
-        "alerts_sent": 0,
+        "qualified": qualified,
+        "qualified_by_type": qi_by_type,
+        "alerts_sent": alerts_sent,
+        "alerts_by_type": sa_by_type,
+        "users_reached": users_reached,
         "active_baselines": baselines_resp.count or 0,
     }
 
     await send_admin_report(stats)
 
-    if qual_rate < 5 and total_scraped > 0:
-        await send_admin_alert(f"Taux qualification bas : {qual_rate}%")
+    # Real health alert: scraping ran but NOTHING was sent all day.
+    if flight_scrapes > 0 and alerts_sent == 0:
+        await send_admin_alert(
+            "⚠️ 0 alerte envoyée en 24h alors que le scraping tourne — "
+            "vérifier le dispatch (token Telegram, guards, qualifier)."
+        )
 
 
 async def job_monitor_baseline_staleness():
