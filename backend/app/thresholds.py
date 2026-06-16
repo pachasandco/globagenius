@@ -61,7 +61,12 @@ BVA_PEPITE_PRICE_THRESHOLD_EUR = 15.0
 # Free users always get one A/R per day in the [20%, 40%) band — the
 # product's "regular value" proof. They additionally get one A/R at
 # >=40% per week — the "wow" proof.
-# No one-way, no split-ticket combos, no teasers, no quota beyond these.
+# No FULL one-way / split-ticket combos, no quota beyond these.
+# (Additive since the locked-teaser feature: free users ALSO get a
+#  blurred, non-actionable teaser of EXCEPTIONAL premium deals — see
+#  LONG_HAUL_TEASER_MIN_DISCOUNT_PCT / ONEWAY_TEASER_MAX_PRICE_EUR below.
+#  That lane is teaser-only and never gives away destination/dates/link,
+#  so it does not change the bands above.)
 FREE_TIER_DAILY_BAND_MIN_PCT = 20      # inclusive
 FREE_TIER_DAILY_BAND_MAX_PCT = 40      # exclusive
 FREE_TIER_WEEKLY_BIG_MIN_PCT = 40      # inclusive — the "≥40% once a week" lane
@@ -185,3 +190,13 @@ ONEWAY_MIN_OBSERVATIONS = 5
 # because the user-action friction is much higher.
 ONEWAY_PUSH_WOW_PRICE_EUR = 20.0
 ONEWAY_PUSH_WOW_DISCOUNT_PCT = 80.0
+
+# ── Locked teaser (FREE-tier blurred teaser of EXCEPTIONAL premium deals) ──
+# A free user gets a blurred teaser (type + % + coarse price, no
+# destination/dates/link) only for deals rare enough that the rarity itself
+# is the frequency throttle:
+#   - long-haul round-trip with discount ≥ LONG_HAUL_TEASER_MIN_DISCOUNT_PCT
+#   - one-way with price ≤ ONEWAY_TEASER_MAX_PRICE_EUR
+#   - any qualified split-ticket combo (already exceptional by construction)
+LONG_HAUL_TEASER_MIN_DISCOUNT_PCT = 30
+ONEWAY_TEASER_MAX_PRICE_EUR = 20.0

@@ -898,6 +898,92 @@ async def send_split_ticket_alert(
         return False
 
 
+def _coarse_price_bucket(price: float) -> int:
+    """Round a price to a coarse order-of-magnitude bucket for the teaser.
+
+    The teaser must NEVER reveal the exact qualified price (that would be
+    actionable). We round to the nearest coarse step: 10€ below 50€ (so a
+    19€ one-way reads "~20€", not "~0€"), 50€ below 300€, 100€ at or above
+    300€. e.g. 19€ → 20€, 272€ → 250€, 420€ → 400€, 318€ → 300€.
+    """
+    p = max(0.0, float(price or 0))
+    if p < 50:
+        step = 10
+    elif p < 300:
+        step = 50
+    else:
+        step = 100
+    return int(round(p / step) * step)
+
+
+def format_locked_teaser(
+    deal_type: str,
+    discount_pct: float,
+    price: float,
+    origin_city: str,
+) -> str:
+    """Format the BLURRED teaser sent to FREE-tier users for an exceptional
+    premium deal. Reveals the deal TYPE + discount % + a coarse price bucket
+    and the origin CITY only — NEVER the destination, dates, or booking link.
+
+    deal_type ∈ {"long_haul", "one_way", "split_ticket"} drives the first line:
+      - long_haul    → "Vol long-courrier −XX %"
+      - one_way      → "Aller simple à ~XX €"
+      - split_ticket → "Combo malin −XX %"
+
+    The price is shown as a coarse bucket (see _coarse_price_bucket) so it's an
+    order of magnitude, not the exact actionable fare.
+    """
+    bucket = _coarse_price_bucket(price)
+    disc = int(round(discount_pct or 0))
+    city = (origin_city or "Paris").strip() or "Paris"
+
+    if deal_type == "one_way":
+        headline = f"🔒 Aller simple à ~{bucket} €"
+        price_line = f"Depuis {city} · aller simple"
+    elif deal_type == "split_ticket":
+        headline = f"🔒 Combo malin −{disc} %"
+        price_line = f"Depuis {city} · ~{bucket} € A/R"
+    else:  # long_haul (and any unknown type falls back to the round-trip framing)
+        headline = f"🔒 Vol long-courrier −{disc} %"
+        price_line = f"Depuis {city} · ~{bucket} € A/R"
+
+    cta = f"👉 [Débloque la destination + le lien → Premium]({settings.FRONTEND_URL}/profile)"
+    return "\n".join([headline, price_line, cta])
+
+
+async def send_locked_teaser(
+    chat_id: int,
+    deal_type: str,
+    discount_pct: float,
+    price: float,
+    origin_city: str,
+) -> bool:
+    """Send a blurred 'locked teaser' to a FREE-tier user for an exceptional
+    premium deal. Mirrors send_oneway_deal_alert: TimedOut is treated as a
+    successful delivery (the message is in the user's chat, the ACK was lost).
+    """
+    bot = _get_bot()
+    if not bot:
+        logger.warning("Telegram bot not configured, skipping locked teaser")
+        return False
+    msg = format_locked_teaser(deal_type, discount_pct, price, origin_city)
+    try:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=msg,
+            parse_mode="Markdown",
+            disable_web_page_preview=True,
+        )
+        return True
+    except TimedOut:
+        logger.warning(f"Locked teaser send to {chat_id} timed out post-dispatch — assuming delivered")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send locked teaser to {chat_id}: {e}")
+        return False
+
+
 async def send_flight_deal_alert(
     chat_id: int,
     flight: dict,

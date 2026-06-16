@@ -675,6 +675,164 @@ async def _persist_sent_alerts_with_retry(rows, *, context: str) -> bool:
     return False
 
 
+def _load_free_teaser_subs() -> list[dict]:
+    """Load FREE-tier users with a linked Telegram chat, eligible for the
+    locked-teaser lane. Mirrors how the dispatchers load opt-in subs, then
+    resolves tier via _get_user_tier (single source of truth) and keeps only
+    the 'free' ones. Premium / premium_grandfathered are excluded.
+
+    The teaser is tier-only — it ignores flight_trip_types / include_split
+    opt-ins on purpose: a free user gets teased on EVERY exceptional deal
+    regardless of which lanes they would receive full alerts for.
+    """
+    if not db:
+        return []
+    try:
+        prefs_resp = (
+            db.table("user_preferences")
+            .select("user_id,telegram_chat_id,blocked_destinations")
+            .eq("telegram_connected", True)
+            .execute()
+        )
+    except Exception as e:
+        logger.warning(f"Locked teaser: failed to load users: {e}")
+        return []
+    out: list[dict] = []
+    for pref in (prefs_resp.data or []):
+        if not isinstance(pref, dict):
+            continue
+        uid = pref.get("user_id")
+        chat_id = pref.get("telegram_chat_id")
+        if not uid or chat_id is None:
+            continue
+        try:
+            if _get_user_tier(uid) != "free":
+                continue
+        except Exception as e:
+            # On a tier-resolution error, suppress the teaser rather than
+            # risk teasing a paying user. Premium behaviour is sacred.
+            logger.warning(f"Locked teaser: tier resolve failed for {uid}, skipping: {e}")
+            continue
+        out.append({
+            "user_id": uid,
+            "chat_id": chat_id,
+            "blocked_destinations": set(pref.get("blocked_destinations") or []),
+        })
+    return out
+
+
+async def _dispatch_free_teasers(
+    *,
+    deal_type: str,
+    destination: str,
+    departure_date: str,
+    return_date: str,
+    price: float,
+    discount_pct: float,
+    origin: str,
+    free_subs: list[dict],
+) -> int:
+    """Send a blurred locked teaser to FREE users for ONE exceptional deal.
+
+    DRY entry point shared by the three dispatchers. The caller decides
+    whether the deal is exceptional (see _teaser_is_exceptional) and passes
+    the already-loaded free_subs list so we don't re-query per deal.
+
+    Dedup: reuses compute_alert_key on the underlying itinerary, stored under
+    a distinct 'lt:' prefix with alert_type='locked_teaser' so it can never
+    collide with a real alert's bare key (the sent_alerts upsert conflicts on
+    (user_id, alert_key)) and never pollutes premium dedup counts.
+    """
+    if not db or not free_subs:
+        return 0
+    from app.notifications.telegram import send_locked_teaser
+    origin_city = _city_for_iata_label(origin)
+    sent = 0
+    for sub in free_subs:
+        uid = sub.get("user_id")
+        chat_id = sub.get("chat_id")
+        if not uid or chat_id is None:
+            continue
+        if destination in sub.get("blocked_destinations", set()):
+            continue
+        base_key = compute_alert_key(
+            uid, origin, destination, departure_date, return_date, price,
+        )
+        stored_key = f"lt:{base_key}"
+        # Dedup: never tease the same user twice on the same underlying deal.
+        try:
+            inhibit_since = (
+                datetime.now(timezone.utc) - timedelta(hours=ALERT_INHIBIT_HOURS)
+            ).isoformat()
+            dup = (
+                db.table("sent_alerts")
+                .select("id")
+                .eq("user_id", uid)
+                .eq("alert_key", stored_key)
+                .gte("created_at", inhibit_since)
+                .limit(1)
+                .execute()
+            )
+            if dup.data:
+                continue
+        except Exception as e:
+            logger.warning(f"Locked teaser dedup check failed for {uid}: {e}")
+        sent_ok = False
+        try:
+            sent_ok = await send_locked_teaser(
+                chat_id=chat_id,
+                deal_type=deal_type,
+                discount_pct=discount_pct,
+                price=price,
+                origin_city=origin_city,
+            )
+        except Exception as e:
+            logger.warning(f"Locked teaser send failed user={uid}: {e}")
+        if sent_ok:
+            sent += 1
+            await _persist_sent_alerts_with_retry(
+                {
+                    "user_id": uid,
+                    "chat_id": chat_id,
+                    "alert_key": stored_key,
+                    "destination": destination,
+                    "alert_type": "locked_teaser",
+                    "price": float(price or 0),
+                    "discount_pct": float(discount_pct or 0),
+                },
+                context=f"locked_teaser {uid}/{destination}",
+            )
+    return sent
+
+
+def _city_for_iata_label(iata: str) -> str:
+    """City-only label for the teaser ('Depuis Paris'), reusing the same
+    IATA_TO_CITY head-word logic as telegram._city_for_iata so a CDG/ORY/BVA
+    origin all collapse to 'Paris' and never leak the exact airport."""
+    label = IATA_TO_CITY.get(iata)
+    if not label:
+        return iata or "Paris"
+    return label.split(" ")[0]
+
+
+def _teaser_is_exceptional(
+    *, trip_type: str, destination: str, discount_pct: float, price: float,
+) -> bool:
+    """The teaser trigger rule (EXCEPTIONAL only — the rarity is the throttle):
+      - long-haul round-trip with discount_pct >= 30, OR
+      - one-way with price <= 20, OR
+      - split-ticket combo (any qualified split is already exceptional).
+    Regular short-haul A/R deals do NOT teaser.
+    """
+    from app.thresholds import LONG_HAUL_TEASER_MIN_DISCOUNT_PCT, ONEWAY_TEASER_MAX_PRICE_EUR
+    if trip_type == "split_ticket":
+        return True
+    if trip_type == "one_way":
+        return float(price or 0) > 0 and float(price) <= ONEWAY_TEASER_MAX_PRICE_EUR
+    # round_trip
+    return is_long_haul(destination) and float(discount_pct or 0) >= LONG_HAUL_TEASER_MIN_DISCOUNT_PCT
+
+
 async def _dispatch_grouped_flight_alerts(
     qualified_flights: list[tuple[dict, object, str]],
 ) -> None:
@@ -1625,6 +1783,53 @@ async def _dispatch_grouped_flight_alerts(
             await _persist_sent_alerts_with_retry(
                 rows, context=f"grouped A/R {uid}/{grp_dest}"
             )
+
+    # ── FREE-tier locked teaser pass (ADDITIVE) ─────────────────────────
+    # Exceptional long-haul A/R deals (discount ≥ 30%) get blurred to every
+    # free user with a Telegram chat, independent of the per-user band lanes
+    # above (those still run unchanged). Teaser dedup is teaser-only (the
+    # 'lt:' alert_key prefix), so it never collides with the band alerts a
+    # free user may also have received for the same deal. We dedup the deal
+    # itself by (origin, dest, dates, 50€-bucket) so a single long-haul deal
+    # appearing from CDG+ORY only teases once per user.
+    # Free-tier locked teasers — strictly additive, fully isolated: a
+    # teaser failure must NEVER affect the premium dispatch above.
+    try:
+        free_teaser_subs = _load_free_teaser_subs()
+        if free_teaser_subs:
+            teased_deal_keys: set[tuple] = set()
+            for flight, anomaly, _tier in qualified_flights:
+                dest = flight.get("destination", "")
+                disc = float(getattr(anomaly, "discount_pct", 0) or 0)
+                price = float(flight.get("price") or 0)
+                if not _teaser_is_exceptional(
+                    trip_type=flight.get("trip_type") or "round_trip",
+                    destination=dest,
+                    discount_pct=disc,
+                    price=price,
+                ):
+                    continue
+                deal_key = (
+                    dest,
+                    (flight.get("departure_date") or "")[:10],
+                    (flight.get("return_date") or "")[:10],
+                    int(price // 50),
+                )
+                if deal_key in teased_deal_keys:
+                    continue
+                teased_deal_keys.add(deal_key)
+                await _dispatch_free_teasers(
+                    deal_type="long_haul",
+                    destination=dest,
+                    departure_date=flight.get("departure_date") or "",
+                    return_date=flight.get("return_date") or "",
+                    price=price,
+                    discount_pct=disc,
+                    origin=flight.get("origin", ""),
+                    free_subs=free_teaser_subs,
+                )
+    except Exception as e:
+        logger.warning(f"Free teaser pass failed (premium dispatch unaffected): {e}")
 
     # One greppable line per run — answers "why didn't user X get deal Y"
     # without a 2-hour archaeology session. The guard blocks (L1/L3/L2,
@@ -2748,8 +2953,15 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
         logger.warning(f"One-way: failed to load opt-in users: {e}")
         return
 
-    if not opt_in_subs:
-        logger.info("One-way: no users opted in, skipping detection")
+    # FREE-tier locked-teaser audience — loaded once, independent of the
+    # one_way opt-in (free users are teased on exceptional deals regardless
+    # of which lanes they'd receive full alerts for). We still proceed even
+    # if nobody opted in to full one-way alerts: there may be free users to
+    # tease. Only bail if BOTH audiences are empty.
+    free_teaser_subs = _load_free_teaser_subs()
+
+    if not opt_in_subs and not free_teaser_subs:
+        logger.info("One-way: no opt-in or free-teaser users, skipping detection")
         return
 
     # Pull the freshest one-way candidates of the last 24h. We cap at 200 to
@@ -2890,6 +3102,34 @@ async def _detect_and_dispatch_oneway_alerts() -> None:
                 f"{ow_price}€ -{ow_disc:.0f}% — visible on /home only"
             )
             continue
+
+        # FREE-tier locked teaser (additive — does not touch the opt-in
+        # premium dispatch below). One-way teasers fire only for the
+        # exceptional band (price ≤ 20€). travel_dest is the city the user
+        # actually flies to, used for both the teaser dedup destination and
+        # the block check; origin_for_teaser is their home airport label.
+        ow_travel_dest = destination if direction == "outbound" else origin
+        ow_home_airport = origin if direction == "outbound" else destination
+        # Isolated: teaser failure must not skip the premium dispatch below.
+        try:
+            if free_teaser_subs and _teaser_is_exceptional(
+                trip_type="one_way",
+                destination=ow_travel_dest,
+                discount_pct=ow_disc,
+                price=ow_price,
+            ):
+                await _dispatch_free_teasers(
+                    deal_type="one_way",
+                    destination=ow_travel_dest,
+                    departure_date=candidate.get("departure_date") or "",
+                    return_date="",
+                    price=ow_price,
+                    discount_pct=ow_disc,
+                    origin=ow_home_airport,
+                    free_subs=free_teaser_subs,
+                )
+        except Exception as e:
+            logger.warning(f"One-way free teaser failed (premium unaffected): {e}")
 
         # Dispatch Telegram alerts to opt-in users tracking this airport.
         # For inbound, the user's home airport is the destination of the
@@ -3116,8 +3356,11 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
         logger.warning(f"Split-ticket: failed to load opt-in users: {e}")
         return
 
-    if not opt_in_subs:
-        logger.info("Split-ticket: no users opted in to combo alerts, skipping")
+    # FREE-tier locked-teaser audience (additive, opt-in-independent).
+    free_teaser_subs = _load_free_teaser_subs()
+
+    if not opt_in_subs and not free_teaser_subs:
+        logger.info("Split-ticket: no opt-in or free-teaser users, skipping")
         return
 
     for origin in settings.MVP_AIRPORTS:
@@ -3198,6 +3441,29 @@ async def _detect_and_dispatch_split_ticket_combos() -> None:
                 continue
 
             from app.notifications.dedup import compute_split_ticket_alert_key
+
+            # FREE-tier locked teaser (additive). Any qualified combo is
+            # exceptional by construction, so every free user is teased.
+            # Isolated: a teaser failure must not skip the premium loop below.
+            try:
+                if free_teaser_subs and _teaser_is_exceptional(
+                    trip_type="split_ticket",
+                    destination=dest,
+                    discount_pct=combo_savings_pct,
+                    price=combo.total,
+                ):
+                    await _dispatch_free_teasers(
+                        deal_type="split_ticket",
+                        destination=dest,
+                        departure_date=combo.outbound.get("departure_date") or "",
+                        return_date=combo.inbound.get("departure_date") or "",
+                        price=float(combo.total or 0),
+                        discount_pct=combo_savings_pct,
+                        origin=origin,
+                        free_subs=free_teaser_subs,
+                    )
+            except Exception as e:
+                logger.warning(f"Split-ticket free teaser failed (premium unaffected): {e}")
 
             for sub in opt_in_subs:
                 if origin not in (sub.get("airport_codes") or []):
