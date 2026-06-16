@@ -1744,11 +1744,16 @@ async def job_expire_stale_data():
     purge_failed = False
     try:
         # ── Primary: batched server-side deletes via RPC ──
-        for _ in range(400):  # 400 × 5k = 2M rows ceiling per night
+        # 2026-06-16: batch 5000 → 2000. At ~1M rows the 5000-row delete
+        # (even after 057 dropped the ORDER BY) tipped past the 8s
+        # timeout; 2000 runs in ~2.7s with comfortable margin. 1000 ×
+        # 2000 = 2M/night ceiling, still ample for a one-day purge.
+        PURGE_BATCH = 2000
+        for _ in range(1000):
             deleted = (
                 db.rpc(
                     "purge_raw_flights_batch",
-                    {"cutoff": raw_flights_cutoff, "batch_size": 5000},
+                    {"cutoff": raw_flights_cutoff, "batch_size": PURGE_BATCH},
                 )
                 .execute()
                 .data
@@ -1756,7 +1761,7 @@ async def job_expire_stale_data():
             deleted = int(deleted or 0)
             purged_total += deleted
             await asyncio.sleep(0)
-            if deleted < 5000:
+            if deleted < PURGE_BATCH:
                 break
         logger.info(f"Purged {purged_total} raw_flights rows older than 30 days (RPC)")
     except Exception as rpc_err:
