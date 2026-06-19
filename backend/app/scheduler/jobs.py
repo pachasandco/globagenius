@@ -2160,11 +2160,19 @@ async def job_monitor_baseline_staleness():
     now = datetime.now(timezone.utc)
     stale_cutoff = (now - timedelta(days=BASELINE_MAX_AGE_DAYS)).isoformat()
 
+    # 2026-06-19: scope the watchdog to bucket_* keys only. The qualifier
+    # reads ONLY bucket-format baselines (route-duration-month-leadtime);
+    # legacy fossils like "CDG-LIS-1m" or bare "CDG-FCO" from an old schema
+    # are never read, never re-written by the nightly recalc, and sit ~70j
+    # stale forever — they inflated the "périmées" alert to a false 22%.
+    # Counting only bucket_* makes the % reflect what actually matters.
+    BUCKET_FILTER = "%bucket_%"
     try:
         total_resp = (
             db.table("price_baselines")
             .select("id", count="exact")
             .eq("type", "flight")
+            .like("route_key", BUCKET_FILTER)
             .limit(1)
             .execute()
         )
@@ -2172,6 +2180,7 @@ async def job_monitor_baseline_staleness():
             db.table("price_baselines")
             .select("id", count="exact")
             .eq("type", "flight")
+            .like("route_key", BUCKET_FILTER)
             .lt("calculated_at", stale_cutoff)
             .limit(1)
             .execute()
@@ -2180,6 +2189,7 @@ async def job_monitor_baseline_staleness():
             db.table("price_baselines")
             .select("calculated_at")
             .eq("type", "flight")
+            .like("route_key", BUCKET_FILTER)
             .order("calculated_at", desc=True, nullsfirst=False)
             .limit(1)
             .execute()
