@@ -221,6 +221,10 @@ class PreferencesRequest(BaseModel):
     blocked_destinations: list[str] = []
     flight_trip_types: list[str] = ["round_trip"]
     include_split_tickets: bool = False
+    # Long-haul with one stopover (correspondance). Opt-out: default true.
+    # Europe/short-haul is always direct regardless of this flag — the
+    # scheduler only gates long-haul stopover deals on it.
+    accept_longhaul_stopover: bool = True
     # V9: premium-only discount floor preference. Validated to a small set
     # so we never store odd values (e.g. 35) that the dispatch logic doesn't
     # support. Free users may keep any historical value — it has no effect.
@@ -1039,6 +1043,10 @@ def get_preferences(user_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Preferences not found")
 
     out = dict(prefs.data[0])
+    # Opt-out preference: default true if the column is absent/null so the
+    # frontend toggle renders ON for legacy rows written before migration 059.
+    if out.get("accept_longhaul_stopover") is None:
+        out["accept_longhaul_stopover"] = True
     # Surface the OG badge so the profile page can render it + a share
     # button. Best-effort: a failure here must not break preferences load.
     try:
@@ -1088,6 +1096,7 @@ def update_preferences(user_id: str, req: PreferencesRequest, user: dict = Depen
         "blocked_destinations": req.blocked_destinations,
         "flight_trip_types": req.flight_trip_types,
         "include_split_tickets": req.include_split_tickets,
+        "accept_longhaul_stopover": req.accept_longhaul_stopover,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     # V9: only persist min_discount when premium AND a value is supplied.

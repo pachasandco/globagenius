@@ -110,7 +110,7 @@ def compute_baselines_by_bucket(
         bucket = bucket_for_duration(days)
         if not bucket:
             continue
-        max_stops = stops_allowed(obs.get("duration_minutes") or 0)
+        max_stops = stops_allowed(obs.get("duration_minutes") or 0, obs.get("destination"))
         if (obs.get("stops") or 0) > max_stops:
             continue
 

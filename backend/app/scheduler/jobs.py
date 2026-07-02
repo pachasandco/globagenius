@@ -335,10 +335,11 @@ async def _analyze_new_flights(flights: list[dict]):
             counters["rejected_no_bucket"] += 1
             continue
 
-        # Stops rule based on haul type. Missing duration_minutes is treated
-        # as short-haul (strictest rule, 0 stops max) to avoid false positives.
+        # Stops rule by haul type, keyed on DESTINATION (duration_minutes
+        # is unreliable — 0 on multi-stop fares). Long-haul: 1 stop OK;
+        # Europe: direct only.
         duration_minutes = flight.get("duration_minutes") or 0
-        max_stops = stops_allowed(duration_minutes)
+        max_stops = stops_allowed(duration_minutes, flight.get("destination"))
         if (flight.get("stops") or 0) > max_stops:
             counters["rejected_stops"] += 1
             continue
@@ -873,14 +874,14 @@ async def _dispatch_grouped_flight_alerts(
     try:
         prefs_resp = (
             db.table("user_preferences")
-            .select("user_id,telegram_chat_id,telegram_connected,airport_codes,alerts_paused_until,deal_tier,blocked_destinations,flight_trip_types,min_discount")
+            .select("user_id,telegram_chat_id,telegram_connected,airport_codes,alerts_paused_until,deal_tier,blocked_destinations,flight_trip_types,min_discount,accept_longhaul_stopover")
             .eq("telegram_connected", True)
             .execute()
         )
         all_prefs = prefs_resp.data or []
     except Exception as e:
         err_msg = str(e)
-        if any(col in err_msg for col in ("alerts_paused_until", "deal_tier", "blocked_destinations", "flight_trip_types", "min_discount")):
+        if any(col in err_msg for col in ("alerts_paused_until", "deal_tier", "blocked_destinations", "flight_trip_types", "min_discount", "accept_longhaul_stopover")):
             logger.warning("Migration not yet applied — fetching prefs without optional columns")
             try:
                 prefs_resp = (
@@ -945,6 +946,7 @@ async def _dispatch_grouped_flight_alerts(
     blocked_by_user: dict[str, set] = {}
     trip_types_by_user: dict[str, set[str]] = {}
     min_discount_by_user: dict[str, int] = {}
+    longhaul_stopover_by_user: dict[str, bool] = {}
     for pref in all_prefs:
         if isinstance(pref, dict) and pref.get("user_id"):
             uid = pref["user_id"]
@@ -957,6 +959,9 @@ async def _dispatch_grouped_flight_alerts(
             # V5: flight trip type filter — default to round-trip only
             # to preserve pre-V5 behaviour for migrated users.
             trip_types_by_user[uid] = set(pref.get("flight_trip_types") or ["round_trip"])
+            # Long-haul-with-stopover preference (default True = opt-out).
+            # Only gates long-haul deals; Europe is always direct anyway.
+            longhaul_stopover_by_user[uid] = pref.get("accept_longhaul_stopover", True) is not False
             # V9: premium-only discount floor preference. Free users
             # ignore this (they have a fixed band policy instead).
             md = pref.get("min_discount")
@@ -1294,6 +1299,21 @@ async def _dispatch_grouped_flight_alerts(
                     if key and key in already_keys:
                         continue
 
+                    # Long-haul stopover preference: a user who opted out
+                    # of long-haul-with-connection deals only gets DIRECT
+                    # long-haul. Europe is direct anyway (stops_allowed=0),
+                    # so this gate only ever fires on long-haul + stops>0.
+                    if (
+                        (flight.get("stops") or 0) > 0
+                        and is_long_haul(flight.get("destination", ""))
+                        and user_id
+                        and not longhaul_stopover_by_user.get(user_id, True)
+                    ):
+                        drop_counts["longhaul_stopover_optout"] = (
+                            drop_counts.get("longhaul_stopover_optout", 0) + 1
+                        )
+                        continue
+
                     # Stay-length floor — see thresholds.MIN_STAY_NIGHTS.
                     # 2026-06-12 ghost-deal audit: the previous hardcoded
                     # `< 4` silently binned every qualified 2-3 night
@@ -1321,6 +1341,10 @@ async def _dispatch_grouped_flight_alerts(
                         "discount_pct": anomaly.discount_pct,
                         "score": flight.get("score", 0),
                         "airline": flight.get("airline", ""),
+                        # Number of stops (0 = direct). Carried so the
+                        # dispatcher can honour each user's
+                        # accept_longhaul_stopover preference.
+                        "stops": int(flight.get("stops") or 0),
                         # Carry the scrape timestamp so the dispatcher
                         # can apply the source-aware freshness gate (no
                         # Telegram for deals older than their source's
