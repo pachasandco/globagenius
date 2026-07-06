@@ -1878,15 +1878,15 @@ async def job_recalculate_baselines():
     # 2026-05-22: the old loop hard-capped at the most-recent 10k rows
     # ordered scraped_at DESC. At ~1.5k round-trip rows/day that's only
     # ~7 days of data, so routes scraped 8-30 days ago never got their
-    # baseline refreshed — 589/1000 baselines had drifted to >14 days
-    # stale (calculated_at). We now paginate one DAY-WINDOW at a time
-    # over the full 30-day floor. Day-windowing keeps each query small
-    # and index-friendly (deep OFFSET on the whole table times out at
-    # ~1M rows), and covers every route regardless of scrape cadence.
-    # Measured: ~30k rows / 411 routes / ~20s — fine for a nightly job.
+    # baseline refreshed. We now paginate one DAY-WINDOW at a time over
+    # the full history floor (PRICE_HISTORY_WINDOW_DAYS, 2026-07-05: 60d).
+    # Day-windowing keeps each query small and index-friendly (deep
+    # OFFSET on the whole table times out at ~1M rows), and covers every
+    # route regardless of scrape cadence.
+    from app.thresholds import PRICE_HISTORY_WINDOW_DAYS
     flights_data: list[dict] = []
     page_size = 1000
-    for day in range(30):
+    for day in range(PRICE_HISTORY_WINDOW_DAYS):
         win_start = (now - timedelta(days=day + 1)).isoformat()
         win_end = (now - timedelta(days=day)).isoformat()
         for offset in range(0, 50000, page_size):
@@ -1948,15 +1948,14 @@ async def job_expire_stale_data():
     # Purge price_snapshots older than 24h (velocity detector data)
     purge_old_snapshots(db)
 
-    # 2026-06-05: tighten retention from 45 → 30 days. raw_flights now
-    # ingests ~240k rows/day (vs ~100k at the original 2026-05-22 tuning),
-    # so a 45-day window held >10M rows and tipped every count/GROUP BY
-    # query past the 8s statement timeout — including the maturity RPC.
-    # The qualifier already rejects baselines >21 days (freshness gate),
-    # and job_recalculate_baselines uses a 30-day window. Aligning the
-    # retention with the recalc window leaves zero functional value in
-    # rows older than 30 days. The 60-iteration slicing loop below is
-    # unchanged and stays safe for one-shot catch-up purges.
+    # Retention MUST match the baseline recalc window (they share
+    # PRICE_HISTORY_WINDOW_DAYS): the recalc reads that far back, so
+    # purging earlier would empty the far end of its window.
+    # 2026-06-05: was tightened 45→30 to fight statement timeouts.
+    # 2026-07-05: back to 60 (= new recalc window) to let secondary A/R
+    # baselines mature — one-way flooded the corpus and starved them at
+    # 30d. raw_flights ~doubles (~2M rows); the batched purge (057)
+    # handles it, and count()-style queries stay narrow/indexed.
     # 2026-06-12: the day-slice DELETE below silently died for ~8 days —
     # at ~240k rows/day a single whole-day PostgREST DELETE exceeds the
     # 8s statement timeout, the exception was swallowed as "non-fatal",
@@ -1968,7 +1967,10 @@ async def job_expire_stale_data():
     # A purge that still fails after retries now pages the admin —
     # uncontrolled raw_flights growth is exactly what caused the June
     # one-way pipeline timeouts.
-    raw_flights_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    from app.thresholds import PRICE_HISTORY_WINDOW_DAYS
+    raw_flights_cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=PRICE_HISTORY_WINDOW_DAYS)
+    ).isoformat()
     purged_total = 0
     purge_failed = False
     try:

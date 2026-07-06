@@ -98,6 +98,22 @@ PREMIUM_DEFAULT_MIN_DISCOUNT = 40
 # seasonal sub-buckets (route × month × lead-time) to qualify deals.
 MIN_BASELINE_SAMPLE_COUNT = 5
 
+# Price-history window (days) — SINGLE SOURCE OF TRUTH for both the
+# baseline recalc window AND the raw_flights retention. They MUST match:
+# the recalc reads this many days back, so retention must keep at least
+# that many days or the far end of the window is empty.
+#
+# 2026-07-05: 30 → 60 days. One-way now makes up ~80% of scraped volume
+# and carries no trip_duration_days, so it's excluded from the A/R
+# baseline corpus — leaving only ~190 A/R observations/day spread across
+# hundreds of buckets. At 30 days many secondary A/R buckets never
+# reached MIN_BASELINE_SAMPLE_COUNT of FRESH observations, so their
+# baseline froze and the maturity % kept falling (36% → 25%). Doubling
+# the window doubles the A/R observations per bucket, letting secondary
+# routes mature. Cost: raw_flights roughly doubles (~2M rows); the
+# batched purge (migration 057) handles that volume.
+PRICE_HISTORY_WINDOW_DAYS = 60
+
 
 # ─── Dispatch stay-length floor ───
 
@@ -166,6 +182,11 @@ STOPOVER_MAX_TOTAL_DAYS = 30
 # Until we have a mature one-way baseline (~4-6 weeks of data), we
 # qualify one-way deals on raw discount vs the median price for the
 # same (origin, destination, direction) over the last N days.
+# NB: intentionally kept at 30d even though PRICE_HISTORY_WINDOW_DAYS
+# went to 60 (2026-07-05). One-way is ~80% of scrape volume, so its
+# median has plenty of observations at 30d; a shorter window keeps it
+# more reactive to recent price moves. The 60d window fixed the A/R
+# baseline starvation, a problem one-way doesn't have.
 ONEWAY_DISCOUNT_PCT_FLOOR = 60
 ONEWAY_MEDIAN_LOOKBACK_DAYS = 30
 ONEWAY_MIN_OBSERVATIONS = 5
