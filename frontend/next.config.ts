@@ -43,6 +43,27 @@ const nextConfig: NextConfig = {
       ...iataRedirects,
     ];
   },
+  async rewrites() {
+    // 2026-07-06: the Telegram alert click-tracking links point at
+    // https://globegenius.app/r/{token}. That path is a BACKEND route
+    // (@router.get("/r/{token}") — records the click, then 302s to the
+    // Aviasales deal). The frontend has no /r/ route, so before this
+    // rewrite every click landed on a blank Next.js 200 page: the click
+    // was never recorded (CTR read a false 0%) AND the user never
+    // reached the deal. Proxy /r/* straight through to the backend.
+    // (This regressed silently when the domain was re-pointed at
+    // Cloudflare → frontend after the 2026-07 domain recovery.)
+    const apiUrl = (
+      process.env.NEXT_PUBLIC_API_URL ||
+      "https://globagenius-production-1380.up.railway.app"
+    ).replace(/\/$/, "");
+    return [
+      {
+        source: "/r/:token",
+        destination: `${apiUrl}/r/:token`,
+      },
+    ];
+  },
   async headers() {
     return [
       {
