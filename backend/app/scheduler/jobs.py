@@ -2760,10 +2760,14 @@ async def job_scrape_oneway_flights():
     # audit couldn't tell whether this block ran at all because its
     # inserts were folded into the flights_oneway count.
     from app.config import STOPOVER_HUB_PAIRS
+    from app.thresholds import STOPOVER_ENABLED
     conn_started = datetime.now(timezone.utc)
     conn_inserted = 0
     conn_errors = 0
-    for hub, spoke in STOPOVER_HUB_PAIRS:
+    # Stopover paused 2026-07-06 (see thresholds.STOPOVER_ENABLED): the
+    # economics don't work (3 tickets > 1 direct A/R). Skip the connector
+    # scrape entirely to save the API calls + DB volume.
+    for hub, spoke in (STOPOVER_HUB_PAIRS if STOPOVER_ENABLED else []):
         # 2026-06-14 (founder decision): only scrape connectors for
         # long-haul spokes — short-haul chains never qualify, so their
         # connector legs are pure scraping waste. Mirror of the guard in
@@ -2866,7 +2870,11 @@ async def job_scrape_oneway_flights():
     # deserve one more shot before we give up and escalate.
     await _run_detection_with_retry(_detect_and_dispatch_oneway_alerts, "One-way detection")
     await _run_detection_with_retry(_detect_and_dispatch_split_ticket_combos, "Split-ticket detection")
-    await _run_detection_with_retry(_detect_and_dispatch_stopover_chains, "Stopover detection")
+    # Stopover paused 2026-07-06 (thresholds.STOPOVER_ENABLED) — economics
+    # don't work; skip detection to save the query load.
+    from app.thresholds import STOPOVER_ENABLED
+    if STOPOVER_ENABLED:
+        await _run_detection_with_retry(_detect_and_dispatch_stopover_chains, "Stopover detection")
 
 
 async def _run_detection_with_retry(

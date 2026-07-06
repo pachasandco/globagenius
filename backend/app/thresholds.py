@@ -159,6 +159,20 @@ SPLIT_MAX_STAY_DAYS = 30
 
 # ─── Stopover chain qualification (phase 1, 2026-06-09) ───
 
+# PAUSED 2026-07-06 (founder decision). A manual test of the flagship
+# pairs — including scraping the long-haul return legs the pipeline
+# doesn't normally cover — showed the economics don't work: the best
+# case (CDG→Madrid→Bogotá, all three legs cheapest) totalled 971€ of
+# separate tickets vs a 731€ direct round-trip baseline — i.e. +32%,
+# not the −30% required. Assembling 3 tickets breaks the airline's
+# direct-route optimisation, so the total almost always EXCEEDS the
+# direct A/R. The concept only wins on rare, unrepeatable alignments
+# (a segment on a flash sale + cheap other legs + matching dates), a
+# few times a year — not worth the permanent connector-scrape cost.
+# The code stays intact; flip this to True (+ curate low-cost hubs) to
+# re-enable. Both the connector scrape and the detection are gated on it.
+STOPOVER_ENABLED = False
+
 # A stopover chain is 3 one-way tickets: origin → hub (a few days),
 # hub → final destination, destination → origin. Compared against the
 # round-trip baseline for origin → destination DIRECT. The bar is lower
