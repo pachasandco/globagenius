@@ -2399,7 +2399,10 @@ def _format_admin_health(health: dict) -> str:
         f"👥 Users : {u.get('total', 0)} total · {u.get('recipients_7d', 0)} actifs 7j",
         f"   {_tier_line()}",
         "",
-        f"🌡️ Baseline : {round(b.get('mature_coverage_pct', 0))}% mature",
+        # Headline = usable-by-qualifier (>=5 samples), the operationally
+        # meaningful number. "mature" (>=30) shown as secondary quality.
+        f"🌡️ Baselines exploitables : {round(b.get('usable_pct', 0))}% "
+        f"(qualité max : {round(b.get('mature_coverage_pct', 0))}%)",
         f"   🟢 {counts.get('hot', 0)} 🟡 {counts.get('warm', 0)} 🟠 {counts.get('cold', 0)} 🔴 {counts.get('dormant', 0)}",
         "",
         f"📖 Articles : {ar.get('total', 0)} · manquants : {missing_str}",

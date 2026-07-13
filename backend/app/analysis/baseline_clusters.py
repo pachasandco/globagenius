@@ -170,9 +170,23 @@ def build_cluster_report(
         "median_cold_eta_days": int | None,    # None if <5 cold ETAs
       }
     """
+    # "Usable by the qualifier" = the operationally meaningful coverage.
+    # Every stored baseline already has >= MIN_BASELINE_SAMPLE_COUNT (5)
+    # samples (the recalc never writes below that), so sample count is
+    # always satisfied — the REAL gate is FRESHNESS: the qualifier
+    # rejects baselines whose calculated_at is older than
+    # BASELINE_MAX_AGE_DAYS (21). So usable = fresh. This is the number
+    # that matters; the hot/warm/cold clusters are a separate QUALITY
+    # ladder, and mature_coverage_pct (>=30 samples) is too strict — it
+    # read as a scary 27% on a healthy pipeline and triggered false alarm.
+    from app.scheduler.jobs import BASELINE_MAX_AGE_DAYS
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
     counts = {"hot": 0, "warm": 0, "cold": 0, "dormant": 0}
     cold_etas: list[Optional[int]] = []
     unknown_count = 0
+    usable_by_qualifier = 0
 
     for b in baselines:
         origin, destination = parse_route_key(b.get("route_key", ""))
@@ -184,6 +198,16 @@ def build_cluster_report(
             )
             continue
         samples = int(b.get("sample_count") or 0)
+        ca = b.get("calculated_at")
+        if ca:
+            try:
+                age_days = (
+                    now - datetime.fromisoformat(str(ca).replace("Z", "+00:00"))
+                ).days
+                if age_days <= BASELINE_MAX_AGE_DAYS:
+                    usable_by_qualifier += 1
+            except (ValueError, TypeError):
+                pass
         rate = compute_rate_per_day(
             origin=origin,
             destination=destination,
@@ -202,6 +226,10 @@ def build_cluster_report(
         "total_parsed": total_parsed,
         "total_with_unknown": total_parsed + unknown_count,
         "mature_coverage_pct": mature_coverage_pct(counts),
+        "usable_by_qualifier": usable_by_qualifier,
+        "usable_pct": (
+            100.0 * usable_by_qualifier / total_parsed if total_parsed else 0.0
+        ),
         "median_cold_eta_days": median_cold_eta_days(cold_etas),
     }
 
@@ -234,13 +262,19 @@ def format_cluster_report_for_telegram(
     """
     c = report["counts"]
     cov = round(report["mature_coverage_pct"])
+    usable_pct = round(report.get("usable_pct", 0))
+    usable_n = report.get("usable_by_qualifier", 0)
     total = report["total_with_unknown"]
     parsed_ok = report["total_parsed"]
     eta = report["median_cold_eta_days"]
     eta_str = f"{eta}j (médiane)" if eta is not None else "— (méd.)"
 
     lines = [
-        f"🟡 Couverture mature : {cov}%",
+        # HEADLINE = what actually matters operationally: baselines the
+        # qualifier can use (>=5 samples). The old "mature" headline
+        # required >=30 samples and read as a scary 27% on a healthy
+        # pipeline — kept as a secondary quality figure on the same line.
+        f"✅ Exploitables : {usable_pct}% ({usable_n} routes) · qualité max : {cov}%",
         "",
         f"  🟢 Hot     {c['hot']:>4}  ({_pct_of_total(c['hot'], total)})  ≥30 samples",
         f"  🟡 Warm    {c['warm']:>4}  ({_pct_of_total(c['warm'], total)})  10-29 samples",
