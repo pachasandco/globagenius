@@ -131,7 +131,17 @@ def scrape_flights_for_airport(origin: str, passive: bool = False) -> list[dict]
     never reads them. Used for francophone-expansion origins (BRU, GVA,
     ZRH) where we are building baselines silently in the background.
     """
-    destinations = get_priority_destinations(max_count=80)
+    # 2026-07-14 BUG FIX: was get_priority_destinations(max_count=80)
+    # WITHOUT db → it fell back to the hardcoded seasonal list (59 dests)
+    # instead of the live DB list (80, refreshed weekly by
+    # job_update_destinations). 13 long-haul destinations present in the
+    # DB list but absent from the fallback — HKT (Phuket), DXB, MLE, CUN,
+    # CPT, JNB, MRU, PUJ, HAV, SGN, HAN, PTP, TNR — were therefore NEVER
+    # scraped as round-trips. A real CDG→HKT 494€ −41% (Saudia, 1 stop)
+    # went undetected because we never fetched the route. Pass db so the
+    # scraper uses the same destination list the rest of the pipeline does.
+    from app.db import db
+    destinations = get_priority_destinations(max_count=80, db=db)
     all_flights = []
     for dest in destinations:
         if dest == origin:
