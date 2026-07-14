@@ -2541,10 +2541,7 @@ async def job_send_onboarding_emails():
     summary = (
         f"Onboarding emails — "
         f"J+1 relance: {counts.get('j1_relance_sent', 0)} sent / {counts.get('j1_relance_skipped', 0)} skipped · "
-        f"J+7 inactivity: {counts.get('j7_inactivity_sent', 0)} sent / {counts.get('j7_inactivity_skipped', 0)} skipped · "
-        f"J+7 feedback: {counts.get('j7_feedback_nurture_sent', 0)} sent / {counts.get('j7_feedback_nurture_skipped', 0)} skipped · "
-        f"J+14 feedback: {counts.get('j14_feedback_relance_sent', 0)} sent / {counts.get('j14_feedback_relance_skipped', 0)} skipped · "
-        f"J+15 open: {counts.get('j15_open_feedback_sent', 0)} sent / {counts.get('j15_open_feedback_skipped', 0)} skipped"
+        f"J+7 inactivity: {counts.get('j7_inactivity_sent', 0)} sent / {counts.get('j7_inactivity_skipped', 0)} skipped"
     )
     logger.info(summary)
     # Surface the count only when something fired. The cron runs

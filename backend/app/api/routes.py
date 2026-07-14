@@ -396,48 +396,8 @@ def price_history(request: Request, origin: str = "", destination: str = "", lim
     return {"prices": resp.data or [], "count": len(resp.data or [])}
 
 
-@router.get("/api/debug/data")
-def debug_data(request: Request):
-    """Debug endpoint: show sample data from each table. Admin only."""
-    _require_admin(request)
-    if not db:
-        return {"error": "no db"}
-
-    try:
-        flights = db.table("raw_flights").select("origin, destination, departure_date, return_date, price, source").order("scraped_at", desc=True).limit(5).execute()
-        baselines = db.table("price_baselines").select("route_key, type, avg_price, std_dev, sample_count").limit(10).execute()
-
-        # Check if any flight prices are below baseline
-        diagnosis = []
-        for f in (flights.data or []):
-            route_key_1m = f"{f['origin']}-{f['destination']}-1m"
-            route_key_3m = f"{f['origin']}-{f['destination']}-3m"
-            bl = db.table("price_baselines").select("*").eq("route_key", route_key_1m).execute()
-            if not bl.data:
-                bl = db.table("price_baselines").select("*").eq("route_key", route_key_3m).execute()
-            if bl.data:
-                avg = bl.data[0]["avg_price"]
-                std = bl.data[0]["std_dev"]
-                price = f["price"]
-                discount = round((avg - price) / avg * 100, 1) if avg > 0 else 0
-                z = round((avg - price) / std, 2) if std > 0 else 0
-                diagnosis.append({
-                    "route": f"{f['origin']}→{f['destination']}",
-                    "price": price,
-                    "baseline_avg": avg,
-                    "baseline_std": std,
-                    "discount_pct": discount,
-                    "z_score": z,
-                    "would_qualify": discount >= 20 and z >= 1.0,
-                })
-
-        return {
-            "flights_sample": flights.data or [],
-            "baselines_sample": baselines.data or [],
-            "price_diagnosis": diagnosis,
-        }
-    except Exception as e:
-        return {"error": str(e)}
+# /api/debug/data : retiré 2026-07-14 (endpoint de debug beta — il
+# référençait en plus les formats de route_key morts "-1m"/"-3m").
 
 
 from app.thresholds import (
@@ -1727,44 +1687,8 @@ class AdminBadgeRequest(BaseModel):
     display_name: str | None = None
 
 
-class AdminTestWelcomeEmailRequest(BaseModel):
-    email: str
-
-
-@router.post("/api/admin/email/test-welcome")
-async def admin_test_welcome_email(req: AdminTestWelcomeEmailRequest, request: Request):
-    """Re-send the welcome email to an arbitrary address. Useful for verifying
-    the Brevo template configuration after a deploy, or for resending the
-    welcome to early users who got an older version."""
-    _require_admin(request)
-    try:
-        await _send_welcome_email(req.email)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Send failed: {e}")
-    return {
-        "status": "sent",
-        "to": req.email,
-        "transport": "brevo_template" if (settings.BREVO_API_KEY and settings.BREVO_WELCOME_TEMPLATE_ID) else "smtp_fallback",
-        "brevo_template_id": settings.BREVO_WELCOME_TEMPLATE_ID,
-    }
-
-
-@router.post("/api/admin/email/probe-template")
-async def admin_probe_template(request: Request, template_id: int, to: str):
-    """Send a Brevo template to `to` via the exact transactional payload the
-    onboarding job uses, and return Brevo's raw HTTP status + body. Diagnoses
-    why a specific template is rejected (e.g. #12 returning 400)."""
-    _require_admin(request)
-    import httpx as _httpx
-    payload = {"to": [{"email": to}], "templateId": template_id}
-    headers = {
-        "api-key": settings.BREVO_API_KEY,
-        "accept": "application/json",
-        "content-type": "application/json",
-    }
-    async with _httpx.AsyncClient(timeout=10.0) as c:
-        r = await c.post("https://api.brevo.com/v3/smtp/email", json=payload, headers=headers)
-    return {"status_code": r.status_code, "body": r.text}
+# /api/admin/email/test-welcome + /api/admin/email/probe-template :
+# retirés 2026-07-14 (outils de test Brevo de la beta).
 
 
 @router.get("/api/admin/scrapers/health")
@@ -3130,123 +3054,10 @@ async def admin_broadcast(req: AdminBroadcastRequest, request: Request):
     return {"mode": "send", "recipients": recipient_count, "delivered": delivered, "failed": failed}
 
 
-# ── Survey: inline-button poll sent over Telegram ───────────────────────────
-# Single active campaign for now. The 5 options match the buttons the
-# operator asked for; choice codes A..E are stored in survey_responses.
-SURVEY_KEY = "why_no_click_202605"
-SURVEY_MESSAGE = (
-    "🙏 Petite question rapide pour nous aider à améliorer GlobeGenius.\n\n"
-    "Tu reçois nos alertes vols. Qu'est-ce qui t'a (le plus) empêché de "
-    "cliquer dessus jusqu'ici ? Un seul tap, ça nous aide énormément 👇"
-)
-SURVEY_OPTIONS: list[tuple[str, str]] = [
-    ("A", "⏰ Pas le temps"),
-    ("B", "😐 Pas intéressé par les destinations"),
-    ("C", "💸 Les prix ne m'ont pas semblé intéressants"),
-    ("D", "🤷 Je ne savais pas que c'était utile"),
-    ("E", "✅ J'ai déjà cliqué, si si !"),
-]
-
-
-class AdminSurveyRequest(BaseModel):
-    # "test" → only the admin's own chat (preview the buttons).
-    # "send" → all linked, non-paused users; requires confirm_count.
-    mode: str = "test"
-    confirm_count: int | None = None
-
-
-@router.post("/api/admin/survey/send")
-async def admin_survey_send(req: AdminSurveyRequest, request: Request):
-    """Send the inline-button survey over Telegram.
-
-    Same guard rails as /api/admin/broadcast: admin-only, test mode hits
-    only the admin chat, send mode requires confirm_count == live count.
-    Recipients = users with a linked Telegram and not currently paused.
-    """
-    _require_admin(request)
-    if not db:
-        raise HTTPException(status_code=503, detail="Database not configured")
-
-    from app.notifications.telegram import send_survey
-    from app.config import settings as _settings
-
-    if req.mode == "test":
-        admin_chat = _settings.TELEGRAM_ADMIN_CHAT_ID
-        if not admin_chat:
-            raise HTTPException(status_code=400, detail="TELEGRAM_ADMIN_CHAT_ID non configuré")
-        delivered, failed = await send_survey(
-            SURVEY_MESSAGE, SURVEY_OPTIONS, SURVEY_KEY, [int(admin_chat)]
-        )
-        return {"mode": "test", "recipients": 1, "delivered": delivered, "failed": failed}
-
-    # SEND mode: linked + not paused
-    prefs = (
-        db.table("user_preferences")
-        .select("telegram_chat_id,alerts_paused_until")
-        .not_.is_("telegram_chat_id", "null")
-        .execute()
-        .data
-        or []
-    )
-    chat_ids: list[int] = []
-    for p in prefs:
-        cid = p.get("telegram_chat_id")
-        if not cid:
-            continue
-        paused = p.get("alerts_paused_until")
-        if paused:
-            try:
-                if datetime.fromisoformat(paused.replace("Z", "+00:00")) > datetime.now(timezone.utc):
-                    continue
-            except (ValueError, TypeError):
-                pass
-        chat_ids.append(int(cid))
-
-    recipient_count = len(chat_ids)
-    if req.confirm_count is None or req.confirm_count != recipient_count:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Confirmation requise : {recipient_count} destinataires. "
-                   f"Renvoie avec confirm_count={recipient_count}.",
-        )
-
-    delivered, failed = await send_survey(
-        SURVEY_MESSAGE, SURVEY_OPTIONS, SURVEY_KEY, chat_ids
-    )
-    logger.info(f"[survey] sent to {delivered}/{recipient_count} ({failed} failed)")
-    return {"mode": "send", "recipients": recipient_count, "delivered": delivered, "failed": failed}
-
-
-@router.get("/api/admin/survey/results")
-def admin_survey_results(request: Request):
-    """Aggregated survey results: count per choice + total respondents."""
-    _require_admin(request)
-    if not db:
-        raise HTTPException(status_code=503, detail="Database not configured")
-
-    rows = (
-        db.table("survey_responses")
-        .select("choice")
-        .eq("survey_key", SURVEY_KEY)
-        .execute()
-        .data
-        or []
-    )
-    from collections import Counter
-    counts = Counter(r["choice"] for r in rows if r.get("choice"))
-    label_by_code = dict(SURVEY_OPTIONS)
-    results = [
-        {"choice": code, "label": label, "count": counts.get(code, 0)}
-        for code, label in SURVEY_OPTIONS
-    ]
-    return {
-        "survey_key": SURVEY_KEY,
-        "question": SURVEY_MESSAGE,
-        "total_responses": len(rows),
-        "results": results,
-        # echo any unexpected codes so nothing is silently dropped
-        "unknown": {c: n for c, n in counts.items() if c not in label_by_code},
-    }
+# ── Survey (beta) : décommissionné 2026-07-14 ───────────────────────────────
+# Le sondage inline Telegram "why_no_click_202605" était un outil de la
+# beta. Endpoints /api/admin/survey/send + /results retirés pour la prod.
+# Les 7 réponses restent archivées dans la table survey_responses.
 
 
 @router.get("/api/admin/ctr")

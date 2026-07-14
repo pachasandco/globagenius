@@ -45,22 +45,9 @@ class Settings:
     # rejected by the transactional API.
     BREVO_RELANCE_TELEGRAM_TEMPLATE_ID: int = int(os.getenv("BREVO_RELANCE_TELEGRAM_TEMPLATE_ID", "8") or 0)
     BREVO_INACTIVITY_TEMPLATE_ID: int = int(os.getenv("BREVO_INACTIVITY_TEMPLATE_ID", "9") or 0)
-    # Feedback nurturing (2026-05-21).
-    # J+7 / J+14 since first alert received, sent only when user has
-    # received >=3 alerts but clicked 0 feedback buttons. Soft tone,
-    # no premium revocation — see /tmp/brevo_t10_*.html for content.
-    # J+15 (since signup) is a separate open-ended feedback ask sent
-    # to every user regardless of clicks.
-    BREVO_FEEDBACK_NURTURE_J7_TEMPLATE_ID: int = int(os.getenv("BREVO_FEEDBACK_NURTURE_J7_TEMPLATE_ID", "10") or 0)
-    BREVO_FEEDBACK_NURTURE_J14_TEMPLATE_ID: int = int(os.getenv("BREVO_FEEDBACK_NURTURE_J14_TEMPLATE_ID", "11") or 0)
-    BREVO_OPEN_FEEDBACK_J15_TEMPLATE_ID: int = int(os.getenv("BREVO_OPEN_FEEDBACK_J15_TEMPLATE_ID", "12") or 0)
-    # "Lettre de la beta" (2026-06-10) — monthly recap for every tester
-    # who has received at least one alert. Static content (changelog,
-    # "your feedback shipped X", mission of the month) is hand-edited in
-    # the Brevo template each month; per-user params injected by the
-    # cron: ALERTS_MONTH, BEST_DISCOUNT, BEST_DESTINATION. Default 0 =
-    # disabled until the template exists on Brevo's side.
-    BREVO_BETA_RECAP_TEMPLATE_ID: int = int(os.getenv("BREVO_BETA_RECAP_TEMPLATE_ID", "0") or 0)
+    # 2026-07-14 : templates beta décommissionnés (feedback nurture J+7
+    # id 10, J+14 id 11, feedback ouvert J+15 id 12, lettre de la beta
+    # id 19) — flows retirés de onboarding_emails.py pour la prod.
     # Sent when an admin manually downgrades an inactive founder back to
     # the free tier ("you didn't activate, your Premium is removed, your
     # free account stays"). 0 = template not configured yet → the
