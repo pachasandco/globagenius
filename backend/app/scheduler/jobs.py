@@ -2494,6 +2494,9 @@ async def job_daily_admin_health():
             },
             "baselines": {
                 "mature_coverage_pct": maturity.get("mature_coverage_pct", 0),
+                # 2026-07-14: was missing here, so the GG-Health line read
+                # b.get("usable_pct", 0) → always 0%. Copy it through.
+                "usable_pct": maturity.get("usable_pct", 0),
                 "counts": maturity.get("counts", {}),
             },
             "articles": {
