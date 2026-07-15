@@ -1249,21 +1249,6 @@ def format_grouped_flight_alerts(
     return msg
 
 
-# Threshold below which a user is considered "new" and shown feedback
-# buttons in place of the Pause menu.
-#
-# Temporarily raised to 5000 during the beta phase (2026-05-18): we want
-# ALL founders to see the feedback row so the operator gets continuous
-# signal to calibrate seuils, not just the freshest 5 inscrits. Counting
-# rows (not messages) — 1 grouped alert = N rows, so 5000 ≈ 1000-1500
-# real Telegram messages, which covers every current founder.
-#
-# Once we've collected ~50 feedback clicks across the cohort, lower
-# this back to 30 so newly onboarded users keep the calibration window
-# but stabilised users get Pause back.
-FEEDBACK_ONBOARDING_ALERT_LIMIT = 5000
-
-
 def _build_alert_keyboard(
     *,
     user_id: str | None,
@@ -1272,13 +1257,15 @@ def _build_alert_keyboard(
     message_id: str | None,
 ) -> InlineKeyboardMarkup | None:
     """Shared inline-keyboard builder for all alert types (grouped flight,
-    one-way, split-ticket combo). Three responsibilities:
+    one-way, split-ticket combo). Two buttons:
 
       1. "Masquer <destination>" — one-tap dismiss for the destination.
-      2. Feedback row [👍][👎][⏱️] for the first FEEDBACK_ONBOARDING_ALERT_LIMIT
-         alerts of a user's lifetime, when message_id is set. The callback
-         handler writes to sent_alerts.feedback (last click wins).
-      3. Otherwise, the Pause-menu button.
+      2. Pause-menu button.
+
+    The feedback row [👍][👎][⏱️] was removed for production (2026-07-15);
+    it was a beta signal-collection tool. The `feedback:` callback handler
+    stays in bot_handler for backward compatibility with old alerts still
+    carrying the buttons in users' chats.
 
     Returns None when user_id is missing — alerts sent in test contexts
     (no DB user) skip the buttons entirely.
@@ -1286,51 +1273,16 @@ def _build_alert_keyboard(
     if not user_id:
         return None
     short_dest = (dest_label or destination_iata)[:18]
-    rows: list[list[InlineKeyboardButton]] = [
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton(
             f"🚫 Masquer {short_dest}",
             callback_data=f"block:{user_id}:{destination_iata}",
         )],
-    ]
-    show_feedback = (
-        message_id is not None
-        and _count_alerts_lifetime(user_id) < FEEDBACK_ONBOARDING_ALERT_LIMIT
-    )
-    if show_feedback:
-        rows.append([
-            InlineKeyboardButton("👍 Bon", callback_data=f"feedback:good:{message_id}"),
-            InlineKeyboardButton("👎 Faux", callback_data=f"feedback:bad:{message_id}"),
-            InlineKeyboardButton("⏱️ Trop tard", callback_data=f"feedback:late:{message_id}"),
-        ])
-    else:
-        rows.append([
-            InlineKeyboardButton("⏸ Pause les alertes", callback_data=f"pause_menu:{user_id}"),
-        ])
-    return InlineKeyboardMarkup(rows)
-
-
-def _count_alerts_lifetime(user_id: str) -> int:
-    """How many sent_alerts rows exist for this user, ever. Used by
-    send_grouped_flight_alerts to decide whether to show feedback
-    buttons or the standard Pause menu. Fails open (returns a high
-    number) on DB error → fall back to Pause menu, which is the
-    safer default (we never strand the user without a way to pause).
-    """
-    from app.db import db
-    if not db or not user_id:
-        return 9999
-    try:
-        r = (
-            db.table("sent_alerts")
-            .select("id", count="exact")
-            .eq("user_id", user_id)
-            .limit(1)
-            .execute()
-        )
-        return r.count or 0
-    except Exception as e:
-        logger.warning(f"_count_alerts_lifetime failed for {user_id}: {e}")
-        return 9999
+        [InlineKeyboardButton(
+            "⏸ Pause les alertes",
+            callback_data=f"pause_menu:{user_id}",
+        )],
+    ])
 
 
 async def send_grouped_flight_alerts(
