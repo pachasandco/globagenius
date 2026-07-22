@@ -13,7 +13,7 @@ from app.scraper.normalizer import normalize_flight
 from app.scraper.travelpayouts_flights import _normalize_priced_entry
 from app.analysis.route_selector import get_priority_destinations, is_long_haul
 from app.analysis.destination_updater import update_priority_destinations_in_db
-from app.analysis.anomaly_detector import detect_anomaly
+from app.analysis.anomaly_detector import detect_anomaly, is_generalized_floor
 from app.analysis.scorer import compute_score
 from app.analysis.buckets import bucket_for_duration, stops_allowed
 from app.analysis.velocity_detector import save_snapshots_bulk, detect_velocity_drops_bulk, purge_old_snapshots
@@ -281,6 +281,60 @@ async def job_scrape_flights():
     await _analyze_new_flights(flights)
 
 
+# ±N days of departure date scanned around a candidate for the dispersion
+# guard. 3 days each side = a 7-day window centred on the candidate's date.
+_NEIGHBOR_WINDOW_DAYS = 3
+
+
+def _fetch_neighbor_prices(flight: dict, bucket: str) -> list[float]:
+    """Prices scraped for departure dates within ±_NEIGHBOR_WINDOW_DAYS of
+    the candidate's date, on the same route and duration bucket, EXCLUDING
+    the candidate's own departure date. Feeds is_generalized_floor.
+
+    Best-effort: any error (or missing date) returns [] so the caller
+    treats it as undecidable and keeps the deal — the guard must never
+    suppress an alert because a lookup failed."""
+    if not db:
+        return []
+    dep = flight.get("departure_date") or (flight.get("departure_at") or "")[:10]
+    if not dep:
+        return []
+    try:
+        dep_dt = datetime.strptime(dep[:10], "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return []
+    lo = (dep_dt - timedelta(days=_NEIGHBOR_WINDOW_DAYS)).strftime("%Y-%m-%d")
+    hi = (dep_dt + timedelta(days=_NEIGHBOR_WINDOW_DAYS)).strftime("%Y-%m-%d")
+    try:
+        rows = (
+            db.table("raw_flights")
+            .select("departure_date, price, trip_duration_days")
+            .eq("origin", flight["origin"])
+            .eq("destination", flight["destination"])
+            .gte("departure_date", lo)
+            .lte("departure_date", hi)
+            .neq("source", "vueling_direct")
+            .execute()
+            .data
+            or []
+        )
+    except Exception as e:
+        logger.debug(f"neighbor-price lookup failed for {flight.get('origin')}-{flight.get('destination')}: {e}")
+        return []
+    candidate_day = dep[:10]
+    out = []
+    for r in rows:
+        rd = (r.get("departure_date") or "")[:10]
+        if rd == candidate_day:
+            continue  # exclude the candidate's own date
+        if bucket_for_duration(r.get("trip_duration_days") or 0) != bucket:
+            continue
+        price = r.get("price")
+        if price:
+            out.append(float(price))
+    return out
+
+
 async def _analyze_new_flights(flights: list[dict]):
     if not db:
         return
@@ -302,6 +356,7 @@ async def _analyze_new_flights(flights: list[dict]):
         "rejected_stale_baseline": 0,
         "rejected_no_anomaly": 0,
         "rejected_low_discount_or_z": 0,
+        "rejected_generalized_floor": 0,
         "rejected_reverify": 0,
         "qualified": 0,
     }
@@ -433,6 +488,23 @@ async def _analyze_new_flights(flights: list[dict]):
         # This avoids over-filtering deals that are either value-driven or statistically rare
         if anomaly.discount_pct < 15 and anomaly.z_score < 1.5:
             counters["rejected_low_discount_or_z"] += 1
+            continue
+
+        # Dispersion guard: punctual dip vs generalized price floor.
+        # detect_anomaly compares to a HISTORICAL baseline (median of past
+        # scrapes) — it catches "cheaper than usual" but not "cheaper than
+        # the days around it". A route whose whole week sits at 18€ while a
+        # stale/mis-bucketed baseline still says 104€ yields a fake -83%.
+        # We compare the candidate to the actual prices scraped for the ±3
+        # adjacent departure dates (same route + duration bucket). Rejects
+        # ONLY when there are enough neighbors AND the candidate fails to
+        # beat their median — conservative so deals with few neighbors
+        # (~62% of them) still pass. Runs before reverify so a floor never
+        # costs a reverify API hit. Measured 2026-07-22: 12-22% of the
+        # tranchable deals were these fake floors.
+        neighbor_prices = _fetch_neighbor_prices(flight, bucket)
+        if is_generalized_floor(flight["price"], neighbor_prices):
+            counters["rejected_generalized_floor"] += 1
             continue
 
         # Real-time re-verification — reject silently if the deal is gone.
@@ -2042,6 +2114,47 @@ async def job_expire_stale_data():
             )
         except Exception as ae:
             logger.error(f"Admin alert about purge failure also failed: {ae}")
+
+    # ── Purge des baselines périmées ────────────────────────────────────
+    # price_baselines n'avait aucune purge : la table ne faisait que
+    # grossir par upsert. Les baselines sont clées par mois-de-départ +
+    # lead-time (ex CDG-DXB-bucket_medium-m06-lt60) ; une fois le mois
+    # passé, ce bucket n'est plus jamais réécrit (le vol n'existe plus à
+    # scraper) et reste figé à vie. Mesuré 2026-07-22 : 87% des baselines
+    # "périmées" (>30j) étaient de ces zombies saisonniers, sur des routes
+    # pourtant encore scrapées. Le freshness gate (BASELINE_MAX_AGE_DAYS)
+    # les rejette déjà pour la qualification, donc les supprimer ne change
+    # RIEN au comportement des alertes — ça aligne juste la table sur la
+    # fenêtre glissante que raw_flights applique déjà, et nettoie la
+    # métrique "baselines périmées" du rapport santé.
+    purged_baselines = await _purge_stale_baselines(db)
+    logger.info(f"Purged {purged_baselines} stale baselines older than {BASELINE_MAX_AGE_DAYS}d")
+
+
+async def _purge_stale_baselines(db) -> int:
+    """Delete price_baselines whose calculated_at exceeds
+    BASELINE_MAX_AGE_DAYS. Best-effort: never raises (a purge failure must
+    not take down expire_stale_data). Returns the number of rows deleted.
+
+    price_baselines is small (~5k rows) so a single bounded DELETE on the
+    indexed calculated_at column stays well under the statement timeout —
+    no batching/RPC needed unlike raw_flights."""
+    if not db:
+        return 0
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=BASELINE_MAX_AGE_DAYS)
+    ).isoformat()
+    try:
+        resp = (
+            db.table("price_baselines")
+            .delete()
+            .lt("calculated_at", cutoff)
+            .execute()
+        )
+        return len(resp.data or [])
+    except Exception as e:
+        logger.warning(f"Stale-baseline purge failed (non-fatal): {e}")
+        return 0
 
 
 async def job_daily_digest():
