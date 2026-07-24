@@ -107,7 +107,10 @@ def compute_baselines_by_bucket(
 
     for obs in observations:
         days = obs.get("trip_duration_days") or 0
-        bucket = bucket_for_duration(days)
+        # Same haul-aware ceiling as the qualifier, so the extended bucket
+        # (13-21d long-haul) gets a baseline instead of qualifying against
+        # nothing.
+        bucket = bucket_for_duration(days, obs.get("destination"))
         if not bucket:
             continue
         max_stops = stops_allowed(obs.get("duration_minutes") or 0, obs.get("destination"))

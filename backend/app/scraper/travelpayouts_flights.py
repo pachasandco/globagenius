@@ -10,6 +10,7 @@ from app.config import settings
 from app.scraper.normalizer import normalize_flight
 from app.scraper.travelpayouts import get_prices_for_dates
 from app.analysis.route_selector import is_long_haul, get_priority_destinations
+from app.analysis.buckets import max_stay_days
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +53,9 @@ def _build_aviasales_url(origin: str, destination: str, dep_date: str, ret_date:
 def _normalize_priced_entry(entry: dict) -> dict | None:
     """Map a Travelpayouts prices_for_dates entry to the raw_flights row format.
 
-    Returns None if the entry is unusable: missing dates, zero price, or
-    trip duration outside [1, 12] days."""
+    Returns None if the entry is unusable: missing dates, zero price, or a
+    trip duration outside the accepted window for that destination's haul
+    type (see max_stay_days: 21 days long-haul, 14 otherwise)."""
     departure_at = entry.get("departure_at") or ""
     return_at = entry.get("return_at") or ""
     price = entry.get("price") or 0
@@ -68,8 +70,13 @@ def _normalize_priced_entry(entry: dict) -> dict | None:
     except ValueError:
         return None
 
+    # 2026-07-24: the cap was a flat 12 days, which discarded the cheapest
+    # long-haul round-trips (airlines price 2-3 week stays far lower —
+    # CDG→Tokyo 449€ on 14 days vs 720€ under the old cap). The ceiling is
+    # now haul-aware; the minimum-stay rule is unchanged.
     trip_duration_days = (ret - dep).days
-    if trip_duration_days < 1 or trip_duration_days > 12:
+    max_days = max_stay_days(entry.get("destination_airport") or "")
+    if trip_duration_days < 1 or trip_duration_days > max_days:
         return None
 
     # Only keep flights departing between 1 and 8 months from now

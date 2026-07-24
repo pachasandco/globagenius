@@ -327,7 +327,7 @@ def _fetch_neighbor_prices(flight: dict, bucket: str) -> list[float]:
         rd = (r.get("departure_date") or "")[:10]
         if rd == candidate_day:
             continue  # exclude the candidate's own date
-        if bucket_for_duration(r.get("trip_duration_days") or 0) != bucket:
+        if bucket_for_duration(r.get("trip_duration_days") or 0, flight["destination"]) != bucket:
             continue
         price = r.get("price")
         if price:
@@ -383,9 +383,11 @@ async def _analyze_new_flights(flights: list[dict]):
             counters["rejected_vueling_source"] += 1
             continue
 
-        # Bucket lookup based on trip duration
+        # Bucket lookup based on trip duration. Keyed on destination so
+        # long-haul stays up to 21 days qualify (the flat 12-day cap was
+        # discarding the cheapest long-haul fares — see buckets.max_stay_days).
         days = flight.get("trip_duration_days") or 0
-        bucket = bucket_for_duration(days)
+        bucket = bucket_for_duration(days, flight.get("destination"))
         if not bucket:
             counters["rejected_no_bucket"] += 1
             continue
