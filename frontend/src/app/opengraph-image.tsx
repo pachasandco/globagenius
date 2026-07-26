@@ -73,7 +73,7 @@ export default function OGImage() {
             marginBottom: "40px",
           }}
         >
-          Alertes Telegram temps réel · 8 aéroports français
+          Alertes Telegram temps réel · 10 aéroports français
         </div>
 
         {/* Price examples */}

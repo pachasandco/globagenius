@@ -64,7 +64,13 @@ class Settings:
     MIN_SCORE_DIGEST: int = int(os.getenv("MIN_SCORE_DIGEST", "30"))
     DATA_FRESHNESS_HOURS: int = int(os.getenv("DATA_FRESHNESS_HOURS", "2"))
     MVP_AIRPORTS: list = field(default_factory=lambda: os.getenv(
-        "MVP_AIRPORTS", "CDG,ORY,LYS,MRS,NCE,BOD,NTE,TLS,BVA"
+        # 2026-07-26: BSL (Bâle-Mulhouse) activé en origine utilisateur.
+        # Il était en PASSIVE_ORIGINS le temps de mûrir ; baselines OK
+        # (78 fraîches <=21j, ~1150 A/R scrapés, 34 destinations). BSL est
+        # le code retenu (historique mûr + meilleurs prix) ; MLH/EAP
+        # restent passifs — mêmes vols, codes IATA alternatifs du même
+        # aéroport tri-national.
+        "MVP_AIRPORTS", "CDG,ORY,LYS,MRS,NCE,BOD,NTE,TLS,BVA,BSL"
     ).split(","))
     # Origins scraped for *future* expansion. Rows from these origins are
     # written to raw_flights with passive=true so the alert dispatcher
@@ -76,11 +82,12 @@ class Settings:
         o for o in os.getenv(
             "PASSIVE_ORIGINS",
             # BSL/MLH/EAP are three IATA codes for the same tri-national
-            # airport (Bâle-Mulhouse-Freiburg). We track all three because
-            # different OTAs publish fares under different codes; once
-            # baselines are mature (~4 weeks), we'll flip them to MVP and
-            # accept BSL as a user-selectable origin.
-            "BRU,GVA,ZRH,BSL,MLH,EAP",
+            # airport (Bâle-Mulhouse-Freiburg). 2026-07-26: BSL matured and
+            # was promoted to MVP_AIRPORTS (user-selectable origin). MLH/EAP
+            # stay passive — they are alternate codes for the same flights,
+            # kept only to widen OTA coverage of the baseline; the
+            # dispatcher never reads them so a user only ever sees BSL.
+            "BRU,GVA,ZRH,MLH,EAP",
         ).split(",") if o.strip()
     ])
     ADMIN_EMAILS: list = field(default_factory=lambda: [

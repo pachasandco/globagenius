@@ -16,6 +16,7 @@ const AIRPORTS = [
   { code: "NTE", label: "Nantes Atlantique" },
   { code: "TLS", label: "Toulouse Blagnac" },
   { code: "BVA", label: "Paris Beauvais" },
+  { code: "BSL", label: "Bâle-Mulhouse" },
 ];
 
 const OFFER_TYPES = [

@@ -133,7 +133,7 @@ export default function MethodologiePage() {
             Avant d&apos;envoyer une alerte, on fait passer chaque deal candidat par un système de vérification à deux niveaux.
           </p>
           <p className="text-[var(--color-ink)]/85 leading-relaxed mb-4">
-            <strong>Niveau 1 — Détection initiale.</strong> Notre moteur surveille en continu les prix des vols au départ des 9 aéroports français. Quand un prix tombe significativement sous notre baseline, on le marque comme « candidat deal ».
+            <strong>Niveau 1 — Détection initiale.</strong> Notre moteur surveille en continu les prix des vols au départ des 10 aéroports français. Quand un prix tombe significativement sous notre baseline, on le marque comme « candidat deal ».
           </p>
           <p className="text-[var(--color-ink)]/85 leading-relaxed mb-4">
             <strong>Niveau 2 — Re-vérification croisée.</strong> Avant l&apos;envoi, on interroge une deuxième source pour confirmer la disponibilité réelle du tarif. Si l&apos;écart entre les deux sources dépasse un seuil de tolérance, le deal est rejeté ou mis en quarantaine pour observation.
