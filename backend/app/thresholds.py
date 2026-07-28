@@ -24,12 +24,49 @@ Python keeps the code grep-able and stack traces readable.
 # this constant only governs the premium pipeline.)
 GLOBAL_MIN_DISCOUNT_PCT = 40
 
+# Long-haul push floor (2026-06-13). Long-haul fares move on tight
+# yield management, so genuine −40% errors are rare (≈ a handful/month).
+# But the EUR saving dwarfs short-haul: −30% on a 427€ CDG→New York is
+# ~180€ off, far more actionable than −40% on a 50€ BVA→Lisbonne. So
+# long-haul (is_long_haul(destination)) pushes at a lower bar. Applied
+# at DISPATCH only and as a FLOOR override: a premium user who
+# explicitly picked a higher min_discount keeps it (we never push them
+# something below THEIR chosen bar) — this only lowers the default 40.
+# Founder decision: 30%.
+LONG_HAUL_MIN_DISCOUNT_PCT = 30
+
+# ─── BVA Europe floor (2026-06-09; validated by the 48h audit of
+# 2026-06-12: no user exceeded 6 messages/day over 5 days, so no
+# further tightening is needed) ───────────────────────────────────────
+# Beauvais is a Ryanair hub: 25-40€ A/R on BVA→Med (LIS/BCN/AGP/NAP)
+# is the NORMAL price there, not a deal, and BVA produces the densest
+# (and noisiest) qualified-deal flow of all origins. Short-haul alerts
+# from BVA therefore need a higher bar than the global 40% floor.
+# Applied at DISPATCH time only (Telegram push) — the deal stays in
+# qualified_items and visible on /home, consistent with how L1/L2/L3
+# treat blocked deals. Other origins (LYS, MRS, BOD, NTE, TLS, CDG,
+# ORY) keep GLOBAL_MIN_DISCOUNT_PCT — their deal flow is thinner.
+# Long-haul from BVA (rare) is NOT tightened.
+BVA_EUROPE_MIN_DISCOUNT_PCT = 50
+
+# Pépite price bar for BVA short-haul. The generic pépite override
+# (≤30€ A/R) would bypass the floor above on virtually every Ryanair
+# sale fare — 25-30€ is Beauvais's everyday price floor, not a "wow".
+# A true BVA pépite must be ≤15€ A/R (or clear the generic ≥75%
+# discount bar, which still applies unchanged).
+BVA_PEPITE_PRICE_THRESHOLD_EUR = 15.0
+
 # ─── V9 Free tier policy ───
 #
 # Free users always get one A/R per day in the [20%, 40%) band — the
 # product's "regular value" proof. They additionally get one A/R at
 # >=40% per week — the "wow" proof.
-# No one-way, no split-ticket combos, no teasers, no quota beyond these.
+# No FULL one-way / split-ticket combos, no quota beyond these.
+# (Additive since the locked-teaser feature: free users ALSO get a
+#  blurred, non-actionable teaser of EXCEPTIONAL premium deals — see
+#  LONG_HAUL_TEASER_MIN_DISCOUNT_PCT / ONEWAY_TEASER_MAX_PRICE_EUR below.
+#  That lane is teaser-only and never gives away destination/dates/link,
+#  so it does not change the bands above.)
 FREE_TIER_DAILY_BAND_MIN_PCT = 20      # inclusive
 FREE_TIER_DAILY_BAND_MAX_PCT = 40      # exclusive
 FREE_TIER_WEEKLY_BIG_MIN_PCT = 40      # inclusive — the "≥40% once a week" lane
@@ -61,8 +98,38 @@ PREMIUM_DEFAULT_MIN_DISCOUNT = 40
 # seasonal sub-buckets (route × month × lead-time) to qualify deals.
 MIN_BASELINE_SAMPLE_COUNT = 5
 
+# Price-history window (days) — SINGLE SOURCE OF TRUTH for both the
+# baseline recalc window AND the raw_flights retention. They MUST match:
+# the recalc reads this many days back, so retention must keep at least
+# that many days or the far end of the window is empty.
+#
+# 2026-07-05: 30 → 60 days. One-way now makes up ~80% of scraped volume
+# and carries no trip_duration_days, so it's excluded from the A/R
+# baseline corpus — leaving only ~190 A/R observations/day spread across
+# hundreds of buckets. At 30 days many secondary A/R buckets never
+# reached MIN_BASELINE_SAMPLE_COUNT of FRESH observations, so their
+# baseline froze and the maturity % kept falling (36% → 25%). Doubling
+# the window doubles the A/R observations per bucket, letting secondary
+# routes mature. Cost: raw_flights roughly doubles (~2M rows); the
+# batched purge (migration 057) handles that volume.
+PRICE_HISTORY_WINDOW_DAYS = 60
 
-# ─── Dedup (Telegram alerts) ───
+
+# ─── Dispatch stay-length floor ───
+
+# Minimum nights for a round-trip to be PUSHED (Telegram).
+# PRODUCT RULE (founder, 2026-06-12, non-negotiable): trips under 4
+# nights must NOT alert — short-stay fares are so frequent that pushing
+# them would flood users. Deals under the floor still qualify and stay
+# visible on /home; only the push is suppressed, and the drop is
+# counted as `min_stay` in the dispatch summary line so the volume
+# discarded by this rule stays measurable.
+# History: this was a hardcoded `4` buried in the dispatcher since
+# 2026-04-20 with no log/counter — the 2026-06-12 "ghost deal" audit
+# spent hours rediscovering it. Centralised + counted that day; the
+# threshold itself was briefly lowered to 2 and immediately reverted
+# to 4 on founder decision.
+MIN_STAY_NIGHTS = 4
 
 # How long after sending an alert we suppress re-alerts for the same
 # (user, dest, dep_date, ret_date, price_bucket). 7 days = the natural
@@ -90,11 +157,81 @@ SPLIT_MIN_STAY_DAYS = 4
 SPLIT_MAX_STAY_DAYS = 30
 
 
+# ─── Stopover chain qualification (phase 1, 2026-06-09) ───
+
+# PAUSED 2026-07-06 (founder decision). A manual test of the flagship
+# pairs — including scraping the long-haul return legs the pipeline
+# doesn't normally cover — showed the economics don't work: the best
+# case (CDG→Madrid→Bogotá, all three legs cheapest) totalled 971€ of
+# separate tickets vs a 731€ direct round-trip baseline — i.e. +32%,
+# not the −30% required. Assembling 3 tickets breaks the airline's
+# direct-route optimisation, so the total almost always EXCEEDS the
+# direct A/R. The concept only wins on rare, unrepeatable alignments
+# (a segment on a flash sale + cheap other legs + matching dates), a
+# few times a year — not worth the permanent connector-scrape cost.
+# The code stays intact; flip this to True (+ curate low-cost hubs) to
+# re-enable. Both the connector scrape and the detection are gated on it.
+STOPOVER_ENABLED = False
+
+# A stopover chain is 3 one-way tickets: origin → hub (a few days),
+# hub → final destination, destination → origin. Compared against the
+# round-trip baseline for origin → destination DIRECT. The bar is lower
+# than the split-ticket 40%/100€ on purpose: the chain includes a bonus
+# second destination, so "cheaper than the direct A/R at all" is already
+# a strong story — 30% under the direct baseline is a clear win.
+STOPOVER_SAVINGS_RATIO_FLOOR = 0.30
+STOPOVER_SAVINGS_EUR_FLOOR = 80.0
+
+# Stay-shape constraints. The hub visit must be a real city stop
+# (2-5 days, not an airport transfer) and the whole trip must stay
+# comparable to the round-trip baseline cell it's measured against.
+STOPOVER_MIN_HUB_DAYS = 2
+STOPOVER_MAX_HUB_DAYS = 5
+STOPOVER_MIN_DEST_DAYS = 3
+STOPOVER_MAX_TOTAL_DAYS = 30
+
+
 # ─── One-way qualification (V5+ option C, pre-baseline) ───
 
 # Until we have a mature one-way baseline (~4-6 weeks of data), we
 # qualify one-way deals on raw discount vs the median price for the
 # same (origin, destination, direction) over the last N days.
+# NB: intentionally kept at 30d even though PRICE_HISTORY_WINDOW_DAYS
+# went to 60 (2026-07-05). One-way is ~80% of scrape volume, so its
+# median has plenty of observations at 30d; a shorter window keeps it
+# more reactive to recent price moves. The 60d window fixed the A/R
+# baseline starvation, a problem one-way doesn't have.
 ONEWAY_DISCOUNT_PCT_FLOOR = 60
 ONEWAY_MEDIAN_LOOKBACK_DAYS = 30
 ONEWAY_MIN_OBSERVATIONS = 5
+
+# ─── One-way Telegram push gate (2026-06-07) ───
+#
+# A one-way fare only solves a problem when the user already needs to
+# be in city X on date Y. For a generic user without that constraint,
+# a one-way alert is noise — they can't act on it. Product call: we
+# qualify every one-way deal (so it appears on /home and feeds
+# analytics), but we ONLY push a Telegram notification when it's
+# striking enough to function as an impulse-buy "wow" — a true price
+# anomaly someone might book just because it exists.
+#
+# A one-way Telegram push fires iff:
+#   - absolute price ≤ ONEWAY_PUSH_WOW_PRICE_EUR (20€), OR
+#   - discount ≥ ONEWAY_PUSH_WOW_DISCOUNT_PCT (80%)
+#
+# Note: these are stricter than the L1/L2/L3 pépite thresholds
+# (≤30€ OR ≥75%) on purpose — round-trip pépites still ride the
+# qualifier-default rules, one-way pépites need to clear a higher bar
+# because the user-action friction is much higher.
+ONEWAY_PUSH_WOW_PRICE_EUR = 20.0
+ONEWAY_PUSH_WOW_DISCOUNT_PCT = 80.0
+
+# ── Locked teaser (FREE-tier blurred teaser of EXCEPTIONAL premium deals) ──
+# A free user gets a blurred teaser (type + % + coarse price, no
+# destination/dates/link) only for deals rare enough that the rarity itself
+# is the frequency throttle:
+#   - long-haul round-trip with discount ≥ LONG_HAUL_TEASER_MIN_DISCOUNT_PCT
+#   - one-way with price ≤ ONEWAY_TEASER_MAX_PRICE_EUR
+#   - any qualified split-ticket combo (already exceptional by construction)
+LONG_HAUL_TEASER_MIN_DISCOUNT_PCT = 30
+ONEWAY_TEASER_MAX_PRICE_EUR = 20.0

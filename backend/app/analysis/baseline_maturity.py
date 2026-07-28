@@ -51,7 +51,7 @@ def _fetch_baselines() -> list[dict]:
     while True:
         chunk = (
             db.table("price_baselines")
-            .select("route_key,sample_count,avg_price,std_dev")
+            .select("route_key,sample_count,avg_price,std_dev,calculated_at")
             .range(offset, offset + 999)
             .execute()
         )
@@ -64,27 +64,68 @@ def _fetch_baselines() -> list[dict]:
 
 
 def _fetch_samples_by_route() -> tuple[dict[tuple[str, str], int], set[str]]:
-    """Single grouped query: how many raw_flights per (origin, dest)
-    in the last 7 days. Returns the map and the set of distinct
-    origins seen (used for wildcard expansion in baseline_clusters)."""
+    """Per-(origin, destination) row count over the last 7 days, plus
+    the set of distinct origins (used for wildcard expansion in
+    baseline_clusters).
+
+    Primary path: the raw_flights_samples_by_route Postgres RPC pushes
+    the GROUP BY down to the DB and returns a few hundred aggregated
+    rows. Fallback (RPC not deployed yet OR transient failure): the
+    legacy paginated PostgREST scan — slow on large tables but keeps
+    the report producing something rather than crashing the cron.
+    """
     if not db:
         return {}, set()
-    # supabase-py doesn't expose GROUP BY directly; rely on the REST
-    # default and aggregate in Python. Paginate to be safe.
-    samples: dict[tuple[str, str], int] = {}
-    origins: set[str] = set()
-    offset = 0
     seven_days_ago_iso = (
         datetime.now(timezone.utc) - timedelta(days=7)
     ).isoformat()
-    while True:
-        chunk = (
-            db.table("raw_flights")
-            .select("origin,destination")
-            .gte("scraped_at", seven_days_ago_iso)
-            .range(offset, offset + 999)
+
+    # --- Primary: RPC aggregation ---
+    try:
+        rows = (
+            db.rpc("raw_flights_samples_by_route", {"since_ts": seven_days_ago_iso})
             .execute()
+            .data
+            or []
         )
+        samples: dict[tuple[str, str], int] = {}
+        origins: set[str] = set()
+        for r in rows:
+            o, d, n = r.get("origin"), r.get("destination"), int(r.get("n") or 0)
+            if not o or not d:
+                continue
+            origins.add(o)
+            samples[(o, d)] = n
+        if samples or origins:
+            return samples, origins
+        # Empty result from RPC = no data, return empty rather than fall
+        # through to the legacy scan (which would also return empty).
+        return {}, set()
+    except Exception as e:
+        logger.warning(
+            "raw_flights_samples_by_route RPC unavailable, falling back to paginated scan: %s",
+            e,
+        )
+
+    # --- Fallback: paginated PostgREST scan (slow, may timeout) ---
+    samples = {}
+    origins = set()
+    offset = 0
+    while True:
+        try:
+            chunk = (
+                db.table("raw_flights")
+                .select("origin,destination")
+                .gte("scraped_at", seven_days_ago_iso)
+                .range(offset, offset + 999)
+                .execute()
+            )
+        except Exception as e:
+            logger.warning(
+                "baseline_maturity: paginated fallback aborted at offset %s: %s",
+                offset, e,
+            )
+            break
         page = chunk.data or []
         for r in page:
             o, d = r.get("origin"), r.get("destination")

@@ -221,6 +221,10 @@ class PreferencesRequest(BaseModel):
     blocked_destinations: list[str] = []
     flight_trip_types: list[str] = ["round_trip"]
     include_split_tickets: bool = False
+    # Long-haul with one stopover (correspondance). Opt-out: default true.
+    # Europe/short-haul is always direct regardless of this flag — the
+    # scheduler only gates long-haul stopover deals on it.
+    accept_longhaul_stopover: bool = True
     # V9: premium-only discount floor preference. Validated to a small set
     # so we never store odd values (e.g. 35) that the dispatch logic doesn't
     # support. Free users may keep any historical value — it has no effect.
@@ -344,11 +348,13 @@ def history_stats(request: Request):
     if not db:
         return {"error": "no db"}
 
-    total_flights = db.table("raw_flights").select("id", count="exact").execute()
+    # Estimated counts on the big tables — a full-table exact count on
+    # raw_flights (~7M rows) far exceeds the 8s statement timeout.
+    total_flights = db.table("raw_flights").select("id", count="estimated").limit(1).execute()
     total_hotels = db.table("raw_accommodations").select("id", count="exact").execute()
     total_baselines = db.table("price_baselines").select("id", count="exact").execute()
     total_packages = db.table("packages").select("id", count="exact").execute()
-    total_qualified = db.table("qualified_items").select("id", count="exact").execute()
+    total_qualified = db.table("qualified_items").select("id", count="estimated").limit(1).execute()
 
     # Distinct routes
     routes = db.table("raw_flights").select("origin, destination").execute()
@@ -390,48 +396,8 @@ def price_history(request: Request, origin: str = "", destination: str = "", lim
     return {"prices": resp.data or [], "count": len(resp.data or [])}
 
 
-@router.get("/api/debug/data")
-def debug_data(request: Request):
-    """Debug endpoint: show sample data from each table. Admin only."""
-    _require_admin(request)
-    if not db:
-        return {"error": "no db"}
-
-    try:
-        flights = db.table("raw_flights").select("origin, destination, departure_date, return_date, price, source").order("scraped_at", desc=True).limit(5).execute()
-        baselines = db.table("price_baselines").select("route_key, type, avg_price, std_dev, sample_count").limit(10).execute()
-
-        # Check if any flight prices are below baseline
-        diagnosis = []
-        for f in (flights.data or []):
-            route_key_1m = f"{f['origin']}-{f['destination']}-1m"
-            route_key_3m = f"{f['origin']}-{f['destination']}-3m"
-            bl = db.table("price_baselines").select("*").eq("route_key", route_key_1m).execute()
-            if not bl.data:
-                bl = db.table("price_baselines").select("*").eq("route_key", route_key_3m).execute()
-            if bl.data:
-                avg = bl.data[0]["avg_price"]
-                std = bl.data[0]["std_dev"]
-                price = f["price"]
-                discount = round((avg - price) / avg * 100, 1) if avg > 0 else 0
-                z = round((avg - price) / std, 2) if std > 0 else 0
-                diagnosis.append({
-                    "route": f"{f['origin']}→{f['destination']}",
-                    "price": price,
-                    "baseline_avg": avg,
-                    "baseline_std": std,
-                    "discount_pct": discount,
-                    "z_score": z,
-                    "would_qualify": discount >= 20 and z >= 1.0,
-                })
-
-        return {
-            "flights_sample": flights.data or [],
-            "baselines_sample": baselines.data or [],
-            "price_diagnosis": diagnosis,
-        }
-    except Exception as e:
-        return {"error": str(e)}
+# /api/debug/data : retiré 2026-07-14 (endpoint de debug beta — il
+# référençait en plus les formats de route_key morts "-1m"/"-3m").
 
 
 from app.thresholds import (
@@ -813,6 +779,10 @@ async def signup(req: SignupRequest, request: Request, bg_tasks: BackgroundTasks
             "user_id": user_id,
             "airport_codes": ["CDG"],
             "offer_types": ["package", "flight", "accommodation"],
+            # 2026-06-07: ship new signups with BOTH trip types enabled.
+            # The legacy default of ["round_trip"] silently locked 84%
+            # of founders out of every one-way pépite (audit 2026-06-07).
+            "flight_trip_types": ["round_trip", "one_way"],
         }).execute(),
     )
 
@@ -1033,6 +1003,10 @@ def get_preferences(user_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Preferences not found")
 
     out = dict(prefs.data[0])
+    # Opt-out preference: default true if the column is absent/null so the
+    # frontend toggle renders ON for legacy rows written before migration 059.
+    if out.get("accept_longhaul_stopover") is None:
+        out["accept_longhaul_stopover"] = True
     # Surface the OG badge so the profile page can render it + a share
     # button. Best-effort: a failure here must not break preferences load.
     try:
@@ -1082,6 +1056,7 @@ def update_preferences(user_id: str, req: PreferencesRequest, user: dict = Depen
         "blocked_destinations": req.blocked_destinations,
         "flight_trip_types": req.flight_trip_types,
         "include_split_tickets": req.include_split_tickets,
+        "accept_longhaul_stopover": req.accept_longhaul_stopover,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     # V9: only persist min_discount when premium AND a value is supplied.
@@ -1712,44 +1687,8 @@ class AdminBadgeRequest(BaseModel):
     display_name: str | None = None
 
 
-class AdminTestWelcomeEmailRequest(BaseModel):
-    email: str
-
-
-@router.post("/api/admin/email/test-welcome")
-async def admin_test_welcome_email(req: AdminTestWelcomeEmailRequest, request: Request):
-    """Re-send the welcome email to an arbitrary address. Useful for verifying
-    the Brevo template configuration after a deploy, or for resending the
-    welcome to early users who got an older version."""
-    _require_admin(request)
-    try:
-        await _send_welcome_email(req.email)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Send failed: {e}")
-    return {
-        "status": "sent",
-        "to": req.email,
-        "transport": "brevo_template" if (settings.BREVO_API_KEY and settings.BREVO_WELCOME_TEMPLATE_ID) else "smtp_fallback",
-        "brevo_template_id": settings.BREVO_WELCOME_TEMPLATE_ID,
-    }
-
-
-@router.post("/api/admin/email/probe-template")
-async def admin_probe_template(request: Request, template_id: int, to: str):
-    """Send a Brevo template to `to` via the exact transactional payload the
-    onboarding job uses, and return Brevo's raw HTTP status + body. Diagnoses
-    why a specific template is rejected (e.g. #12 returning 400)."""
-    _require_admin(request)
-    import httpx as _httpx
-    payload = {"to": [{"email": to}], "templateId": template_id}
-    headers = {
-        "api-key": settings.BREVO_API_KEY,
-        "accept": "application/json",
-        "content-type": "application/json",
-    }
-    async with _httpx.AsyncClient(timeout=10.0) as c:
-        r = await c.post("https://api.brevo.com/v3/smtp/email", json=payload, headers=headers)
-    return {"status_code": r.status_code, "body": r.text}
+# /api/admin/email/test-welcome + /api/admin/email/probe-template :
+# retirés 2026-07-14 (outils de test Brevo de la beta).
 
 
 @router.get("/api/admin/scrapers/health")
@@ -3115,123 +3054,10 @@ async def admin_broadcast(req: AdminBroadcastRequest, request: Request):
     return {"mode": "send", "recipients": recipient_count, "delivered": delivered, "failed": failed}
 
 
-# ── Survey: inline-button poll sent over Telegram ───────────────────────────
-# Single active campaign for now. The 5 options match the buttons the
-# operator asked for; choice codes A..E are stored in survey_responses.
-SURVEY_KEY = "why_no_click_202605"
-SURVEY_MESSAGE = (
-    "🙏 Petite question rapide pour nous aider à améliorer GlobeGenius.\n\n"
-    "Tu reçois nos alertes vols. Qu'est-ce qui t'a (le plus) empêché de "
-    "cliquer dessus jusqu'ici ? Un seul tap, ça nous aide énormément 👇"
-)
-SURVEY_OPTIONS: list[tuple[str, str]] = [
-    ("A", "⏰ Pas le temps"),
-    ("B", "😐 Pas intéressé par les destinations"),
-    ("C", "💸 Les prix ne m'ont pas semblé intéressants"),
-    ("D", "🤷 Je ne savais pas que c'était utile"),
-    ("E", "✅ J'ai déjà cliqué, si si !"),
-]
-
-
-class AdminSurveyRequest(BaseModel):
-    # "test" → only the admin's own chat (preview the buttons).
-    # "send" → all linked, non-paused users; requires confirm_count.
-    mode: str = "test"
-    confirm_count: int | None = None
-
-
-@router.post("/api/admin/survey/send")
-async def admin_survey_send(req: AdminSurveyRequest, request: Request):
-    """Send the inline-button survey over Telegram.
-
-    Same guard rails as /api/admin/broadcast: admin-only, test mode hits
-    only the admin chat, send mode requires confirm_count == live count.
-    Recipients = users with a linked Telegram and not currently paused.
-    """
-    _require_admin(request)
-    if not db:
-        raise HTTPException(status_code=503, detail="Database not configured")
-
-    from app.notifications.telegram import send_survey
-    from app.config import settings as _settings
-
-    if req.mode == "test":
-        admin_chat = _settings.TELEGRAM_ADMIN_CHAT_ID
-        if not admin_chat:
-            raise HTTPException(status_code=400, detail="TELEGRAM_ADMIN_CHAT_ID non configuré")
-        delivered, failed = await send_survey(
-            SURVEY_MESSAGE, SURVEY_OPTIONS, SURVEY_KEY, [int(admin_chat)]
-        )
-        return {"mode": "test", "recipients": 1, "delivered": delivered, "failed": failed}
-
-    # SEND mode: linked + not paused
-    prefs = (
-        db.table("user_preferences")
-        .select("telegram_chat_id,alerts_paused_until")
-        .not_.is_("telegram_chat_id", "null")
-        .execute()
-        .data
-        or []
-    )
-    chat_ids: list[int] = []
-    for p in prefs:
-        cid = p.get("telegram_chat_id")
-        if not cid:
-            continue
-        paused = p.get("alerts_paused_until")
-        if paused:
-            try:
-                if datetime.fromisoformat(paused.replace("Z", "+00:00")) > datetime.now(timezone.utc):
-                    continue
-            except (ValueError, TypeError):
-                pass
-        chat_ids.append(int(cid))
-
-    recipient_count = len(chat_ids)
-    if req.confirm_count is None or req.confirm_count != recipient_count:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Confirmation requise : {recipient_count} destinataires. "
-                   f"Renvoie avec confirm_count={recipient_count}.",
-        )
-
-    delivered, failed = await send_survey(
-        SURVEY_MESSAGE, SURVEY_OPTIONS, SURVEY_KEY, chat_ids
-    )
-    logger.info(f"[survey] sent to {delivered}/{recipient_count} ({failed} failed)")
-    return {"mode": "send", "recipients": recipient_count, "delivered": delivered, "failed": failed}
-
-
-@router.get("/api/admin/survey/results")
-def admin_survey_results(request: Request):
-    """Aggregated survey results: count per choice + total respondents."""
-    _require_admin(request)
-    if not db:
-        raise HTTPException(status_code=503, detail="Database not configured")
-
-    rows = (
-        db.table("survey_responses")
-        .select("choice")
-        .eq("survey_key", SURVEY_KEY)
-        .execute()
-        .data
-        or []
-    )
-    from collections import Counter
-    counts = Counter(r["choice"] for r in rows if r.get("choice"))
-    label_by_code = dict(SURVEY_OPTIONS)
-    results = [
-        {"choice": code, "label": label, "count": counts.get(code, 0)}
-        for code, label in SURVEY_OPTIONS
-    ]
-    return {
-        "survey_key": SURVEY_KEY,
-        "question": SURVEY_MESSAGE,
-        "total_responses": len(rows),
-        "results": results,
-        # echo any unexpected codes so nothing is silently dropped
-        "unknown": {c: n for c, n in counts.items() if c not in label_by_code},
-    }
+# ── Survey (beta) : décommissionné 2026-07-14 ───────────────────────────────
+# Le sondage inline Telegram "why_no_click_202605" était un outil de la
+# beta. Endpoints /api/admin/survey/send + /results retirés pour la prod.
+# Les 7 réponses restent archivées dans la table survey_responses.
 
 
 @router.get("/api/admin/ctr")
@@ -3480,29 +3306,46 @@ def recent_deals():
                 out.append(m)
         return out
 
+    def _wow_score(c: dict) -> int:
+        """Combined attractiveness signal: pure %discount under-weights
+        floor-price pépites (Split 15€ -85% > Madrid 40€ -74% in user
+        perception, but the second wins on % alone). Add bonuses for
+        striking absolute price floors and for aspirational long-haul."""
+        s = int(c.get("discount_pct") or 0)
+        p = int(c.get("price") or 0)
+        if 0 < p <= 25:
+            s += 40
+        elif 0 < p <= 50:
+            s += 20
+        if c.get("is_long_haul"):
+            s += 15
+        return s
+
     def _build(days: int) -> list[dict]:
         since = (now - timedelta(days=days)).isoformat()
-        # De-dup by destination, keeping the higher discount when a
-        # destination shows up in both sources. We do NOT sort
-        # province-first here: that starved long-haul Paris deals (e.g.
-        # Punta Cana) out of the 12-slot pool. Instead we build a single
-        # discount-ranked pool and, below, ensure both province AND
-        # sent-alert (long-haul) deals are represented.
+        # De-dup by destination, keeping the better "wow" variant when a
+        # destination shows up in both sources or twice with different
+        # prices. Pool then sorted by wow_score so floor-price gems land
+        # at the top.
         best: dict[str, dict] = {}
         for c in _from_qualified(since) + _from_sent_alerts(since):
             d = c["destination"]
-            if d not in best or c["discount_pct"] > best[d]["discount_pct"]:
+            if d not in best or _wow_score(c) > _wow_score(best[d]):
                 best[d] = c
-        return sorted(best.values(), key=lambda x: -x["discount_pct"])
+        return sorted(best.values(), key=lambda x: -_wow_score(x))
 
-    pool = _build(7)
+    # Build over a 30-day window so genuine pépites (Split 15€/-85% from
+    # 3 weeks ago) aren't crowded out by fresh-but-less-impressive deals
+    # from the last 7 days. The wow_score sort below picks the best ones
+    # regardless of recency.
+    pool = _build(30)
     if len(pool) < POOL_SIZE:
         seen = {c["destination"] for c in pool}
-        for c in _build(60):
+        for c in _build(90):
             if c["destination"] not in seen:
                 seen.add(c["destination"])
                 pool.append(c)
-            if len(pool) >= POOL_SIZE * 2:  # build a deeper pool to slice from
+            if len(pool) >= POOL_SIZE * 2:
                 break
 
     # Compose the final 12 with guaranteed variety:
@@ -3513,7 +3356,7 @@ def recent_deals():
     #     ≥1 province among the 3 it displays.
     long_haul = sorted(
         [c for c in pool if c["is_long_haul"]],
-        key=lambda x: -x["discount_pct"],
+        key=lambda x: -_wow_score(x),
     )[:RESERVED_LONGHAUL_SLOTS]
     final: list[dict] = []
     seen_dest: set[str] = set()
@@ -3638,8 +3481,10 @@ def admin_health(request: Request):
         "started_at,type"
     ).order("started_at", desc=True).limit(1).execute()
     last_scrape = scrape_resp.data[0] if scrape_resp.data else None
+    # Estimated count: exact counting on raw_flights (~7M rows) can blow
+    # the 8s statement timeout (57014) — see job_daily_admin_health.
     raw_24h = db.table("raw_flights").select(
-        "id", count="exact"
+        "id", count="estimated"
     ).gte("scraped_at", cutoff_24h).limit(1).execute()
 
     return {
@@ -3671,6 +3516,24 @@ def admin_health(request: Request):
             "raw_flights_24h": raw_24h.count or 0,
         },
     }
+
+
+# ── Beta activation funnel (2026-06-10) ─────────────────────────────────────
+
+
+@router.get("/api/admin/funnel")
+def admin_funnel(request: Request, dormant_days: int = 14):
+    """Segment every signed-up user by activation stage, with the emails
+    of each segment, so relance campaigns can target the actual blocker
+    (not connected / no alerts / never engaged / dormant) instead of
+    blasting everyone with the same message. See app/analysis/beta_funnel.
+    """
+    _require_admin(request)
+    if not db:
+        return {"error": "no db"}
+    from app.analysis.beta_funnel import build_funnel_report
+    dormant_days = max(1, min(dormant_days, 90))
+    return build_funnel_report(db, dormant_days=dormant_days)
 
 
 # ── Admin messages per user (chantier 7, 2026-05-17) ───────────────────────

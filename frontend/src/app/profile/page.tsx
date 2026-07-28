@@ -16,6 +16,7 @@ const AIRPORTS = [
   { code: "NTE", label: "Nantes Atlantique" },
   { code: "TLS", label: "Toulouse Blagnac" },
   { code: "BVA", label: "Paris Beauvais" },
+  { code: "BSL", label: "Bâle-Mulhouse" },
 ];
 
 const OFFER_TYPES = [
@@ -159,6 +160,8 @@ export default function ProfilePage() {
   const [offerTypes, setOfferTypes] = useState<string[]>([]);
   const [flightTripTypes, setFlightTripTypes] = useState<FlightTripType[]>(["round_trip"]);
   const [includeSplitTickets, setIncludeSplitTickets] = useState<boolean>(false);
+  // Long-haul with one stopover. Opt-out: default true.
+  const [acceptLonghaulStopover, setAcceptLonghaulStopover] = useState<boolean>(true);
   const [dealTier, setDealTier] = useState<string>("regular");
   // V9: premium-only discount floor. 40 = "voir tous les bons plans",
   // 50 = "seulement les très bonnes affaires", 60 = "uniquement les
@@ -242,6 +245,9 @@ export default function ProfilePage() {
         }
         if (typeof prefs.include_split_tickets === "boolean") {
           setIncludeSplitTickets(prefs.include_split_tickets);
+        }
+        if (typeof prefs.accept_longhaul_stopover === "boolean") {
+          setAcceptLonghaulStopover(prefs.accept_longhaul_stopover);
         }
         // V9: load min_discount with strict whitelist. Anything outside
         // {40, 50, 60} (e.g. legacy 20/30 from V7) is coerced to 40 so the
@@ -371,6 +377,8 @@ export default function ProfilePage() {
         flight_trip_types: flightTripTypes.length > 0 ? flightTripTypes : ["round_trip"],
         // Combos require A/R tracking — silently disable if user dropped round_trip.
         include_split_tickets: includeSplitTickets && flightTripTypes.includes("round_trip"),
+        // Long-haul with 1 stopover (Europe stays direct regardless).
+        accept_longhaul_stopover: acceptLonghaulStopover,
         // V9: only premium users get the min_discount filter. Sending
         // null for free users keeps the backend from quietly persisting
         // a value that has no effect.
@@ -944,6 +952,29 @@ export default function ProfilePage() {
               </label>
             </div>
           )}
+
+          {/* Long-haul with 1 stopover — Europe stays direct regardless */}
+          <div className="mt-3">
+            <label className="flex items-start gap-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={acceptLonghaulStopover}
+                onChange={(e) => setAcceptLonghaulStopover(e.target.checked)}
+                className="mt-0.5 w-4 h-4 accent-cyan-500 cursor-pointer"
+              />
+              <div className="flex-1">
+                <div className="text-sm font-medium text-[#082B78] group-hover:text-cyan-700 transition-colors">
+                  🌍 Vols long-courrier avec escale
+                </div>
+                <div className="text-xs text-gray-500 mt-0.5">
+                  Recevez aussi les longs-courriers avec 1 escale (ex&nbsp;: Paris→Sydney à -55&nbsp;%).
+                  <span className="block mt-0.5 text-gray-400">
+                    Les vols en Europe restent toujours directs.
+                  </span>
+                </div>
+              </div>
+            </label>
+          </div>
 
           <p className="text-xs text-gray-400 mt-2">
             Au moins un type doit rester sélectionné.

@@ -49,3 +49,45 @@ def test_detect_anomaly_price_higher_than_baseline():
     baseline = {"avg_price": 100.0, "std_dev": 20.0, "sample_count": 15}
     result = detect_anomaly(price=150.0, baseline=baseline)
     assert result is None
+
+
+# ── Filtre de dispersion : creux ponctuel vs prix plancher généralisé ───────
+# Un deal légitime bat ses dates de départ voisines (±3j). Si le prix
+# candidat est ~identique à la médiane de ses voisins, ce n'est pas une
+# opportunité — c'est le prix normal de la période, faussement affiché en
+# -X% à cause d'une baseline historique décalée. Mesuré 2026-07-22 :
+# 12-22% des deals tranchables étaient ces faux plancher.
+
+from app.analysis.anomaly_detector import is_generalized_floor
+
+
+def test_generalized_floor_rejects_when_price_matches_neighbors():
+    # 56€ vs voisins tous à 56€ → plancher généralisé (faux deal)
+    assert is_generalized_floor(56.0, [56.0, 56.0, 55.0, 57.0]) is True
+
+
+def test_generalized_floor_accepts_real_dip():
+    # 16€ vs voisins médiane 25€ → ratio 0.64, vrai creux
+    assert is_generalized_floor(16.0, [24.0, 25.0, 26.0, 25.0]) is False
+
+
+def test_generalized_floor_indecisive_when_too_few_neighbors():
+    # < 3 voisins → on ne tranche pas (ne jamais rejeter faute de données)
+    assert is_generalized_floor(56.0, [56.0, 56.0]) is False
+    assert is_generalized_floor(56.0, []) is False
+
+
+def test_generalized_floor_boundary_ratio():
+    # Ratio exactement au seuil 0.90 → rejeté (>= seuil)
+    # candidat 90 vs médiane 100 → ratio 0.90
+    assert is_generalized_floor(90.0, [100.0, 100.0, 100.0]) is True
+    # candidat 89 vs médiane 100 → ratio 0.89 < 0.90 → vrai deal
+    assert is_generalized_floor(89.0, [100.0, 100.0, 100.0]) is False
+
+
+def test_generalized_floor_custom_thresholds():
+    # Seuil plus strict configurable
+    assert is_generalized_floor(80.0, [100.0, 100.0, 100.0], ratio_threshold=0.75) is True
+    assert is_generalized_floor(80.0, [100.0, 100.0, 100.0], ratio_threshold=0.85) is False
+    # min_neighbors configurable
+    assert is_generalized_floor(100.0, [100.0, 100.0], min_neighbors=2) is True

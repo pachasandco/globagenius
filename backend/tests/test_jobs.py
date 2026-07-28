@@ -1161,3 +1161,56 @@ async def test_jobs_premium_user_receives_30pct_grouped_alert():
         await jobs._analyze_new_flights([flight])
 
     send_grouped_mock.assert_called_once()
+
+
+# ── Purge des baselines périmées (buckets saisonniers orphelins) ────────────
+# Contexte : les baselines sont clées par mois-de-départ + lead-time
+# (ex CDG-DXB-bucket_medium-m06-lt60). Une fois le mois passé, ce bucket
+# n'est plus jamais réécrit par le recalc (le vol n'existe plus à scraper)
+# NI supprimé — price_baselines n'avait aucune purge. Ces zombies gonflent
+# la métrique "périmées" et gardent un potentiel de faux deal. On les
+# supprime sur la même fenêtre que le freshness gate (BASELINE_MAX_AGE_DAYS).
+
+@pytest.mark.asyncio
+async def test_purge_stale_baselines_deletes_older_than_max_age():
+    from app.scheduler import jobs
+
+    captured = {}
+
+    class _DeleteChain:
+        def lt(self, col, val):
+            captured["col"] = col
+            captured["cutoff"] = val
+            return self
+        def execute(self):
+            # Simule 3 lignes supprimées
+            return MagicMock(data=[{"id": "1"}, {"id": "2"}, {"id": "3"}])
+
+    class _Table:
+        def delete(self):
+            return _DeleteChain()
+
+    db_mock = MagicMock()
+    db_mock.table.return_value = _Table()
+
+    deleted = await jobs._purge_stale_baselines(db_mock)
+
+    assert deleted == 3
+    assert captured["col"] == "calculated_at"
+    # Le cutoff doit être ~BASELINE_MAX_AGE_DAYS jours dans le passé
+    from datetime import datetime, timezone, timedelta
+    cutoff_dt = datetime.fromisoformat(captured["cutoff"].replace("Z", "+00:00"))
+    expected = datetime.now(timezone.utc) - timedelta(days=jobs.BASELINE_MAX_AGE_DAYS)
+    assert abs((cutoff_dt - expected).total_seconds()) < 120  # marge 2 min
+
+
+@pytest.mark.asyncio
+async def test_purge_stale_baselines_survives_db_error():
+    from app.scheduler import jobs
+
+    db_mock = MagicMock()
+    db_mock.table.side_effect = Exception("boom")
+
+    # Ne doit jamais lever — la purge est best-effort.
+    deleted = await jobs._purge_stale_baselines(db_mock)
+    assert deleted == 0

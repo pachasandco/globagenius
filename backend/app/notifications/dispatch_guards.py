@@ -6,8 +6,13 @@ Two leviers, applied in order at the per-user × per-destination level
     Levier 1 — same-destination dedup over 7 days
         For each (user_id, destination) pair, suppress the new alert if
         we already pushed one in the last 7 days, UNLESS the new price
-        is below 70% of the previously alerted price (= a real chute
-        that's worth re-pinging the user about).
+        is at least 10% lower than the previously alerted price (= a
+        genuine price improvement that's worth re-pinging the user
+        about). This was tightened from 30% to 10% on 2026-06-07 after
+        a user-data audit showed 17 of 20 missed deals over 24h were
+        legitimate price improvements (-40% to -73%) silently blocked
+        by the 7-day cooldown because the previous threshold required
+        an improbable additional 30% chute on top of the first alert.
 
     Levier 2 — rolling 24h cap of 5 total notifications per user
         At most 3 short-haul + 2 long-haul alerts per user in any 24h
@@ -34,14 +39,128 @@ coverage after 24h (Levier 2) and 7 days (Levier 1).
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
 
 from app.analysis.route_selector import is_long_haul
 
+# ── Volume cap kill-switches (2026-06-07) ──────────────────────────────
+#
+# Audit on real user data: 260 alerts were eligible across 37 users in
+# 24h, only 91 actually went out — 35% coverage. The 169 missed alerts
+# were not duplicates and not low-quality; they were qualified deals
+# that the L2 (5/24h pool) and L3 (3h burst) caps hid silently.
+#
+# Product call: prefer raising the discount floor (a transparent
+# definition of "interesting deal") over silently hiding deals that
+# meet the user's stated criteria. The caps are turned off below.
+# L1 (7-day per-destination cooldown) stays — its job is to prevent
+# re-sending the SAME deal, not to throttle the total flow.
+#
+# Set the env var to "1" to re-enable the cap quickly without a deploy.
+# Flip the default back to True if we ever want them enforced again.
+ENABLE_DAILY_CAP_L2 = os.getenv("ENABLE_DAILY_CAP_L2", "0") == "1"
+ENABLE_BURST_CAP_L3 = os.getenv("ENABLE_BURST_CAP_L3", "0") == "1"
+
+# ── "Pépite" override ───────────────────────────────────────────────────────
+#
+# A deal qualifies as a "pépite" (must-not-miss) when EITHER:
+#   - its price floor is striking in absolute terms (≤ 30€ A/R), or
+#   - the discount is extreme (≥ 75% off the historical median).
+#
+# Pépites bypass L1/L2/L3 because they're exactly the kind of
+# "I would never have spotted this on my own" deal users signed up
+# for. They DO still respect the per-offer 7-day dedup (alert_key
+# already in sent_alerts is never re-sent — that's the bug we fixed
+# on 2026-06-04 with the final sent_alerts re-check).
+
+PEPITE_PRICE_THRESHOLD_EUR = 30.0
+PEPITE_DISCOUNT_THRESHOLD_PCT = 75.0
+
+
+def is_pepite(price: float | None, discount_pct: float | None) -> bool:
+    """True if a deal deserves to bypass the L1/L2/L3 fatigue guards.
+
+    Floor-price OR extreme discount — both signals strongly correlate
+    with "wow" reactions in the feedback data and are the deals users
+    most regret missing."""
+    try:
+        p = float(price or 0)
+        d = float(discount_pct or 0)
+    except (TypeError, ValueError):
+        return False
+    return (p > 0 and p <= PEPITE_PRICE_THRESHOLD_EUR) or d >= PEPITE_DISCOUNT_THRESHOLD_PCT
+
+
+def is_pepite_for_route(
+    origin: str | None,
+    destination: str | None,
+    price: float | None,
+    discount_pct: float | None,
+) -> bool:
+    """Route-aware pépite check (2026-06-09).
+
+    Same as is_pepite() except for BVA short-haul, where the price bar
+    tightens from 30€ to BVA_PEPITE_PRICE_THRESHOLD_EUR (15€): a 25-30€
+    A/R out of Beauvais is Ryanair's everyday price floor, not a pépite,
+    and letting it bypass the BVA Europe dispatch floor would defeat the
+    floor entirely. The ≥75% discount path is unchanged for all routes.
+    """
+    if (origin or "").upper() == "BVA" and not is_long_haul(destination or ""):
+        from app.thresholds import BVA_PEPITE_PRICE_THRESHOLD_EUR
+        try:
+            p = float(price or 0)
+            d = float(discount_pct or 0)
+        except (TypeError, ValueError):
+            return False
+        return (p > 0 and p <= BVA_PEPITE_PRICE_THRESHOLD_EUR) or d >= PEPITE_DISCOUNT_THRESHOLD_PCT
+    return is_pepite(price, discount_pct)
+
+
+# ── BVA Europe dispatch floor (2026-06-09) ─────────────────────────────────
+#
+# Beauvais short-haul needs ≥50% discount to push (vs 40% everywhere
+# else) — see thresholds.py BVA_EUROPE_MIN_DISCOUNT_PCT for the full
+# rationale. Dispatch-time only: blocked deals stay in qualified_items
+# and on /home, exactly like deals blocked by L1/L2/L3.
+
+
+def bva_europe_floor_blocks(
+    *,
+    origin: str | None,
+    destination: str | None,
+    discount_pct: float | None,
+) -> bool:
+    """Return True if the BVA Europe floor says this push should NOT go out.
+
+    Only applies to BVA-origin short-haul. Callers must check the pépite
+    override (is_pepite_for_route) BEFORE this guard — a true BVA pépite
+    (≤15€ or ≥75%) bypasses the floor like it bypasses L1/L2/L3.
+    """
+    if (origin or "").upper() != "BVA":
+        return False
+    if is_long_haul(destination or ""):
+        return False
+    from app.thresholds import BVA_EUROPE_MIN_DISCOUNT_PCT
+    try:
+        d = float(discount_pct or 0)
+    except (TypeError, ValueError):
+        return True  # unparseable discount on the tightened route → block
+    return d < BVA_EUROPE_MIN_DISCOUNT_PCT
+
+
 # ── Levier 1 ────────────────────────────────────────────────────────────────
 
 DESTINATION_COOLDOWN_DAYS = 7
-SIGNIFICANT_DROP_RATIO = 0.70  # new price < 70% of previous alert → override
+# 2026-06-07: was 0.70 (need −30% to override) → 0.90 after a user-data
+# audit showed 17/20 missed deals in 24h were genuine improvements −40%
+# to −73% over their previous alert, silently blocked.
+# 2026-06-09: 0.90 → 0.95. The same audit class shows real improvements
+# in the −5%..−10% band still being swallowed, and the spam pressure
+# this loosening adds is now absorbed at the source by the BVA Europe
+# dispatch floor (see bva_europe_floor_blocks below) rather than by
+# generic throttling. Any improvement ≥ 5% pings the user.
+SIGNIFICANT_DROP_RATIO = 0.95  # new price ≤ 95% of previous alert → override
 
 
 def levier_1_destination_cooldown_blocks(
@@ -51,16 +170,25 @@ def levier_1_destination_cooldown_blocks(
     destination: str,
     new_price: float,
     now: datetime | None = None,
+    alert_types: list[str] | None = None,
 ) -> bool:
     """Return True if levier 1 says this destination should NOT be pushed.
 
     Returns False (= push allowed) when:
       - no alert was sent for (user, destination) in the cooldown window
-      - or the new price is < 70% of the most recent alerted price
-        (significant drop override)
+      - or the new price beats the most recent alerted price by at least
+        the SIGNIFICANT_DROP_RATIO margin (genuine improvement override)
 
     Returns True (= block) when an alert was sent recently and the new
     price isn't a meaningful improvement.
+
+    `alert_types` (2026-06-12): restrict which prior alerts count toward
+    the cooldown. The A/R dispatcher passes ["flight", "split_ticket"]
+    so a one-way alert (a different product at an incomparable price —
+    a 17€ CPH one-way was silently muting a 197€ −40% CPH round-trip)
+    never suppresses a round-trip push. One-way and stopover dispatchers
+    pass None (all history counts) — product call: A/R takes priority,
+    a recent A/R on the destination is reason enough to mute a one-way.
     """
     if not db:
         return False  # fail open — never block on missing DB
@@ -68,16 +196,16 @@ def levier_1_destination_cooldown_blocks(
     cutoff = (now - timedelta(days=DESTINATION_COOLDOWN_DAYS)).isoformat()
 
     try:
-        resp = (
+        query = (
             db.table("sent_alerts")
             .select("price,created_at")
             .eq("user_id", user_id)
             .eq("destination", destination)
             .gte("created_at", cutoff)
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
         )
+        if alert_types:
+            query = query.in_("alert_type", alert_types)
+        resp = query.order("created_at", desc=True).limit(1).execute()
     except Exception:
         # On DB error, fail open: better a duplicate alert than silence.
         return False
@@ -94,9 +222,11 @@ def levier_1_destination_cooldown_blocks(
         # with price populated, the guard becomes effective naturally.
         return False
 
-    if new_price < float(previous_price) * SIGNIFICANT_DROP_RATIO:
-        return False  # significant drop → push allowed
-    return True  # already alerted, no significant drop → block
+    # ≤ (not <) so the boundary case "exactly 10% off" passes — matches
+    # the user-facing wording "at least 10% lower".
+    if new_price <= float(previous_price) * SIGNIFICANT_DROP_RATIO:
+        return False  # genuine improvement → push allowed
+    return True  # already alerted, not enough improvement → block
 
 
 # ── Levier 2 ────────────────────────────────────────────────────────────────
@@ -209,7 +339,14 @@ def levier_2_daily_cap_blocks(
       the cap on an "exceptional discount" rule. Worst case was 6/day,
       not 5. Replaced by a pooled TOTAL_DAILY_CAP=5 with no exception
       slot — the cap now matches the "3+2" the product promises.
+    - 2026-06-07 (kill-switch added): a per-user coverage audit found
+      we were only delivering 35% of eligible deals to active users —
+      the cap was hiding ~169 qualified alerts/24h across the cohort.
+      The cap is OFF by default until we decide whether to raise the
+      discount floor instead. Set ENABLE_DAILY_CAP_L2=1 to re-enable.
     """
+    if not ENABLE_DAILY_CAP_L2:
+        return False  # cap disabled — see kill-switch note at top of file
     if not db:
         return False
 
@@ -217,7 +354,7 @@ def levier_2_daily_cap_blocks(
     cutoff = (now - timedelta(hours=DAILY_CAP_WINDOW_HOURS)).isoformat()
 
     # Only count actual deal alerts in the cap, not system / teaser ones.
-    allowed_alert_types = ["flight", "one_way", "split_ticket"]
+    allowed_alert_types = ["flight", "one_way", "split_ticket", "stopover"]
 
     try:
         resp = (
@@ -364,7 +501,7 @@ def _recent_alert_ts_for_user(
             db.table("sent_alerts")
             .select("created_at")
             .eq("user_id", user_id)
-            .in_("alert_type", ["flight", "one_way", "split_ticket"])
+            .in_("alert_type", ["flight", "one_way", "split_ticket", "stopover"])
             .gte("created_at", cutoff)
             .order("created_at", desc=True)
             .limit(1)
@@ -418,7 +555,14 @@ def levier_3_burst_blocks(
     Note on separation of concerns: L3 only enforces TIMING (burst).
     L2 enforces VOLUME (5/24h pool). The dispatcher applies them in
     order L1 → L3 → L2; passing L3 does NOT guarantee L2 will pass.
+
+    2026-06-07: Turned OFF by default (see ENABLE_BURST_CAP_L3 at top
+    of file). The audit that took down L2 also took down L3 — burst
+    silence was hiding legitimate quick-fire pépites. Re-enable via
+    the ENABLE_BURST_CAP_L3=1 env var if we ever want it back.
     """
+    if not ENABLE_BURST_CAP_L3:
+        return False  # burst guard disabled — see kill-switch note at top
     now = now or datetime.now(timezone.utc)
     db_ts = _recent_alert_ts_for_user(db=db, user_id=user_id, now=now)
     in_run_ts = (pending_in_run_alerts or {}).get(user_id)

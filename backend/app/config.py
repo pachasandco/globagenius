@@ -45,15 +45,9 @@ class Settings:
     # rejected by the transactional API.
     BREVO_RELANCE_TELEGRAM_TEMPLATE_ID: int = int(os.getenv("BREVO_RELANCE_TELEGRAM_TEMPLATE_ID", "8") or 0)
     BREVO_INACTIVITY_TEMPLATE_ID: int = int(os.getenv("BREVO_INACTIVITY_TEMPLATE_ID", "9") or 0)
-    # Feedback nurturing (2026-05-21).
-    # J+7 / J+14 since first alert received, sent only when user has
-    # received >=3 alerts but clicked 0 feedback buttons. Soft tone,
-    # no premium revocation — see /tmp/brevo_t10_*.html for content.
-    # J+15 (since signup) is a separate open-ended feedback ask sent
-    # to every user regardless of clicks.
-    BREVO_FEEDBACK_NURTURE_J7_TEMPLATE_ID: int = int(os.getenv("BREVO_FEEDBACK_NURTURE_J7_TEMPLATE_ID", "10") or 0)
-    BREVO_FEEDBACK_NURTURE_J14_TEMPLATE_ID: int = int(os.getenv("BREVO_FEEDBACK_NURTURE_J14_TEMPLATE_ID", "11") or 0)
-    BREVO_OPEN_FEEDBACK_J15_TEMPLATE_ID: int = int(os.getenv("BREVO_OPEN_FEEDBACK_J15_TEMPLATE_ID", "12") or 0)
+    # 2026-07-14 : templates beta décommissionnés (feedback nurture J+7
+    # id 10, J+14 id 11, feedback ouvert J+15 id 12, lettre de la beta
+    # id 19) — flows retirés de onboarding_emails.py pour la prod.
     # Sent when an admin manually downgrades an inactive founder back to
     # the free tier ("you didn't activate, your Premium is removed, your
     # free account stays"). 0 = template not configured yet → the
@@ -70,7 +64,13 @@ class Settings:
     MIN_SCORE_DIGEST: int = int(os.getenv("MIN_SCORE_DIGEST", "30"))
     DATA_FRESHNESS_HOURS: int = int(os.getenv("DATA_FRESHNESS_HOURS", "2"))
     MVP_AIRPORTS: list = field(default_factory=lambda: os.getenv(
-        "MVP_AIRPORTS", "CDG,ORY,LYS,MRS,NCE,BOD,NTE,TLS,BVA"
+        # 2026-07-26: BSL (Bâle-Mulhouse) activé en origine utilisateur.
+        # Il était en PASSIVE_ORIGINS le temps de mûrir ; baselines OK
+        # (78 fraîches <=21j, ~1150 A/R scrapés, 34 destinations). BSL est
+        # le code retenu (historique mûr + meilleurs prix) ; MLH/EAP
+        # restent passifs — mêmes vols, codes IATA alternatifs du même
+        # aéroport tri-national.
+        "MVP_AIRPORTS", "CDG,ORY,LYS,MRS,NCE,BOD,NTE,TLS,BVA,BSL"
     ).split(","))
     # Origins scraped for *future* expansion. Rows from these origins are
     # written to raw_flights with passive=true so the alert dispatcher
@@ -82,15 +82,32 @@ class Settings:
         o for o in os.getenv(
             "PASSIVE_ORIGINS",
             # BSL/MLH/EAP are three IATA codes for the same tri-national
-            # airport (Bâle-Mulhouse-Freiburg). We track all three because
-            # different OTAs publish fares under different codes; once
-            # baselines are mature (~4 weeks), we'll flip them to MVP and
-            # accept BSL as a user-selectable origin.
-            "BRU,GVA,ZRH,BSL,MLH,EAP",
+            # airport (Bâle-Mulhouse-Freiburg). 2026-07-26: BSL matured and
+            # was promoted to MVP_AIRPORTS (user-selectable origin). MLH/EAP
+            # stay passive — they are alternate codes for the same flights,
+            # kept only to widen OTA coverage of the baseline; the
+            # dispatcher never reads them so a user only ever sees BSL.
+            "BRU,GVA,ZRH,MLH,EAP",
         ).split(",") if o.strip()
     ])
     ADMIN_EMAILS: list = field(default_factory=lambda: [
         e.strip() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()
+    ])
+    # Origins allowed to scrape LONG-HAUL destinations (2026-06-10,
+    # was a hardcoded `origin != "CDG"` in 3 call sites). Historical
+    # rationale ("only French hub with direct transatlantic service")
+    # undersells ORY (French Bee / Corsair / Transat: DOM-TOM, YUL…)
+    # and provincial leisure long-haul. Default keeps the historical
+    # behaviour; activation = env change on Railway, no deploy:
+    #   LONG_HAUL_ORIGINS=CDG,ORY
+    # Each added origin ≈ +15-20 long-haul routes × 12 scrapes/day on
+    # Travelpayouts + matching raw_flights volume — add origins ONE at
+    # a time and watch DB growth. New routes are cold-started by the
+    # *-DEST wildcard baselines (CDG history) and seeded properly by
+    # the daily enrichment job within a few days; the ≥5-samples and
+    # 21-day-freshness gates keep them quiet until then.
+    LONG_HAUL_ORIGINS: list = field(default_factory=lambda: [
+        o.strip().upper() for o in os.getenv("LONG_HAUL_ORIGINS", "CDG").split(",") if o.strip()
     ])
     TRAVELPAYOUTS_MARKER: str = os.getenv("TRAVELPAYOUTS_MARKER", "")
 
@@ -122,6 +139,47 @@ class Settings:
                     f"Missing/insecure required env vars for a production-grade "
                     f"environment (APP_ENV={self.APP_ENV!r}): {', '.join(missing)}"
                 )
+
+
+# ── Stopover phase 1 (2026-06-09, pairs redesigned 2026-06-12) ─────────
+# Curated (hub, final destination) pairs for stopover chains. The hub is
+# a city users want to visit for 2-5 days on the way; the spoke is the
+# final destination.
+#
+# ECONOMICS LESSON (48h audit, 2026-06-12): the original pairs were all
+# ultra-low-cost European routes (BCN+PMI, MAD+Canaries…) chosen for
+# data availability — and produced a structural zero. On those routes
+# the direct A/R is already at the Ryanair price floor (~66€ ORY→PMI):
+# three separate tickets (≥67€) can NEVER undercut it by the 30%/80€
+# qualification bar. A stopover chain only beats the direct A/R where
+# the direct A/R is EXPENSIVE — i.e. long-haul or poorly-served routes
+# — and where the hub has cheap onward capacity (TAP via LIS, LEVEL /
+# Air Europa via MAD, Pegasus via IST).
+#
+# Constraints per pair: the spoke must be in the priority destinations
+# (its inbound spoke→origin legs come from the regular one-way scrape)
+# and a direct A/R baseline origin→spoke must exist — today long-haul
+# baselines only exist from CDG, so provincial chains stay quiet until
+# LONG_HAUL_ORIGINS opens more origins. The stopover_detection funnel
+# counters (no_leg3 / no_baseline) make any starving stage visible.
+# 2026-06-14 (founder decision): the final destination (spoke) must be
+# LONG-HAUL. A stopover only beats the direct A/R when the direct A/R is
+# expensive — that's long-haul by definition. The phase-1 European
+# spokes (PDL/FNC/JTR) were dropped: their connector legs cost scraping
+# budget while their direct A/R is too cheap for a 3-ticket chain to
+# ever undercut by 30%. Every spoke below is in LONG_HAUL_DESTINATIONS;
+# a startup assertion (see below) enforces this so a future edit can't
+# silently re-introduce a short-haul spoke.
+STOPOVER_HUB_PAIRS: list[tuple[str, str]] = [
+    # Transatlantic via Iberia/TAP hubs — cheap legs on LEVEL / TAP.
+    ("MAD", "BOG"),   # Madrid + Bogotá
+    ("MAD", "LIM"),   # Madrid + Lima
+    ("LIS", "GRU"),   # Lisbonne + São Paulo
+    ("LIS", "GIG"),   # Lisbonne + Rio
+    ("LIS", "YUL"),   # Lisbonne + Montréal
+    # Middle East via Istanbul — Pegasus/flydubai onward capacity.
+    ("IST", "DXB"),   # Istanbul + Dubaï
+]
 
 
 IATA_TO_CITY = {

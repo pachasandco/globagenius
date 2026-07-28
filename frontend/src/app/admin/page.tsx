@@ -33,12 +33,6 @@ interface ScrapeLog {
   duration_ms: number;
 }
 
-interface DebugData {
-  flights_sample: Array<{ origin: string; destination: string; departure_date: string; price: number }>;
-  baselines_sample: Array<{ route_key: string; avg_price: number; std_dev: number; sample_count: number }>;
-  price_diagnosis: Array<{ route: string; price: number; baseline_avg: number; discount_pct: number; z_score: number; would_qualify: boolean }>;
-}
-
 interface RouteRow {
   origin: string;
   destination: string;
@@ -118,7 +112,6 @@ export default function AdminPage() {
   const [adminKey, setAdminKey] = useState("");
   const [authenticated, setAuthenticated] = useState(false);
   const [status, setStatus] = useState<{ active_baselines: number; recent_scrapes: ScrapeLog[] } | null>(null);
-  const [debug, setDebug] = useState<DebugData | null>(null);
   const [routes, setRoutes] = useState<RouteRow[] | null>(null);
   const [routeFilter, setRouteFilter] = useState("");
   const [ctr, setCtr] = useState<CtrData | null>(null);
@@ -129,14 +122,6 @@ export default function AdminPage() {
   const [bcStatus, setBcStatus] = useState("");
   const [bcPendingCount, setBcPendingCount] = useState<number | null>(null);
   const [bcSending, setBcSending] = useState(false);
-  // Telegram survey (inline-button poll)
-  const [svStatus, setSvStatus] = useState("");
-  const [svPendingCount, setSvPendingCount] = useState<number | null>(null);
-  const [svSending, setSvSending] = useState(false);
-  const [svResults, setSvResults] = useState<{
-    total_responses: number;
-    results: Array<{ choice: string; label: string; count: number }>;
-  } | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -151,18 +136,14 @@ export default function AdminPage() {
   async function loadData(key: string) {
     setLoading(true);
     try {
-      const [statusRes, debugRes, routesRes, ctrRes, surveyRes] = await Promise.all([
+      const [statusRes, routesRes, ctrRes] = await Promise.all([
         fetch(`${API_URL}/api/status`).then(r => r.json()),
-        fetch(`${API_URL}/api/debug/data`, { headers: { "X-Admin-Key": key } }).then(r => r.json()),
         fetch(`${API_URL}/api/admin/routes`, { headers: { "X-Admin-Key": key } }).then(r => r.json()),
         fetch(`${API_URL}/api/admin/ctr?days=30`, { headers: { "X-Admin-Key": key } }).then(r => r.json()),
-        fetch(`${API_URL}/api/admin/survey/results`, { headers: { "X-Admin-Key": key } }).then(r => r.json()).catch(() => null),
       ]);
       setStatus(statusRes);
-      if (!debugRes.detail) setDebug(debugRes);
       if (routesRes.routes) setRoutes(routesRes.routes);
       if (!ctrRes.detail) setCtr(ctrRes);
-      if (surveyRes && !surveyRes.detail) setSvResults(surveyRes);
     } catch { /* ignore */ }
     setLoading(false);
   }
@@ -232,19 +213,6 @@ export default function AdminPage() {
       );
     }
 
-    if (debug?.baselines_sample?.length) {
-      const rows = debug.baselines_sample.map((b) => [
-        b.route_key,
-        b.avg_price,
-        b.std_dev,
-        b.sample_count,
-      ]);
-      blocks.push(
-        "## Baselines (échantillon)\n" +
-          toCsv(["route_key", "prix_moyen", "ecart_type", "samples"], rows)
-      );
-    }
-
     if (!blocks.length) {
       alert("Aucune donnée chargée à exporter — clique sur Refresh d'abord.");
       return;
@@ -302,49 +270,6 @@ export default function AdminPage() {
       setBcStatus(`Erreur : ${e}`);
     } finally {
       setBcSending(false);
-    }
-  }
-
-  async function loadSurveyResults() {
-    try {
-      const res = await fetch(`${API_URL}/api/admin/survey/results`, {
-        headers: { "X-Admin-Key": adminKey },
-      });
-      if (res.ok) setSvResults(await res.json());
-    } catch { /* ignore */ }
-  }
-
-  async function sendSurvey(mode: "test" | "send", confirmCount?: number) {
-    setSvSending(true);
-    setSvStatus(mode === "test" ? "Envoi du test à toi…" : "Envoi en cours…");
-    try {
-      const res = await fetch(`${API_URL}/api/admin/survey/send`, {
-        method: "POST",
-        headers: { "X-Admin-Key": adminKey, "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, confirm_count: confirmCount ?? null }),
-      });
-      if (res.status === 409) {
-        const body = await res.json().catch(() => ({}));
-        const m = /(\d+)\s+destinataires/.exec(body.detail || "");
-        const n = m ? parseInt(m[1], 10) : null;
-        setSvPendingCount(n);
-        setSvStatus(`⚠️ Confirme l'envoi du sondage à ${n ?? "?"} users.`);
-        setSvSending(false);
-        return;
-      }
-      const data = await res.json();
-      if (!res.ok) {
-        setSvStatus(`Erreur : ${data.detail || res.status}`);
-      } else if (mode === "test") {
-        setSvStatus(`✅ Sondage test envoyé à ton compte (${data.delivered}/1). Vérifie Telegram.`);
-      } else {
-        setSvStatus(`✅ Sondage envoyé : ${data.delivered}/${data.recipients} (${data.failed} échecs).`);
-        setSvPendingCount(null);
-      }
-    } catch (e) {
-      setSvStatus(`Erreur : ${e}`);
-    } finally {
-      setSvSending(false);
     }
   }
 
@@ -509,79 +434,6 @@ export default function AdminPage() {
             )}
           </div>
           {bcStatus && <div className="mt-2 text-xs text-gray-600">{bcStatus}</div>}
-        </div>
-
-        {/* Telegram survey (inline-button poll) */}
-        <div className="bg-white rounded-xl border border-gray-100 p-4 mb-6">
-          <h2 className="font-semibold mb-1">📊 Sondage Telegram</h2>
-          <p className="text-xs text-gray-400 mb-3">
-            Envoie le sondage « qu&apos;est-ce qui t&apos;a empêché de cliquer ? » avec
-            5 boutons. Réponses stockées en DB (1 par user, modifiable). Users en
-            pause exclus. Teste d&apos;abord sur ton compte.
-          </p>
-          <div className="flex flex-wrap gap-2 items-center mb-3">
-            <button
-              onClick={() => sendSurvey("test")}
-              disabled={svSending}
-              className="bg-gray-700 text-white text-sm px-4 py-2 rounded-lg hover:bg-gray-800 disabled:opacity-40"
-            >
-              📩 M&apos;envoyer le test
-            </button>
-            {svPendingCount === null ? (
-              <button
-                onClick={() => sendSurvey("send")}
-                disabled={svSending}
-                className="bg-[#FF6B47] text-white text-sm px-4 py-2 rounded-lg hover:bg-[#E55A38] disabled:opacity-40"
-              >
-                📊 Préparer l&apos;envoi à tous
-              </button>
-            ) : (
-              <button
-                onClick={() => sendSurvey("send", svPendingCount)}
-                disabled={svSending}
-                className="bg-red-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-red-700 disabled:opacity-40"
-              >
-                ✅ Confirmer l&apos;envoi à {svPendingCount} users
-              </button>
-            )}
-            <button
-              onClick={loadSurveyResults}
-              className="text-xs text-gray-500 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50"
-            >
-              ↻ Rafraîchir résultats
-            </button>
-          </div>
-          {svStatus && <div className="mb-3 text-xs text-gray-600">{svStatus}</div>}
-
-          {svResults && (
-            <div className="border-t border-gray-100 pt-3">
-              <div className="text-xs text-gray-400 mb-2">
-                {svResults.total_responses} réponse(s)
-              </div>
-              <div className="space-y-1.5">
-                {svResults.results.map((r) => {
-                  const pct = svResults.total_responses
-                    ? Math.round((r.count / svResults.total_responses) * 100)
-                    : 0;
-                  return (
-                    <div key={r.choice} className="flex items-center gap-2 text-sm">
-                      <span className="w-64 shrink-0 truncate">{r.label}</span>
-                      <div className="flex-1 bg-gray-100 rounded h-4 overflow-hidden">
-                        <div
-                          className="bg-[#FF6B47] h-full"
-                          style={{ width: `${pct}%` }}
-                          aria-hidden="true"
-                        />
-                      </div>
-                      <span className="w-16 shrink-0 text-right tabular-nums text-gray-600">
-                        {r.count} · {pct}%
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Scrape logs */}
@@ -758,50 +610,6 @@ export default function AdminPage() {
             })()
           )}
         </div>
-
-        {/* Debug data */}
-        {debug && (
-          <>
-            {/* Price diagnosis */}
-            <div className="bg-white rounded-xl border border-gray-100 p-4 mb-6">
-              <h2 className="font-semibold mb-3">Diagnostic prix</h2>
-              {debug.price_diagnosis.length === 0 ? (
-                <p className="text-sm text-gray-400">Aucun diagnostic disponible</p>
-              ) : (
-                <div className="space-y-1">
-                  {debug.price_diagnosis.map((p, i) => (
-                    <div key={i} className={`flex items-center gap-3 text-sm py-1 ${p.would_qualify ? "text-green-700" : "text-gray-500"}`}>
-                      <span className="text-lg">{p.would_qualify ? "✅" : "❌"}</span>
-                      <span className="font-medium w-24">{p.route}</span>
-                      <span>{p.price}€</span>
-                      <span className="text-gray-300">vs</span>
-                      <span>{p.baseline_avg}€</span>
-                      <span className={p.discount_pct > 0 ? "text-green-600 font-bold" : "text-red-400"}>
-                        {p.discount_pct > 0 ? "-" : "+"}{Math.abs(p.discount_pct)}%
-                      </span>
-                      <span className="text-xs text-gray-300">z={p.z_score}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Baselines */}
-            <div className="bg-white rounded-xl border border-gray-100 p-4 mb-6">
-              <h2 className="font-semibold mb-3">Baselines ({debug.baselines_sample.length})</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {debug.baselines_sample.map(b => (
-                  <div key={b.route_key} className="bg-gray-50 rounded-lg p-2 text-sm">
-                    <div className="font-medium">{b.route_key}</div>
-                    <div className="text-xs text-gray-400">avg={b.avg_price}€ · std={b.std_dev}€ · n={b.sample_count}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Date matching */}
-          </>
-        )}
 
         {loading && <div className="text-center py-12 text-gray-400">Chargement...</div>}
       </div>

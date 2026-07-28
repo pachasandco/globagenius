@@ -107,7 +107,7 @@ def scrape_oneway_for_airport(origin: str, passive: bool = False) -> list[dict]:
     for dest in destinations:
         if dest == origin:
             continue
-        if is_long_haul(dest) and origin != "CDG":
+        if is_long_haul(dest) and origin not in settings.LONG_HAUL_ORIGINS:
             continue
         try:
             flights = scrape_oneway_for_route(origin, dest)

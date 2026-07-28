@@ -18,6 +18,7 @@ const AIRPORTS = [
   { code: "NTE", label: "Nantes Atlantique" },
   { code: "TLS", label: "Toulouse Blagnac" },
   { code: "BVA", label: "Paris Beauvais" },
+  { code: "BSL", label: "Bâle-Mulhouse" },
 ];
 
 const OFFER_TYPES = [
@@ -30,6 +31,7 @@ export default function OnboardingPage() {
   const [offerTypes, setOfferTypes] = useState<string[]>(["flight"]);
   const [flightTripTypes, setFlightTripTypes] = useState<FlightTripType[]>(["round_trip"]);
   const [includeSplitTickets, setIncludeSplitTickets] = useState<boolean>(false);
+  const [acceptLonghaulStopover, setAcceptLonghaulStopover] = useState<boolean>(true);
   const [dealTier, setDealTier] = useState<string>("regular");
   const [isPremium, setIsPremium] = useState(false);
   const [telegramLink, setTelegramLink] = useState("");
@@ -64,6 +66,9 @@ export default function OnboardingPage() {
         if (typeof prefs.include_split_tickets === "boolean") {
           setIncludeSplitTickets(prefs.include_split_tickets);
         }
+        if (typeof prefs.accept_longhaul_stopover === "boolean") {
+          setAcceptLonghaulStopover(prefs.accept_longhaul_stopover);
+        }
       })
       .catch(() => {
         // First-time user or API error — keep defaults
@@ -96,6 +101,7 @@ export default function OnboardingPage() {
         deal_tier: dealTier,
         flight_trip_types: flightTripTypes.length > 0 ? flightTripTypes : ["round_trip"],
         include_split_tickets: includeSplitTickets && flightTripTypes.includes("round_trip"),
+        accept_longhaul_stopover: acceptLonghaulStopover,
       });
       setStep(3);
     } catch {
@@ -260,6 +266,26 @@ export default function OnboardingPage() {
                   </label>
                 </div>
               )}
+
+              {/* Long-haul with 1 stopover — Europe stays direct regardless */}
+              <div className="mt-3">
+                <label className="flex items-start gap-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={acceptLonghaulStopover}
+                    onChange={(e) => setAcceptLonghaulStopover(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 accent-cyan-500 cursor-pointer"
+                  />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-[#082B78] group-hover:text-cyan-700 transition-colors">
+                      🌍 Vols long-courrier avec escale
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      Recevez aussi les longs-courriers avec 1 escale (ex&nbsp;: Paris→Sydney à -55&nbsp;%). Les vols en Europe restent toujours directs.
+                    </div>
+                  </div>
+                </label>
+              </div>
             </div>
 
             <p className="text-sm font-semibold text-[#082B78] mb-2">Niveau de deal</p>
@@ -322,6 +348,7 @@ export default function OnboardingPage() {
                         deal_tier: dealTier,
                         flight_trip_types: flightTripTypes.length > 0 ? flightTripTypes : ["round_trip"],
                         include_split_tickets: includeSplitTickets && flightTripTypes.includes("round_trip"),
+                        accept_longhaul_stopover: acceptLonghaulStopover,
                       });
                     } catch { /* ignore */ }
                     router.push("/home?upgrade=1");

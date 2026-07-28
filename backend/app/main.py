@@ -90,6 +90,14 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(
                 func, "interval", id=job_id,
                 misfire_grace_time=DEFAULT_MISFIRE_GRACE_SECONDS,
+                # coalesce=True so missed runs during Railway deploys
+                # are caught up at most once when the worker comes back,
+                # rather than silently dropped (the bug that left
+                # update_destinations stale for 9 days). max_instances=1
+                # forbids two copies of the same job overlapping if a
+                # previous run is still finishing.
+                coalesce=True,
+                max_instances=1,
                 **kwargs,
             )
         elif trigger == "cron":
@@ -111,6 +119,9 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(
                 func, "cron", id=job_id,
                 misfire_grace_time=DEFAULT_MISFIRE_GRACE_SECONDS,
+                # See interval branch above — same rationale.
+                coalesce=True,
+                max_instances=1,
                 **cron_kwargs,
             )
 

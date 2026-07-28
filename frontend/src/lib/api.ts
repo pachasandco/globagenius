@@ -93,6 +93,8 @@ export interface UserPreferences {
   blocked_destinations: string[];
   flight_trip_types: FlightTripType[];
   include_split_tickets: boolean;
+  // Long-haul with one stopover. Opt-out preference, default true.
+  accept_longhaul_stopover: boolean;
   // OG founder badge (surfaced by the preferences endpoint so the profile
   // can render the badge + share button). Absent/false for non-OG users.
   badge?: boolean;
@@ -113,6 +115,7 @@ export function updatePreferences(userId: string, prefs: {
   blocked_destinations?: string[];
   flight_trip_types?: FlightTripType[];
   include_split_tickets?: boolean;
+  accept_longhaul_stopover?: boolean;
   // V9: premium-only discount floor (40/50/60). Null or omitted = no
   // change. Free users always pass null — the field has no effect for them.
   min_discount?: number | null;

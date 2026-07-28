@@ -193,21 +193,46 @@ def detect_velocity_drops_bulk(db, flights: list[dict]) -> list[VelocityAlert]:
 
 
 def purge_old_snapshots(db) -> int:
-    """Delete price_snapshots older than 24 hours. Returns count deleted."""
+    """Delete price_snapshots older than 24 hours. Returns count deleted.
+
+    2026-06-16: the single bulk DELETE timed out — price_snapshots holds
+    ~290k rows past the cutoff (velocity detector writes one row per
+    route per tier1 run), and deleting all of them in one statement
+    exceeds the 8s timeout. The failure was caught and swallowed, so the
+    table kept growing unbounded. Now batched by oldest-hour slices,
+    each well under the timeout, looped until the backlog is drained.
+    """
     if not db:
         return 0
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    total = 0
     try:
-        resp = (
-            db.table("price_snapshots")
-            .delete()
-            .lt("captured_at", cutoff)
-            .execute()
-        )
-        count = len(resp.data or [])
-        if count:
-            logger.info(f"Purged {count} old price_snapshots")
-        return count
+        for _ in range(240):  # 240 hour-slices = 10 days of catch-up
+            oldest = (
+                db.table("price_snapshots")
+                .select("captured_at")
+                .lt("captured_at", cutoff)
+                .order("captured_at")
+                .limit(1)
+                .execute()
+                .data
+            )
+            if not oldest:
+                break
+            slice_end = (
+                datetime.fromisoformat(oldest[0]["captured_at"].replace("Z", "+00:00"))
+                + timedelta(hours=1)
+            ).isoformat()
+            resp = (
+                db.table("price_snapshots")
+                .delete()
+                .lt("captured_at", min(slice_end, cutoff))
+                .execute()
+            )
+            total += len(resp.data or [])
+        if total:
+            logger.info(f"Purged {total} old price_snapshots")
+        return total
     except Exception as e:
-        logger.warning(f"purge_old_snapshots failed: {e}")
-        return 0
+        logger.warning(f"purge_old_snapshots failed after {total} rows: {e}")
+        return total
