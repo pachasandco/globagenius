@@ -111,8 +111,6 @@ async def guarded_send_grouped_flight_alerts(
                     logger.info("Freemium weekly regular quota reached for %s", user_id)
                     return False
         except Exception as exc:
-            # Fail closed for free entitlements: an unavailable quota check must
-            # never accidentally unlock unlimited alerts.
             logger.warning("Freemium entitlement check failed for %s: %s", user_id, exc)
             return False
 
@@ -213,7 +211,7 @@ def reconcile_legacy_access() -> dict[str, int]:
 
 
 async def link_account_freemium(chat_id: int, token: str, chat: dict) -> None:
-    """Link Telegram. Non-OG accounts start directly on Freemium."""
+    """Link Telegram. Accounts without valid Premium start on Freemium."""
     bot = _get_bot()
     if not bot or not db:
         return
@@ -252,13 +250,17 @@ async def link_account_freemium(chat_id: int, token: str, chat: dict) -> None:
     ).execute()
 
     if not is_og:
-        # A former trial grant must not survive a reconnect performed between
-        # deployments. Paid Stripe access remains independent in preferences.
         db.table("premium_grants").update(
             {"revoked": True, "revoked_at": datetime.now(timezone.utc).isoformat()}
         ).eq("user_id", user_id).eq("granted_by", "auto_premium_trial").execute()
 
-        # Keep one active departure and round trips only for Freemium.
+    # Recompute after trial revocation: active Stripe subscriptions and manual
+    # grants still resolve as Premium and must retain their full preferences.
+    from app.api.routes import _get_user_tier
+
+    has_valid_premium = is_og or _get_user_tier(user_id) == "premium"
+
+    if not has_valid_premium:
         db.table("user_preferences").update(
             {
                 "airport_codes": [primary_airport],
@@ -282,6 +284,8 @@ async def link_account_freemium(chat_id: int, token: str, chat: dict) -> None:
     name = chat.get("first_name", "")
     if is_og:
         plan_text = "🏅 Ton badge OG maintient ton accès Premium sans limite de durée."
+    elif has_valid_premium:
+        plan_text = "💎 Ton accès Premium est actif avec toutes les alertes sans quota."
     else:
         plan_text = (
             "🆓 Ton compte Freemium comprend 2 alertes complètes par semaine, "
