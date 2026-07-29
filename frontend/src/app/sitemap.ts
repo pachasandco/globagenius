@@ -67,13 +67,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.9,
       changeFrequency: "weekly",
     },
-    // Planificateur IA — page produit importante, manquait dans l'ancien sitemap
-    {
-      url: `${BASE}/planificateur`,
-      lastModified: new Date(),
-      priority: 0.9,
-      changeFrequency: "weekly",
-    },
     ...articleUrls,
     ...destinationUrls,
     // ⚠️ Pages légales (/conditions, /confidentialite, /mentions-legales)
