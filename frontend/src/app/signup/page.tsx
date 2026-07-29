@@ -3,9 +3,10 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { signup } from "@/lib/api";
 import { suggestEmailCorrection } from "@/lib/email-suggestion";
 import { Wordmark } from "../_components/Wordmark";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function SignupPage() {
   const [email, setEmail] = useState("");
@@ -15,6 +16,20 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const emailSuggestion = useMemo(() => suggestEmailCorrection(email), [email]);
+
+  async function createAccount() {
+    const response = await fetch(`${API_URL}/api/auth/signup-public`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(body.detail || "Erreur lors de l’inscription.");
+    }
+    document.cookie = "gg_session=1; path=/; SameSite=Lax; max-age=2592000";
+    return body as { user_id: string; email: string; token: string };
+  }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -31,7 +46,7 @@ export default function SignupPage() {
 
     setLoading(true);
     try {
-      const response = await signup(email, password);
+      const response = await createAccount();
       localStorage.setItem("gg_user_id", response.user_id);
       localStorage.setItem("gg_email", response.email);
       localStorage.setItem("gg_token", response.token);
