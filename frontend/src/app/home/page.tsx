@@ -18,48 +18,62 @@ type Guide = {
   cover_photo: string;
 };
 
+type PlanInfo = {
+  plan: "og" | "premium_trial" | "premium" | "freemium";
+  label: string;
+  is_premium: boolean;
+  is_og: boolean;
+  badge_number: number | null;
+  trial_expires_at: string | null;
+  freemium: {
+    primary_airports: number;
+    regular_alerts_per_week: number;
+    exceptional_alerts_per_month: number;
+    monthly_unlocks: number;
+    unlock_available: boolean;
+    unlock_available_at: string;
+  };
+};
+
+function formatDate(value: string | null) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric" }).format(new Date(value));
+}
+
 export default function HomePage() {
   const [loading, setLoading] = useState(true);
-  const [isPremium, setIsPremium] = useState<boolean | null>(null);
+  const [plan, setPlan] = useState<PlanInfo | null>(null);
   const [guides, setGuides] = useState<Guide[]>([]);
   const [telegramConnected, setTelegramConnected] = useState<boolean | null>(null);
   const router = useRouter();
 
   useEffect(() => {
     const userId = localStorage.getItem("gg_user_id");
-    if (!userId) {
+    const token = localStorage.getItem("gg_token");
+    if (!userId || !token) {
       router.push("/login");
       return;
     }
 
     const cleanup = initSession();
-    const token = localStorage.getItem("gg_token");
+    const headers = { Authorization: `Bearer ${token}` };
 
     Promise.allSettled([
-      token
-        ? fetch(`${API_URL}/api/stripe/status`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }).then((response) => response.json())
-        : Promise.resolve({ is_premium: false }),
+      fetch(`${API_URL}/api/account/plan`, { headers }).then((response) => response.json()),
       fetch(`${API_URL}/api/destinations?limit=50`).then((response) => response.json()),
       getTelegramStatus(userId),
-    ]).then(([premiumResult, guidesResult, telegramResult]) => {
-      if (premiumResult.status === "fulfilled") {
-        setIsPremium(Boolean(premiumResult.value?.is_premium));
-      } else {
-        setIsPremium(false);
+    ]).then(([planResult, guidesResult, telegramResult]) => {
+      if (planResult.status === "fulfilled" && planResult.value?.plan) {
+        setPlan(planResult.value);
       }
-
       if (guidesResult.status === "fulfilled") {
         setGuides(guidesResult.value?.items || []);
       }
-
       if (telegramResult.status === "fulfilled") {
         setTelegramConnected(Boolean(telegramResult.value?.connected));
       } else {
         setTelegramConnected(false);
       }
-
       setLoading(false);
     });
 
@@ -82,9 +96,8 @@ export default function HomePage() {
         <div className="mx-auto flex h-20 max-w-6xl items-center justify-between px-4 md:px-5">
           <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-[19px] leading-none"><Wordmark /></Link>
           <div className="flex items-center gap-3">
-            <span className="hidden text-sm text-slate-400 md:block">
-              {isPremium === true ? "Premium" : isPremium === false ? "Compte gratuit" : ""}
-            </span>
+            <span className="hidden text-sm text-slate-400 md:block">{plan?.label || ""}</span>
+            <Link href="/deals" className="text-sm text-slate-500 transition-colors hover:text-[#0E7490]">Mes deals</Link>
             <Link href="/profile" className="text-sm text-slate-500 transition-colors hover:text-[#0E7490]">Profil</Link>
             <button onClick={handleLogout} className="text-sm text-slate-500 transition-colors hover:text-red-500">Déconnexion</button>
           </div>
@@ -96,7 +109,7 @@ export default function HomePage() {
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0E7490]">Votre espace GlobeGenius</p>
           <h1 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl md:text-4xl">Vos alertes vivent sur Telegram.</h1>
           <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
-            Le site sert à configurer vos préférences et consulter les guides. Les nouveaux deals sont envoyés directement dans le chat pour éviter de vous faire surveiller une page supplémentaire.
+            Configurez vos préférences ici, consultez les opportunités détectées et recevez les alertes actionnables directement dans le chat.
           </p>
         </div>
 
@@ -119,9 +132,9 @@ export default function HomePage() {
           ) : (
             <section className="mb-6 rounded-3xl border border-[#FF7A59]/30 bg-[#FFF0EA] p-6 md:flex md:items-center md:justify-between md:gap-6">
               <div>
-                <h2 className="font-bold text-[#0B2A3F]">Connectez Telegram pour recevoir les deals</h2>
+                <h2 className="font-bold text-[#0B2A3F]">Connectez Telegram pour démarrer Premium Découverte</h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Sans connexion Telegram, aucune alerte ne peut être envoyée. L’activation prend généralement moins d’une minute.
+                  La connexion active 7 jours de Premium sans carte bancaire. Vous recevrez ensuite automatiquement la formule Freemium si vous n’êtes pas membre OG.
                 </p>
               </div>
               <Link href="/onboarding" className="mt-5 inline-flex w-full justify-center rounded-xl bg-[#FF7A59] px-5 py-3 text-sm font-bold text-white hover:bg-[#E96543] md:mt-0 md:w-auto">
@@ -131,24 +144,64 @@ export default function HomePage() {
           )
         )}
 
-        {isPremium === false && (
-          <section className="mb-8 grid gap-6 rounded-[32px] bg-[#0B2A3F] p-7 text-white md:grid-cols-[1fr_auto] md:items-center md:p-9">
+        {plan?.plan === "premium_trial" && (
+          <section className="mb-8 rounded-[32px] border border-[#2AB7A9]/30 bg-white p-7 md:flex md:items-center md:justify-between md:gap-8 md:p-9">
             <div>
-              <div className="text-xs font-bold uppercase tracking-[0.18em] text-[#52C9BE]">Premium · ouverture prochaine</div>
-              <h2 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl">49 € par an, soit 4,08 € par mois.</h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/65">
-                Un seul bon deal peut rentabiliser plusieurs années d’abonnement : 100 € économisés représentent plus de deux années, et 150 € plus de trois. L’économie réelle dépend du billet finalement réservé.
+              <div className="text-xs font-bold uppercase tracking-[0.18em] text-[#168F73]">Premium Découverte actif</div>
+              <h2 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl">Toutes les alertes sont ouvertes pendant 7 jours.</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
+                Tous les aéroports sélectionnés, allers simples, combos et deals long-courriers sont accessibles sans quota jusqu’au {formatDate(plan.trial_expires_at)}.
               </p>
-              <p className="mt-3 text-xs text-white/45">Stripe sera configuré ultérieurement. Aucun paiement et aucune carte bancaire ne sont demandés aujourd’hui.</p>
             </div>
-            <div className="rounded-2xl border border-white/15 bg-white/10 px-6 py-5 text-center">
-              <div className="font-[family-name:var(--font-dm-serif)] text-4xl">49 €</div>
-              <div className="text-xs text-white/55">par an</div>
-              <button disabled className="mt-4 cursor-not-allowed rounded-xl bg-white/15 px-5 py-2.5 text-sm font-semibold text-white/70">
-                Paiement bientôt disponible
-              </button>
-            </div>
+            <Link href="/deals" className="mt-6 inline-flex rounded-xl bg-[#168F73] px-6 py-3 text-sm font-bold text-white hover:opacity-90 md:mt-0">Voir les deals</Link>
           </section>
+        )}
+
+        {plan?.plan === "og" && (
+          <section className="mb-8 rounded-[32px] bg-[#0B2A3F] p-7 text-white md:flex md:items-center md:justify-between md:gap-8 md:p-9">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-[0.18em] text-[#F4B942]">Badge OG{plan.badge_number ? ` #${plan.badge_number}` : ""}</div>
+              <h2 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl">Votre Premium est maintenu.</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/65">Votre contribution fondatrice vous donne accès aux alertes Premium sans limite de durée.</p>
+            </div>
+            <Link href="/deals" className="mt-6 inline-flex rounded-xl bg-[#F4B942] px-6 py-3 text-sm font-bold text-[#0B2A3F] md:mt-0">Voir les deals</Link>
+          </section>
+        )}
+
+        {plan?.plan === "freemium" && (
+          <>
+            <section className="mb-6 rounded-[32px] border border-[#D9E2E3] bg-white p-7 md:p-9">
+              <div className="flex flex-wrap items-start justify-between gap-5">
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-[0.18em] text-[#0E7490]">Votre formule Freemium</div>
+                  <h2 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl">Assez pour vérifier que le moteur trouve de vrais deals.</h2>
+                </div>
+                <Link href="/deals" className="rounded-xl bg-[#0E7490] px-5 py-3 text-sm font-bold text-white hover:bg-[#0A6078]">Utiliser mon joker</Link>
+              </div>
+              <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-2xl bg-[#E9F5F7] p-5"><div className="text-2xl font-bold">1</div><div className="mt-1 text-sm text-slate-600">aéroport de départ</div></div>
+                <div className="rounded-2xl bg-[#E9F5F7] p-5"><div className="text-2xl font-bold">2</div><div className="mt-1 text-sm text-slate-600">alertes complètes par semaine</div></div>
+                <div className="rounded-2xl bg-[#FFF0EA] p-5"><div className="text-2xl font-bold">1</div><div className="mt-1 text-sm text-slate-600">pépite complète par mois</div></div>
+                <div className="rounded-2xl bg-[#FFF0EA] p-5"><div className="text-2xl font-bold">1</div><div className="mt-1 text-sm text-slate-600">joker Premium par mois</div></div>
+              </div>
+            </section>
+
+            <section className="mb-8 grid gap-6 rounded-[32px] bg-[#0B2A3F] p-7 text-white md:grid-cols-[1fr_auto] md:items-center md:p-9">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-[0.18em] text-[#52C9BE]">Premium · ouverture prochaine</div>
+                <h2 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl">49 € par an, soit 4,08 € par mois.</h2>
+                <p className="mt-3 max-w-2xl text-sm leading-7 text-white/65">
+                  Une seule réservation peut amortir l’abonnement plusieurs fois : 100 € économisés représentent plus de deux années, et 150 € plus de trois. L’économie réelle dépend du billet réservé.
+                </p>
+                <p className="mt-3 text-xs text-white/45">Stripe sera configuré ultérieurement. Aucun paiement et aucune carte bancaire ne sont demandés aujourd’hui.</p>
+              </div>
+              <div className="rounded-2xl border border-white/15 bg-white/10 px-6 py-5 text-center">
+                <div className="font-[family-name:var(--font-dm-serif)] text-4xl">49 €</div>
+                <div className="text-xs text-white/55">par an</div>
+                <button disabled className="mt-4 cursor-not-allowed rounded-xl bg-white/15 px-5 py-2.5 text-sm font-semibold text-white/70">Paiement bientôt disponible</button>
+              </div>
+            </section>
+          </>
         )}
 
         <section>
@@ -161,7 +214,6 @@ export default function HomePage() {
           </div>
 
           {loading && <div className="rounded-2xl bg-white p-10 text-center text-slate-400">Chargement…</div>}
-
           {!loading && guides.length === 0 && (
             <div className="rounded-2xl border border-[#D9E2E3] bg-white p-10 text-center">
               <div className="text-4xl">📚</div>
@@ -169,7 +221,6 @@ export default function HomePage() {
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">Un guide est publié progressivement pour les destinations surveillées.</p>
             </div>
           )}
-
           {!loading && guides.length > 0 && (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-4">
               {guides.map((guide) => (
