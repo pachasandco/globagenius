@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.api.routes import router
+from app.api.signup_public import router as signup_public_router
 from app.notifications.bot_handler import bot_router
 from app.scheduler.jobs import get_scheduler_jobs
 
@@ -27,33 +28,26 @@ if _SENTRY_DSN:
         from sentry_sdk.integrations.fastapi import FastApiIntegration
         from sentry_sdk.integrations.logging import LoggingIntegration
 
-        # Sample rate is env-driven so we can crank it up while
-        # diagnosing perf issues, then dial it back. Default 100% is
-        # fine at current volume; lower it (e.g. 0.1) once traffic grows.
         _traces_rate = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "1.0"))
         sentry_sdk.init(
             dsn=_SENTRY_DSN,
             environment=os.getenv("APP_ENV", "production"),
             release=os.getenv("RAILWAY_GIT_COMMIT_SHA", "dev"),
             traces_sample_rate=_traces_rate,
-            profiles_sample_rate=0.0,  # profiling off, costs extra
+            profiles_sample_rate=0.0,
             integrations=[
                 FastApiIntegration(transaction_style="endpoint"),
-                LoggingIntegration(level=None, event_level=40),  # WARNING+
+                LoggingIntegration(level=None, event_level=40),
             ],
-            send_default_pii=False,  # never send Authorization headers / cookies
+            send_default_pii=False,
         )
         logger.info("Sentry initialised — environment=%s", os.getenv("APP_ENV", "production"))
     except Exception as e:
-        # Never block startup on a Sentry import / init issue.
         logger.error("Sentry init failed (continuing without it): %s", e)
 
 logger.info(f"Starting Globe Genius Pipeline — ENV={os.getenv('APP_ENV', 'unknown')} PORT={os.getenv('PORT', 'not set')}")
 
 scheduler = AsyncIOScheduler()
-
-# Set RUN_SCHEDULER=0 on API workers when running multiple Uvicorn workers,
-# so cron jobs only fire once. Default ON to keep current behaviour.
 _RUN_SCHEDULER = os.getenv("RUN_SCHEDULER", "1") == "1"
 
 
@@ -65,12 +59,6 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Telegram bot token configured ✓")
 
-    # APScheduler defaults misfire_grace_time to 1 second, which means a
-    # cron job whose firing instant is missed by even a brief Railway
-    # restart is silently skipped. We saw this on update_destinations:
-    # the priority_destinations table hadn't been refreshed for 9 days
-    # because the Monday 03:00 firing was always missed during deploys.
-    # 1h is plenty of slack for any of our cron jobs to recover.
     DEFAULT_MISFIRE_GRACE_SECONDS = 3600
 
     if not _RUN_SCHEDULER:
@@ -88,14 +76,10 @@ async def lifespan(app: FastAPI):
             if "minutes" in job_def:
                 kwargs["minutes"] = job_def["minutes"]
             scheduler.add_job(
-                func, "interval", id=job_id,
+                func,
+                "interval",
+                id=job_id,
                 misfire_grace_time=DEFAULT_MISFIRE_GRACE_SECONDS,
-                # coalesce=True so missed runs during Railway deploys
-                # are caught up at most once when the worker comes back,
-                # rather than silently dropped (the bug that left
-                # update_destinations stale for 9 days). max_instances=1
-                # forbids two copies of the same job overlapping if a
-                # previous run is still finishing.
                 coalesce=True,
                 max_instances=1,
                 **kwargs,
@@ -108,18 +92,13 @@ async def lifespan(app: FastAPI):
                 cron_kwargs["minute"] = job_def["minute"]
             if "day_of_week" in job_def:
                 cron_kwargs["day_of_week"] = job_def["day_of_week"]
-            # Per-job timezone override. The scheduler defaults to the
-            # container TZ (UTC on Railway), which is what every
-            # maintenance/scrape job wants. User-facing jobs that should
-            # fire at a fixed *local* French time (e.g. onboarding
-            # relances at 10:00 Paris, stable across DST) set
-            # "timezone": "Europe/Paris" in their job_def.
             if "timezone" in job_def:
                 cron_kwargs["timezone"] = job_def["timezone"]
             scheduler.add_job(
-                func, "cron", id=job_id,
+                func,
+                "cron",
+                id=job_id,
                 misfire_grace_time=DEFAULT_MISFIRE_GRACE_SECONDS,
-                # See interval branch above — same rationale.
                 coalesce=True,
                 max_instances=1,
                 **cron_kwargs,
@@ -129,7 +108,8 @@ async def lifespan(app: FastAPI):
         scheduler.start()
         logger.info(f"Scheduler started with {len(scheduler.get_jobs())} jobs")
 
-    # Wire RAG retriever to the travel planner (Supabase full-text search)
+    # Keep the existing RAG initialisation for compatibility with historical
+    # jobs, even though the public travel-planner route has been removed.
     try:
         from app.api.routes import db as rag_db
         from app.agents.rag import set_rag_retriever, RagRetriever
@@ -141,11 +121,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"RAG retriever init failed: {e}")
 
-    # Register the bot's command list with Telegram so the hamburger
-    # menu (and "/" typeahead) shows them. setMyCommands is idempotent,
-    # so it's safe to call on every startup. We don't fail the boot
-    # if the call breaks — the commands still work via the handler,
-    # the menu would just stay empty.
     try:
         from app.notifications.telegram import _get_bot
         bot = _get_bot()
@@ -188,5 +163,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Public signup is registered separately so the historical founder route can
+# remain intact for compatibility without blocking new standard accounts.
+app.include_router(signup_public_router)
 app.include_router(router)
 app.include_router(bot_router)
