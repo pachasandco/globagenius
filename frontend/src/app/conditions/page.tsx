@@ -4,7 +4,7 @@ import { Wordmark } from "../_components/Wordmark";
 
 export const metadata: Metadata = {
   title: "Conditions d’utilisation et de vente — GlobeGenius",
-  description: "Conditions du Freemium GlobeGenius, de Premium Découverte et de la future offre Premium à 49 € par an.",
+  description: "Conditions de la formule Freemium GlobeGenius et de la future offre Premium à 49 € par an.",
   alternates: { canonical: "https://globegenius.app/conditions" },
   robots: { index: false, follow: false },
 };
@@ -23,7 +23,7 @@ export default function Conditions() {
         <h1 className="mt-3 font-[family-name:var(--font-dm-serif)] text-4xl">Conditions d’utilisation et de vente</h1>
 
         <div className="mt-8 rounded-2xl border border-[#2AB7A9]/30 bg-[#E9F5F7] p-5 text-sm leading-7 text-slate-600">
-          <strong className="text-[#0B2A3F]">Information avant lancement du paiement :</strong> Premium est prévu à 49 € TTC par an, mais Stripe n’est pas encore ouvert. La création d’un compte, les 7 jours de Premium Découverte et le passage au Freemium n’entraînent aucun paiement, aucun renouvellement et aucune demande de carte bancaire.
+          <strong className="text-[#0B2A3F]">Information avant lancement du paiement :</strong> Premium est prévu à 49 € TTC par an, mais Stripe n’est pas encore ouvert. La création et l’utilisation d’un compte Freemium n’entraînent aucun paiement, aucun renouvellement et aucune demande de carte bancaire.
         </div>
 
         <div className="mt-10 space-y-9 text-[15px] leading-8 text-slate-600">
@@ -38,14 +38,8 @@ export default function Conditions() {
           </section>
 
           <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">3. Premium Découverte — 7 jours</h2>
-            <p className="mt-3">Un nouveau compte public peut bénéficier une seule fois de <strong className="text-[#0B2A3F]">7 jours de Premium Découverte</strong>. La période commence lors de la première connexion du compte au bot Telegram GlobeGenius, afin que l’utilisateur puisse réellement recevoir et évaluer les alertes.</p>
-            <p className="mt-3">Pendant cette période, les fonctions Premium sont accessibles sans carte bancaire et sans engagement. À son terme, le compte passe automatiquement au Freemium, sauf si l’utilisateur détient un badge OG ou bénéficie d’un autre droit Premium valide.</p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">4. Formule Freemium</h2>
-            <p className="mt-3">Après la période de découverte, la formule Freemium permet actuellement :</p>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">3. Formule Freemium</h2>
+            <p className="mt-3">La formule Freemium permet actuellement :</p>
             <ul className="mt-3 list-disc space-y-2 pl-6">
               <li>la surveillance d’un aéroport de départ principal ;</li>
               <li>jusqu’à deux alertes aller-retour complètes et instantanées par période glissante de sept jours ;</li>
@@ -57,9 +51,14 @@ export default function Conditions() {
           </section>
 
           <section>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">4. Fin de Premium Découverte</h2>
+            <p className="mt-3">La période Premium Découverte n’est plus proposée. Les comptes qui disposaient d’un essai automatique utilisent désormais la formule Freemium, sauf s’ils détiennent un badge OG, un abonnement Premium payant actif ou un droit Premium administratif distinct.</p>
+          </section>
+
+          <section>
             <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">5. Badge OG</h2>
             <p className="mt-3">Le maintien du Premium fondateur est réservé aux comptes auxquels GlobeGenius a effectivement attribué un <strong className="text-[#0B2A3F]">badge OG</strong>. Ce badge matérialise une contribution reconnue à la phase fondatrice du produit.</p>
-            <p className="mt-3">Les anciens comptes de beta qui ne disposent pas de ce badge utilisent la formule Freemium. Les droits liés à un abonnement payant, à un essai en cours ou à une attribution administrative distincte ne sont pas concernés par cette règle.</p>
+            <p className="mt-3">Les anciens comptes de beta qui ne disposent pas de ce badge utilisent la formule Freemium. Les droits liés à un abonnement payant actif ou à une attribution administrative distincte ne sont pas concernés par cette règle.</p>
           </section>
 
           <section>
