@@ -3,123 +3,84 @@ import type { Metadata } from "next";
 import { Wordmark } from "../_components/Wordmark";
 
 export const metadata: Metadata = {
-  title: "Conditions Générales de Vente — Globe Genius",
-  description: "Conditions générales de vente et d'utilisation du service Globe Genius Premium.",
+  title: "Conditions d’utilisation et de vente — GlobeGenius",
+  description: "Conditions d’utilisation du service GlobeGenius et conditions prévues pour l’offre Premium à 49 € par an.",
   alternates: { canonical: "https://globegenius.app/conditions" },
   robots: { index: false, follow: false },
 };
 
 export default function Conditions() {
   return (
-    <div className="min-h-screen bg-[#FFF8F0]">
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
-        <div className="max-w-4xl mx-auto px-4 md:px-5 h-[80px] flex items-center">
-          <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-[19px] leading-none">
-            <Wordmark />
-          </Link>
+    <div className="min-h-screen bg-[#F7F3EA] text-[#0B2A3F]">
+      <nav className="border-b border-[#D9E2E3] bg-white/90 backdrop-blur">
+        <div className="mx-auto flex h-20 max-w-4xl items-center px-5">
+          <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-xl"><Wordmark /></Link>
         </div>
       </nav>
 
-      <div className="max-w-4xl mx-auto px-4 md:px-5 py-12">
-        <h1 className="font-[family-name:var(--font-dm-serif)] text-3xl md:text-4xl mb-8 text-[#082B78]">Conditions Générales de Vente</h1>
+      <main className="mx-auto max-w-4xl px-5 py-12">
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0E7490]">Cadre contractuel</p>
+        <h1 className="mt-3 font-[family-name:var(--font-dm-serif)] text-4xl">Conditions d’utilisation et de vente</h1>
 
-        <div className="prose prose-gray max-w-none text-[#082B78]/80 space-y-8">
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 1 — Objet</h2>
-            <p>
-              Les présentes Conditions Générales de Vente (CGV) régissent l&apos;utilisation du service Globe Genius, accessible à l&apos;adresse <strong>globegenius.app</strong>, et la souscription à l&apos;abonnement Premium.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 2 — Description du service</h2>
-            <p>Globe Genius est un service de détection automatique de vols à prix anormalement bas au départ de 10 aéroports français. Le service comprend :</p>
-            <ul className="list-disc pl-6 space-y-1">
-              <li><strong>Formule Gratuite :</strong> accès aux deals avec une réduction d&apos;au moins 40% par rapport au prix moyen du marché, dans la limite de 3 alertes complètes par semaine glissante. Les deals au-delà de 50% de réduction sont affichés avec prix masqué.</li>
-              <li><strong>Formule Premium (49€/an) :</strong> accès à tous les deals sans limite (réductions de 40% et plus, incluant les erreurs de prix et les promos flash), alertes Telegram illimitées avec prix et liens de réservation directs vers Aviasales et Booking.com.</li>
-            </ul>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 3 — Prix et paiement</h2>
-            <p>
-              L&apos;abonnement Premium est proposé au tarif de <strong>49€ par an</strong>, payable en une seule fois. Le paiement est effectué par carte bancaire via la plateforme sécurisée Stripe. Le prix est indiqué en euros, toutes taxes comprises.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 4 — Droit de rétractation et garantie satisfait ou remboursé</h2>
-            <p>
-              Conformément à l&apos;article L221-28 du Code de la consommation, le droit de rétractation ne s&apos;applique pas aux services pleinement exécutés avant la fin du délai de rétractation.
-            </p>
-            <p>
-              Toutefois, Globe Genius offre une <strong>garantie satisfait ou remboursé de 30 jours</strong> à compter de la date de souscription. Si vous n&apos;êtes pas satisfait du service, envoyez un email à <a href="mailto:contact@globegenius.app" className="text-[#FF6B47] hover:underline">contact@globegenius.app</a> dans les 30 jours suivant l&apos;achat pour obtenir un remboursement intégral, sans condition.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 5 — Durée et renouvellement</h2>
-            <p>
-              L&apos;abonnement Premium est souscrit pour une durée d&apos;un an. Il est renouvelé automatiquement à chaque échéance annuelle, sauf résiliation par l&apos;utilisateur depuis son espace Stripe Customer Portal ou par email à contact@globegenius.app, au plus tard 24 heures avant la date de renouvellement.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 6 — Résiliation</h2>
-            <p>
-              L&apos;utilisateur peut résilier son abonnement Premium à tout moment depuis son espace client ou par email. La résiliation prend effet à la fin de la période en cours. Aucun remboursement au prorata n&apos;est effectué en dehors de la période de garantie de 30 jours.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 7 — Programme fondateur et accès à vie</h2>
-            <p>
-              Pendant la phase de beta publique, les <strong>100 premiers comptes inscrits</strong> rejoignent le programme fondateur (« membres OG »). Ce programme comporte deux avantages distincts qu&apos;il convient de ne pas confondre :
-            </p>
-            <ul className="list-disc pl-6 space-y-2">
-              <li>
-                <strong>Accès gratuit à vie (garanti et inconditionnel).</strong> Les membres fondateurs conservent gratuitement l&apos;accès au service, à vie, y compris après le lancement officiel et la mise en place de l&apos;abonnement payant. Cet accès gratuit ne peut leur être retiré, quelle que soit leur activité.
-              </li>
-              <li>
-                <strong>Statut Premium gratuit (conditionné à l&apos;activité).</strong> En plus de l&apos;accès gratuit, les membres fondateurs bénéficient gratuitement du statut Premium (alertes illimitées, deals au-delà de 50% avec prix affiché, liens directs) <strong>tant qu&apos;ils participent activement à la beta</strong> : utilisation du service et retours sur la qualité des alertes (boutons 👍 / 👎 / « trop tard »).
-              </li>
-            </ul>
-            <p>
-              En cas d&apos;inactivité totale et prolongée (aucune ouverture d&apos;alerte ni aucun retour pendant plusieurs mois), le statut Premium gratuit peut être suspendu et le compte repasser en formule Gratuite. Dans ce cas, <strong>l&apos;accès gratuit à vie est conservé</strong> : seul l&apos;avantage Premium est concerné, et il est automatiquement rétabli dès que le membre redevient actif. Le nombre de places fondateur est limité à 100 et n&apos;est pas reconductible une fois atteint.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 8 — Limitation de responsabilité</h2>
-            <p>
-              Globe Genius détecte et signale des anomalies de prix sur les vols à partir de données fournies par des tiers (Travelpayouts/Aviasales). Les prix affichés sont indicatifs et peuvent varier entre le moment de la détection et la réservation effective. Globe Genius ne se substitue pas à une agence de voyage et ne vend pas de billets d&apos;avion.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 9 — Droit applicable</h2>
-            <p>
-              Les présentes CGV sont soumises au droit français. En cas de litige, une solution amiable sera recherchée avant toute action judiciaire. À défaut, les tribunaux français seront compétents.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 10 — Contact</h2>
-            <p>
-              Pour toute question relative aux présentes CGV ou au service Globe Genius :<br />
-              Email : <a href="mailto:contact@globegenius.app" className="text-[#FF6B47] hover:underline">contact@globegenius.app</a>
-            </p>
-          </section>
-
-          <p className="text-sm text-[#082B78]/40 pt-4">Dernière mise à jour : mai 2026</p>
+        <div className="mt-8 rounded-2xl border border-[#2AB7A9]/30 bg-[#E9F5F7] p-5 text-sm leading-7 text-slate-600">
+          <strong className="text-[#0B2A3F]">Information avant lancement du paiement :</strong> l’abonnement Premium est prévu à 49 € par an, mais Stripe n’est pas encore ouvert aux utilisateurs. La création d’un compte n’entraîne actuellement aucun paiement, aucun renouvellement et aucune demande de carte bancaire.
         </div>
-      </div>
 
-      <footer className="border-t border-gray-100 py-6">
-        <div className="max-w-4xl mx-auto px-4 md:px-5 text-center text-xs text-gray-300">
-          Globe Genius © 2026 · <Link href="/mentions-legales" className="hover:text-gray-500">Mentions légales</Link> · <Link href="/confidentialite" className="hover:text-gray-500">Confidentialité</Link>
+        <div className="mt-10 space-y-9 text-[15px] leading-8 text-slate-600">
+          <section>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">1. Objet</h2>
+            <p className="mt-3">Les présentes conditions encadrent l’utilisation de GlobeGenius, accessible sur globegenius.app, ainsi que la future souscription à l’offre Premium lorsqu’elle sera commercialement ouverte.</p>
+          </section>
+
+          <section>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">2. Description du service</h2>
+            <p className="mt-3">GlobeGenius détecte des tarifs aériens susceptibles d’être anormalement bas, les compare à un prix habituel observé, effectue des contrôles supplémentaires et envoie des alertes sur Telegram. GlobeGenius ne vend pas les billets et n’agit pas comme agence de voyage.</p>
+          </section>
+
+          <section>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">3. Comptes gratuits</h2>
+            <p className="mt-3">La création d’un compte permet de configurer des aéroports et des préférences d’alertes. La réception des alertes nécessite la connexion du compte au bot Telegram GlobeGenius. Les fonctionnalités gratuites, limites d’usage et seuils de sélection peuvent évoluer pour préserver la qualité du service.</p>
+          </section>
+
+          <section>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">4. Offre Premium prévue</h2>
+            <p className="mt-3">L’offre Premium sera proposée au tarif public de <strong className="text-[#0B2A3F]">49 € TTC par an</strong>, payable en une fois. Elle est destinée à inclure davantage d’alertes qualifiées, les deals exceptionnels, les allers simples, les combos malins et des options de personnalisation supplémentaires.</p>
+            <p className="mt-3">Les comparaisons de rentabilité présentées sur le site sont des illustrations : une économie de 100 € sur un billet représente plus de deux années à 49 €, mais GlobeGenius ne garantit ni le montant d’une économie, ni la disponibilité d’un tarif, ni la réalisation d’une réservation.</p>
+          </section>
+
+          <section>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">5. Paiement et renouvellement à l’ouverture</h2>
+            <p className="mt-3">Lorsque le paiement sera activé, il sera traité par Stripe. Avant toute validation, l’utilisateur verra le prix, la durée, les conditions de renouvellement et le moyen d’annulation. Aucun prélèvement ne sera effectué avant une action explicite de souscription.</p>
+          </section>
+
+          <section>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">6. Garantie commerciale prévue</h2>
+            <p className="mt-3">À l’ouverture de Premium, GlobeGenius prévoit une garantie satisfait ou remboursé de 30 jours à compter de la souscription. Les modalités opérationnelles seront rappelées au moment du paiement et pourront être exercées par email à <a href="mailto:contact@globegenius.app" className="font-medium text-[#0E7490] hover:underline">contact@globegenius.app</a>.</p>
+          </section>
+
+          <section>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">7. Prix et disponibilité des vols</h2>
+            <p className="mt-3">Les prix proviennent de partenaires et de systèmes tiers. Ils peuvent évoluer ou disparaître entre la détection, l’alerte et la réservation. Les frais de bagages, options, conditions de modification et conditions d’annulation relèvent du vendeur du billet.</p>
+          </section>
+
+          <section>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">8. Responsabilité</h2>
+            <p className="mt-3">GlobeGenius fournit un service d’information et de mise en relation. L’utilisateur reste seul responsable de la vérification du trajet, des dates, des formalités, des visas, des correspondances et des conditions du vendeur avant de réserver.</p>
+          </section>
+
+          <section>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">9. Données et suppression du compte</h2>
+            <p className="mt-3">Les modalités relatives aux données personnelles sont décrites dans la <Link href="/confidentialite" className="font-medium text-[#0E7490] hover:underline">politique de confidentialité</Link>. La suppression du compte peut être demandée depuis l’espace utilisateur ou par email.</p>
+          </section>
+
+          <section>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">10. Droit applicable et contact</h2>
+            <p className="mt-3">Les présentes conditions sont soumises au droit français. Toute question peut être adressée à <a href="mailto:contact@globegenius.app" className="font-medium text-[#0E7490] hover:underline">contact@globegenius.app</a>.</p>
+          </section>
+
+          <p className="border-t border-[#D9E2E3] pt-6 text-sm text-slate-400">Dernière mise à jour : 29 juillet 2026.</p>
         </div>
-      </footer>
+      </main>
     </div>
   );
 }
