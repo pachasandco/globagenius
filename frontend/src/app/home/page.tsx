@@ -133,9 +133,6 @@ export default function HomePage() {
           </Link>
           <div className="flex items-center gap-2 md:gap-3">
             <span className="text-sm text-gray-400 hidden md:block">{isPremium === true ? "🌟 Premium" : isPremium === false ? "Free" : ""}</span>
-            <Link href="/planificateur" className="text-sm text-gray-400 hover:text-gray-900 transition-colors">
-              Planificateur
-            </Link>
             <Link href="/profile" className="text-sm text-gray-400 hover:text-gray-900 transition-colors">
               Profil
             </Link>
@@ -201,7 +198,6 @@ export default function HomePage() {
           </div>
         )}
 
-
         {/* Telegram status banner — the chat is where the product lives. */}
         {!loading && (
           telegramConnected ? (
@@ -245,34 +241,8 @@ export default function HomePage() {
           )
         )}
 
-        {/* Planificateur — promoted as a hero card now that the deals
-            section is gone. Free users see the same card; access gating
-            is handled inside the planner. */}
-        <div className="mb-8 bg-gradient-to-br from-[#FFFEF9] to-[#FFF1EC] border border-[#FF6B47]/30 rounded-2xl p-6 md:p-8">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
-            <div className="max-w-xl">
-              <div className="text-xs font-bold text-[#FF6B47] mb-2 tracking-wide">🗺️ PLANIFICATEUR DE VOYAGE</div>
-              <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl md:text-3xl text-[#082B78] mb-2">
-                Construis ton prochain voyage avec l&apos;IA
-              </h2>
-              <p className="text-sm md:text-base text-[#082B78]/70">
-                Itinéraire jour par jour, restaurants, activités, budget — l&apos;assistant prépare tout en quelques secondes.
-                {isPremium === false && (
-                  <span className="block mt-1 text-xs text-[#FF6B47] font-semibold">Exclusif aux abonnés Premium.</span>
-                )}
-              </p>
-            </div>
-            <Link
-              href="/planificateur"
-              className="bg-[#FF6B47] hover:bg-[#E55A38] text-white font-bold px-6 py-3 rounded-xl text-sm shrink-0 transition-all shadow-[0_8px_24px_rgba(255,107,71,0.25)]"
-            >
-              Ouvrir le planificateur →
-            </Link>
-          </div>
-        </div>
-
         {/* Destination guides — every published guide, no collapsible. The
-            home page is now a "browse + plan + chat" hub, not a deal feed. */}
+            home page is now a browse + chat hub, not a deal feed. */}
         <div className="mb-8">
           <div className="flex items-baseline justify-between mb-5">
             <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#082B78]">
