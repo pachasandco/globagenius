@@ -19,12 +19,11 @@ type Guide = {
 };
 
 type PlanInfo = {
-  plan: "og" | "premium_trial" | "premium" | "freemium";
+  plan: "og" | "premium" | "freemium";
   label: string;
   is_premium: boolean;
   is_og: boolean;
   badge_number: number | null;
-  trial_expires_at: string | null;
   freemium: {
     primary_airports: number;
     regular_alerts_per_week: number;
@@ -34,11 +33,6 @@ type PlanInfo = {
     unlock_available_at: string;
   };
 };
-
-function formatDate(value: string | null) {
-  if (!value) return "";
-  return new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric" }).format(new Date(value));
-}
 
 export default function HomePage() {
   const [loading, setLoading] = useState(true);
@@ -132,9 +126,9 @@ export default function HomePage() {
           ) : (
             <section className="mb-6 rounded-3xl border border-[#FF7A59]/30 bg-[#FFF0EA] p-6 md:flex md:items-center md:justify-between md:gap-6">
               <div>
-                <h2 className="font-bold text-[#0B2A3F]">Connectez Telegram pour démarrer Premium Découverte</h2>
+                <h2 className="font-bold text-[#0B2A3F]">Connectez Telegram pour recevoir vos alertes Freemium</h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  La connexion active 7 jours de Premium sans carte bancaire. Vous recevrez ensuite automatiquement la formule Freemium si vous n’êtes pas membre OG.
+                  Votre compte est déjà actif. La connexion Telegram permet de recevoir 2 alertes complètes par semaine et 1 pépite exceptionnelle par mois.
                 </p>
               </div>
               <Link href="/onboarding" className="mt-5 inline-flex w-full justify-center rounded-xl bg-[#FF7A59] px-5 py-3 text-sm font-bold text-white hover:bg-[#E96543] md:mt-0 md:w-auto">
@@ -142,19 +136,6 @@ export default function HomePage() {
               </Link>
             </section>
           )
-        )}
-
-        {plan?.plan === "premium_trial" && (
-          <section className="mb-8 rounded-[32px] border border-[#2AB7A9]/30 bg-white p-7 md:flex md:items-center md:justify-between md:gap-8 md:p-9">
-            <div>
-              <div className="text-xs font-bold uppercase tracking-[0.18em] text-[#168F73]">Premium Découverte actif</div>
-              <h2 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl">Toutes les alertes sont ouvertes pendant 7 jours.</h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
-                Tous les aéroports sélectionnés, allers simples, combos et deals long-courriers sont accessibles sans quota jusqu’au {formatDate(plan.trial_expires_at)}.
-              </p>
-            </div>
-            <Link href="/deals" className="mt-6 inline-flex rounded-xl bg-[#168F73] px-6 py-3 text-sm font-bold text-white hover:opacity-90 md:mt-0">Voir les deals</Link>
-          </section>
         )}
 
         {plan?.plan === "og" && (
@@ -168,13 +149,24 @@ export default function HomePage() {
           </section>
         )}
 
+        {plan?.plan === "premium" && (
+          <section className="mb-8 rounded-[32px] bg-[#0B2A3F] p-7 text-white md:flex md:items-center md:justify-between md:gap-8 md:p-9">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-[0.18em] text-[#52C9BE]">Premium actif</div>
+              <h2 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl">Toutes les alertes sont ouvertes.</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/65">Plusieurs aéroports, allers simples, combos malins et alertes sans quota.</p>
+            </div>
+            <Link href="/deals" className="mt-6 inline-flex rounded-xl bg-[#52C9BE] px-6 py-3 text-sm font-bold text-[#0B2A3F] md:mt-0">Voir les deals</Link>
+          </section>
+        )}
+
         {plan?.plan === "freemium" && (
           <>
             <section className="mb-6 rounded-[32px] border border-[#D9E2E3] bg-white p-7 md:p-9">
               <div className="flex flex-wrap items-start justify-between gap-5">
                 <div>
                   <div className="text-xs font-bold uppercase tracking-[0.18em] text-[#0E7490]">Votre formule Freemium</div>
-                  <h2 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl">Assez pour vérifier que le moteur trouve de vrais deals.</h2>
+                  <h2 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl">Des alertes gratuites, sélectionnées avec exigence.</h2>
                 </div>
                 <Link href="/deals" className="rounded-xl bg-[#0E7490] px-5 py-3 text-sm font-bold text-white hover:bg-[#0A6078]">Utiliser mon joker</Link>
               </div>
