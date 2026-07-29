@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getPreferences, getTelegramStatus, clearSessionCookie, type FlightTripType } from "@/lib/api";
+import { clearSessionCookie, getTelegramStatus } from "@/lib/api";
 import { initSession } from "@/lib/session";
 import { slugFor } from "@/lib/destinations";
 import { Wordmark } from "../_components/Wordmark";
@@ -18,102 +18,63 @@ type Guide = {
   cover_photo: string;
 };
 
+type PlanInfo = {
+  plan: "og" | "premium" | "freemium";
+  label: string;
+  is_premium: boolean;
+  is_og: boolean;
+  badge_number: number | null;
+  freemium: {
+    primary_airports: number;
+    regular_alerts_per_week: number;
+    exceptional_alerts_per_month: number;
+    monthly_unlocks: number;
+    unlock_available: boolean;
+    unlock_available_at: string;
+  };
+};
+
 export default function HomePage() {
   const [loading, setLoading] = useState(true);
-  // null = unknown (Stripe check not back yet). Avoids flashing the premium
-  // upsell banner to users who turn out to be premium.
-  const [isPremium, setIsPremium] = useState<boolean | null>(null);
+  const [plan, setPlan] = useState<PlanInfo | null>(null);
   const [guides, setGuides] = useState<Guide[]>([]);
   const [telegramConnected, setTelegramConnected] = useState<boolean | null>(null);
-  const [flightTripTypes, setFlightTripTypes] = useState<FlightTripType[]>(["round_trip"]);
-  const [onewayBannerDismissed, setOnewayBannerDismissed] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
     const userId = localStorage.getItem("gg_user_id");
-    if (!userId) {
+    const token = localStorage.getItem("gg_token");
+    if (!userId || !token) {
       router.push("/login");
       return;
     }
 
-    // Auto-logout after 15 min inactivity. Keep the cleanup so we can
-    // return it from the useEffect at the END, after load() has started.
-    const sessionCleanup = initSession();
+    const cleanup = initSession();
+    const headers = { Authorization: `Bearer ${token}` };
 
-    async function load() {
-      // Premium status, Telegram link state and the destination guides are
-      // the only data the home page needs now that "Vos deals" is gone.
-      // Real-time deals live in Telegram — no point polling them here.
-      const token = localStorage.getItem("gg_token");
-
-      const [premiumRes, guidesRes, tgRes] = await Promise.allSettled([
-        token
-          ? fetch(`${API_URL}/api/stripe/status`, {
-              headers: { Authorization: `Bearer ${token}` },
-            }).then(r => r.json())
-          : Promise.resolve({ is_premium: false }),
-        // Pull a generous slice (server caps at 50). All published guides
-        // show up here, ordered by recency.
-        fetch(`${API_URL}/api/destinations?limit=50`).then(r => r.json()),
-        getTelegramStatus(userId!),
-      ]);
-
-      if (premiumRes.status === "fulfilled") {
-        setIsPremium(premiumRes.value?.is_premium || false);
+    Promise.allSettled([
+      fetch(`${API_URL}/api/account/plan`, { headers }).then((response) => response.json()),
+      fetch(`${API_URL}/api/destinations?limit=50`).then((response) => response.json()),
+      getTelegramStatus(userId),
+    ]).then(([planResult, guidesResult, telegramResult]) => {
+      if (planResult.status === "fulfilled" && planResult.value?.plan) {
+        setPlan(planResult.value);
       }
-      if (guidesRes.status === "fulfilled") {
-        setGuides(guidesRes.value?.items || []);
+      if (guidesResult.status === "fulfilled") {
+        setGuides(guidesResult.value?.items || []);
       }
-      if (tgRes.status === "fulfilled") {
-        setTelegramConnected(Boolean(tgRes.value?.connected));
+      if (telegramResult.status === "fulfilled") {
+        setTelegramConnected(Boolean(telegramResult.value?.connected));
+      } else {
+        setTelegramConnected(false);
       }
-
       setLoading(false);
-    }
-    load();
-
-    // Load user preferences once for the one-way banner — they don't change
-    // often, so keep them out of any polling loop.
-    (async () => {
-      try {
-        const prefs = await getPreferences(userId!);
-        const ftt = prefs.flight_trip_types && prefs.flight_trip_types.length > 0
-          ? prefs.flight_trip_types
-          : ["round_trip" as FlightTripType];
-        setFlightTripTypes(ftt);
-        const dismissed = typeof window !== "undefined"
-          && localStorage.getItem("gg_oneway_banner_dismissed") === "1";
-        setOnewayBannerDismissed(dismissed);
-      } catch { /* ignore */ }
-    })();
+    });
 
     return () => {
-      if (sessionCleanup) sessionCleanup();
+      if (cleanup) cleanup();
     };
   }, [router]);
-
-  async function handleCheckout() {
-    try {
-      const token = localStorage.getItem("gg_token");
-      if (!token) {
-        alert("Session expirée. Veuillez vous reconnecter.");
-        router.push("/login");
-        return;
-      }
-      const res = await fetch(`${API_URL}/api/stripe/create-checkout`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      });
-      const data = await res.json();
-      if (data.checkout_url) {
-        window.location.href = data.checkout_url;
-      } else {
-        alert(data.detail || "Erreur lors de la création du paiement. Réessayez.");
-      }
-    } catch {
-      alert("Erreur de connexion au serveur. Réessayez.");
-    }
-  }
 
   function handleLogout() {
     localStorage.removeItem("gg_user_id");
@@ -124,193 +85,159 @@ export default function HomePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FFF8F0]">
-      {/* Nav */}
-      <nav className="sticky top-0 z-50 bg-white border-b border-gray-100">
-        <div className="max-w-6xl mx-auto px-4 md:px-5 h-[80px] flex items-center justify-between">
-          <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-[19px] leading-none">
-            <Wordmark />
-          </Link>
-          <div className="flex items-center gap-2 md:gap-3">
-            <span className="text-sm text-gray-400 hidden md:block">{isPremium === true ? "🌟 Premium" : isPremium === false ? "Free" : ""}</span>
-            <Link href="/profile" className="text-sm text-gray-400 hover:text-gray-900 transition-colors">
-              Profil
-            </Link>
-            <button onClick={handleLogout} className="text-sm text-gray-400 hover:text-red-500 transition-colors">
-              Déconnexion
-            </button>
+    <div className="min-h-screen bg-[#F7F3EA] text-[#0B2A3F]">
+      <nav className="sticky top-0 z-50 border-b border-[#D9E2E3] bg-white/95 backdrop-blur">
+        <div className="mx-auto flex h-20 max-w-6xl items-center justify-between px-4 md:px-5">
+          <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-[19px] leading-none"><Wordmark /></Link>
+          <div className="flex items-center gap-3">
+            <span className="hidden text-sm text-slate-400 md:block">{plan?.label || ""}</span>
+            <Link href="/deals" className="text-sm text-slate-500 transition-colors hover:text-[#0E7490]">Mes deals</Link>
+            <Link href="/profile" className="text-sm text-slate-500 transition-colors hover:text-[#0E7490]">Profil</Link>
+            <button onClick={handleLogout} className="text-sm text-slate-500 transition-colors hover:text-red-500">Déconnexion</button>
           </div>
         </div>
       </nav>
 
-      <div className="max-w-6xl mx-auto px-4 md:px-5 py-6 md:py-8">
-        {/* One-way migration banner — soft invitation for round-trip-only users */}
-        {!onewayBannerDismissed && !flightTripTypes.includes("one_way") && (
-          <div className="mb-6 bg-cyan-50 border border-cyan-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="text-sm text-[#082B78]">
-              <span className="font-semibold">🆕 Nouveaux deals « aller simple » disponibles.</span>{" "}
-              Activez-les dans votre profil pour recevoir aussi les promos un sens et les combos malins « 2 billets » moins chers qu&apos;un A/R.
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Link
-                href="/profile"
-                className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white text-sm font-semibold rounded-lg transition-colors"
-              >
-                Activer →
-              </Link>
-              <button
-                onClick={() => {
-                  if (typeof window !== "undefined") {
-                    localStorage.setItem("gg_oneway_banner_dismissed", "1");
-                  }
-                  setOnewayBannerDismissed(true);
-                }}
-                className="px-3 py-2 text-sm text-gray-500 hover:text-gray-800 transition-colors"
-              >
-                Plus tard
-              </button>
-            </div>
-          </div>
-        )}
+      <main className="mx-auto max-w-6xl px-4 py-8 md:px-5 md:py-10">
+        <div className="mb-8">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0E7490]">Votre espace GlobeGenius</p>
+          <h1 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl md:text-4xl">Vos alertes vivent sur Telegram.</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
+            Configurez vos préférences ici, consultez les opportunités détectées et recevez les alertes actionnables directement dans le chat.
+          </p>
+        </div>
 
-        {/* Premium banner — only show once we know the user is NOT premium.
-            isPremium === null means the Stripe check hasn't returned yet,
-            and showing the banner during that window flashes it to premium users. */}
-        {isPremium === false && (
-          <div className="mb-6 bg-[#FFFEF9] border border-[#FF6B47] rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs font-bold bg-[#FF6B47] text-white px-2.5 py-0.5 rounded-full">🌸 Offre printemps -41%</span>
-              </div>
-              <h3 className="font-semibold mb-1">Un seul deal suffit à rembourser votre année</h3>
-              <p className="text-sm text-[#082B78]/70">
-                Accès illimité à tous les deals ≥50%, sans quota hebdomadaire. Alertes Telegram instantanées.
-                <span className="font-semibold"> 49€/an</span> <span className="line-through text-[#082B78]/40">59€</span> — soit 4,08€/mois.
-                <span className="block mt-1 text-xs text-[#16A34A]">✅ Satisfait ou remboursé 30 jours</span>
-              </p>
-            </div>
-            <button
-              onClick={handleCheckout}
-              className="bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold px-6 py-3 rounded-xl text-sm shrink-0 transition-all"
-            >
-              Essayer Premium — 49€/an
-            </button>
-          </div>
-        )}
-
-        {/* Telegram status banner — the chat is where the product lives. */}
         {!loading && (
           telegramConnected ? (
-            <div className="mb-6 bg-[#0088cc]/5 border border-[#0088cc]/20 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <svg className="w-10 h-10 text-[#0088cc] shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
-                </svg>
+            <section className="mb-6 rounded-3xl border border-[#0E7490]/20 bg-[#E9F5F7] p-6 md:flex md:items-center md:justify-between md:gap-6">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#229ED9] font-bold text-white">G</div>
                 <div>
-                  <div className="font-semibold text-[#082B78] mb-0.5">Tes alertes sont actives sur Telegram</div>
-                  <p className="text-sm text-[#082B78]/70">
-                    Les nouveaux deals arrivent dans le chat. Tape <code className="text-[#0088cc] font-mono">/destinations</code> pour bloquer une ville,{" "}
-                    <code className="text-[#0088cc] font-mono">/pause</code> pour mettre tes alertes en pause.
+                  <h2 className="font-bold text-[#0B2A3F]">Vos alertes Telegram sont actives</h2>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                    Tapez <code className="font-mono text-[#0E7490]">/destinations</code> pour masquer une ville ou <code className="font-mono text-[#0E7490]">/pause</code> pour suspendre les alertes.
                   </p>
                 </div>
               </div>
-              <a
-                href={TELEGRAM_BOT_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="bg-[#0088cc] hover:bg-[#006daa] text-white font-semibold px-5 py-2.5 rounded-xl text-sm shrink-0 transition-colors whitespace-nowrap"
-              >
-                Ouvrir le chat →
+              <a href={TELEGRAM_BOT_URL} target="_blank" rel="noopener noreferrer" className="mt-5 inline-flex w-full justify-center rounded-xl bg-[#229ED9] px-5 py-3 text-sm font-bold text-white hover:bg-[#1B86B8] md:mt-0 md:w-auto">
+                Ouvrir le chat
               </a>
-            </div>
+            </section>
           ) : (
-            <div className="mb-6 bg-amber-50 border border-amber-200 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <section className="mb-6 rounded-3xl border border-[#FF7A59]/30 bg-[#FFF0EA] p-6 md:flex md:items-center md:justify-between md:gap-6">
               <div>
-                <div className="font-semibold text-[#082B78] mb-0.5">⚠️ Connecte ton Telegram pour recevoir les alertes</div>
-                <p className="text-sm text-[#082B78]/70">
-                  Sans Telegram, tu ne reçois aucune notification de deal. La connexion prend 30 secondes.
+                <h2 className="font-bold text-[#0B2A3F]">Connectez Telegram pour recevoir vos alertes Freemium</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Votre compte est déjà actif. La connexion Telegram permet de recevoir 2 alertes complètes par semaine et 1 pépite exceptionnelle par mois.
                 </p>
               </div>
-              <Link
-                href="/profile"
-                className="bg-amber-500 hover:bg-amber-600 text-white font-semibold px-5 py-2.5 rounded-xl text-sm shrink-0 transition-colors whitespace-nowrap"
-              >
-                Connecter Telegram →
+              <Link href="/onboarding" className="mt-5 inline-flex w-full justify-center rounded-xl bg-[#FF7A59] px-5 py-3 text-sm font-bold text-white hover:bg-[#E96543] md:mt-0 md:w-auto">
+                Activer Telegram
               </Link>
-            </div>
+            </section>
           )
         )}
 
-        {/* Destination guides — every published guide, no collapsible. The
-            home page is now a browse + chat hub, not a deal feed. */}
-        <div className="mb-8">
-          <div className="flex items-baseline justify-between mb-5">
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#082B78]">
-              Vos guides destination
-            </h2>
-            {guides.length > 0 && (
-              <span className="text-sm text-gray-400">{guides.length} disponible{guides.length > 1 ? "s" : ""}</span>
-            )}
+        {plan?.plan === "og" && (
+          <section className="mb-8 rounded-[32px] bg-[#0B2A3F] p-7 text-white md:flex md:items-center md:justify-between md:gap-8 md:p-9">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-[0.18em] text-[#F4B942]">Badge OG{plan.badge_number ? ` #${plan.badge_number}` : ""}</div>
+              <h2 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl">Votre Premium est maintenu.</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/65">Votre contribution fondatrice vous donne accès aux alertes Premium sans limite de durée.</p>
+            </div>
+            <Link href="/deals" className="mt-6 inline-flex rounded-xl bg-[#F4B942] px-6 py-3 text-sm font-bold text-[#0B2A3F] md:mt-0">Voir les deals</Link>
+          </section>
+        )}
+
+        {plan?.plan === "premium" && (
+          <section className="mb-8 rounded-[32px] bg-[#0B2A3F] p-7 text-white md:flex md:items-center md:justify-between md:gap-8 md:p-9">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-[0.18em] text-[#52C9BE]">Premium actif</div>
+              <h2 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl">Toutes les alertes sont ouvertes.</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/65">Plusieurs aéroports, allers simples, combos malins et alertes sans quota.</p>
+            </div>
+            <Link href="/deals" className="mt-6 inline-flex rounded-xl bg-[#52C9BE] px-6 py-3 text-sm font-bold text-[#0B2A3F] md:mt-0">Voir les deals</Link>
+          </section>
+        )}
+
+        {plan?.plan === "freemium" && (
+          <>
+            <section className="mb-6 rounded-[32px] border border-[#D9E2E3] bg-white p-7 md:p-9">
+              <div className="flex flex-wrap items-start justify-between gap-5">
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-[0.18em] text-[#0E7490]">Votre formule Freemium</div>
+                  <h2 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl">Des alertes gratuites, sélectionnées avec exigence.</h2>
+                </div>
+                <Link href="/deals" className="rounded-xl bg-[#0E7490] px-5 py-3 text-sm font-bold text-white hover:bg-[#0A6078]">Utiliser mon joker</Link>
+              </div>
+              <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-2xl bg-[#E9F5F7] p-5"><div className="text-2xl font-bold">1</div><div className="mt-1 text-sm text-slate-600">aéroport de départ</div></div>
+                <div className="rounded-2xl bg-[#E9F5F7] p-5"><div className="text-2xl font-bold">2</div><div className="mt-1 text-sm text-slate-600">alertes complètes par semaine</div></div>
+                <div className="rounded-2xl bg-[#FFF0EA] p-5"><div className="text-2xl font-bold">1</div><div className="mt-1 text-sm text-slate-600">pépite complète par mois</div></div>
+                <div className="rounded-2xl bg-[#FFF0EA] p-5"><div className="text-2xl font-bold">1</div><div className="mt-1 text-sm text-slate-600">joker Premium par mois</div></div>
+              </div>
+            </section>
+
+            <section className="mb-8 grid gap-6 rounded-[32px] bg-[#0B2A3F] p-7 text-white md:grid-cols-[1fr_auto] md:items-center md:p-9">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-[0.18em] text-[#52C9BE]">Premium · ouverture prochaine</div>
+                <h2 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl">49 € par an, soit 4,08 € par mois.</h2>
+                <p className="mt-3 max-w-2xl text-sm leading-7 text-white/65">
+                  Une seule réservation peut amortir l’abonnement plusieurs fois : 100 € économisés représentent plus de deux années, et 150 € plus de trois. L’économie réelle dépend du billet réservé.
+                </p>
+                <p className="mt-3 text-xs text-white/45">Stripe sera configuré ultérieurement. Aucun paiement et aucune carte bancaire ne sont demandés aujourd’hui.</p>
+              </div>
+              <div className="rounded-2xl border border-white/15 bg-white/10 px-6 py-5 text-center">
+                <div className="font-[family-name:var(--font-dm-serif)] text-4xl">49 €</div>
+                <div className="text-xs text-white/55">par an</div>
+                <button disabled className="mt-4 cursor-not-allowed rounded-xl bg-white/15 px-5 py-2.5 text-sm font-semibold text-white/70">Paiement bientôt disponible</button>
+              </div>
+            </section>
+          </>
+        )}
+
+        <section>
+          <div className="mb-5 flex items-baseline justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#FF7A59]">Inspiration</p>
+              <h2 className="mt-2 font-[family-name:var(--font-dm-serif)] text-2xl">Guides destination</h2>
+            </div>
+            {guides.length > 0 && <span className="text-sm text-slate-400">{guides.length} disponible{guides.length > 1 ? "s" : ""}</span>}
           </div>
 
-          {loading && (
-            <div className="text-center py-12 text-gray-400">Chargement…</div>
-          )}
-
+          {loading && <div className="rounded-2xl bg-white p-10 text-center text-slate-400">Chargement…</div>}
           {!loading && guides.length === 0 && (
-            <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center">
-              <div className="text-4xl mb-3">📚</div>
-              <h3 className="font-semibold text-lg mb-2">Les guides arrivent</h3>
-              <p className="text-sm text-gray-400 max-w-md mx-auto">
-                On rédige un guide à chaque nouvelle destination détectée. Reviens dans quelques jours pour les premiers.
-              </p>
+            <div className="rounded-2xl border border-[#D9E2E3] bg-white p-10 text-center">
+              <div className="text-4xl">📚</div>
+              <h3 className="mt-3 font-bold">Les guides arrivent</h3>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">Un guide est publié progressivement pour les destinations surveillées.</p>
             </div>
           )}
-
           {!loading && guides.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
-              {guides.map((g) => (
-                <Link
-                  key={g.iata}
-                  href={`/destination/${slugFor(g.iata)}`}
-                  className="group block overflow-hidden rounded-2xl border border-gray-100 bg-white hover:border-[#FF6B47] hover:shadow-[0_8px_24px_rgba(10,31,61,0.08)] transition-all"
-                >
-                  <div className="relative aspect-[4/3] overflow-hidden">
-                    {g.cover_photo ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-4">
+              {guides.map((guide) => (
+                <Link key={guide.iata} href={`/destination/${slugFor(guide.iata)}`} className="group block overflow-hidden rounded-2xl border border-[#D9E2E3] bg-white transition-all hover:border-[#0E7490] hover:shadow-[0_8px_24px_rgba(11,42,63,.08)]">
+                  <div className="relative aspect-[4/3] overflow-hidden bg-[#E9F5F7]">
+                    {guide.cover_photo ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={g.cover_photo}
-                        alt={g.destination}
-                        className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      />
+                      <img src={guide.cover_photo} alt={guide.destination} className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
                     ) : (
-                      // Fallback when the writer didn't manage to fetch a
-                      // cover photo from Unsplash. Coral/cream gradient +
-                      // IATA code keeps the card recognisable.
-                      <div className="absolute inset-0 bg-gradient-to-br from-[var(--color-coral-50)] to-[var(--color-cream)] flex items-center justify-center">
-                        <span className="font-[family-name:var(--font-dm-serif)] text-3xl text-[var(--color-coral)]/40">
-                          {g.iata}
-                        </span>
-                      </div>
+                      <div className="absolute inset-0 flex items-center justify-center font-[family-name:var(--font-dm-serif)] text-3xl text-[#0E7490]/40">{guide.iata}</div>
                     )}
                   </div>
                   <div className="p-3">
-                    <div className="text-[11px] text-gray-400 uppercase tracking-wider mb-0.5">{g.destination}</div>
-                    <div className="font-semibold text-sm text-[#082B78] line-clamp-2 leading-snug">{g.title}</div>
+                    <div className="text-[11px] uppercase tracking-wider text-slate-400">{guide.destination}</div>
+                    <div className="mt-1 line-clamp-2 text-sm font-semibold leading-snug text-[#0B2A3F]">{guide.title}</div>
                   </div>
                 </Link>
               ))}
             </div>
           )}
-        </div>
+        </section>
+      </main>
 
-      </div>
-
-      {/* Footer */}
-      <footer className="border-t border-gray-100 py-6 mt-8">
-        <div className="max-w-6xl mx-auto px-5 text-center text-xs text-gray-300">
-          Globe Genius © 2026 — Vols à prix cassés
-        </div>
+      <footer className="mt-8 border-t border-[#D9E2E3] py-6">
+        <div className="mx-auto max-w-6xl px-5 text-center text-xs text-slate-300">Globe Genius © 2026 — Alertes vols vérifiées</div>
       </footer>
     </div>
   );
