@@ -8,6 +8,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.freemium import router as freemium_router
+from app.api.preferences_freemium import (
+    normalize_all_free_subscriptions,
+    router as preferences_freemium_router,
+)
 from app.api.routes import router
 from app.api.signup_public import router as signup_public_router
 from app.freemium_policy import (
@@ -36,8 +40,8 @@ bot_handler_module._link_account = link_account_with_trial
 bot_handler_module._send_welcome = send_unlinked_welcome
 
 # ── Sentry init ──
-_SENTINEL_DSN = os.getenv("SENTRY_DSN", "")
-if _SENTINEL_DSN:
+_SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+if _SENTRY_DSN:
     try:
         import sentry_sdk
         from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -45,7 +49,7 @@ if _SENTINEL_DSN:
 
         _traces_rate = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "1.0"))
         sentry_sdk.init(
-            dsn=_SENTINEL_DSN,
+            dsn=_SENTRY_DSN,
             environment=os.getenv("APP_ENV", "production"),
             release=os.getenv("RAILWAY_GIT_COMMIT_SHA", "dev"),
             traces_sample_rate=_traces_rate,
@@ -84,6 +88,8 @@ async def lifespan(app: FastAPI):
     try:
         stats = await asyncio.to_thread(reconcile_legacy_access)
         logger.info("Access model reconciled: %s", stats)
+        normalized = await asyncio.to_thread(normalize_all_free_subscriptions)
+        logger.info("Freemium subscriptions normalized: %s users", normalized)
     except Exception as exc:
         # Do not prevent the service from starting, but surface the failure
         # loudly because access reconciliation is commercially important.
@@ -192,9 +198,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Public signup and Freemium APIs are isolated from the historical founder
-# routes so legacy clients remain compatible while the public model evolves.
+# These routers are registered before the historical monolithic router so their
+# modern public endpoints and entitlement-aware preference route take priority.
 app.include_router(signup_public_router)
+app.include_router(preferences_freemium_router)
 app.include_router(freemium_router)
 app.include_router(router)
 app.include_router(bot_router)
