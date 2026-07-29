@@ -1,457 +1,251 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import RedirectIfLoggedIn from "./_components/RedirectIfLoggedIn";
-import LandingAnimated, { HeroContent } from "./_components/LandingAnimated";
 import { LandingNotificationHero, LandingNotificationStackMobile } from "./_components/LandingNotificationHero";
 import { Wordmark } from "./_components/Wordmark";
 import { getBetaCount } from "@/lib/api";
-import { slugFor } from "@/lib/destinations";
 
 export const metadata: Metadata = {
-  title: "GlobeGenius — Alertes vols vérifiées 10 aéroports français · Beta",
+  title: "GlobeGenius — Les bons plans vols vérifiés avant qu’ils disparaissent",
   description:
-    "Une à trois alertes Telegram par jour sur les vols à -40% / -80% depuis 10 aéroports français. Couverture Europe + Méditerranée + Afrique du Nord. Beta publique, gratuit pour les 100 premiers fondateurs.",
-  alternates: {
-    canonical: "https://globegenius.app",
-  },
+    "Long-courriers depuis Paris, vols européens depuis 10 aéroports français. GlobeGenius détecte les baisses anormales, vérifie les prix et vous alerte sur Telegram.",
+  alternates: { canonical: "https://globegenius.app" },
   openGraph: {
-    title: "GlobeGenius · Beta publique · 10 aéroports français",
+    title: "GlobeGenius — Alertes vols vérifiées",
     description:
-      "Alertes vols vérifiées (95%) sur 162 destinations Europe/Med matures. Gratuit pour les 100 premiers fondateurs.",
+      "Les meilleurs prix vols détectés, vérifiés et envoyés sur Telegram avant qu’ils disparaissent.",
     url: "https://globegenius.app",
     type: "website",
   },
 };
 
-/**
- * Fetches destination guides for the landing "Nos guides destination" section.
- * Now returns 3 random guides per visit (no caching) instead of the 6 most recent
- * — keeps the section fresh for repeat visitors.
- */
-async function fetchRecentDestinationGuides(): Promise<Array<{ iata: string; destination: string; cover_photo: string; title: string }>> {
-  try {
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    const res = await fetch(`${API_URL}/api/destinations?random=true&limit=3`, { cache: "no-store" });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.items ?? [];
-  } catch {
-    return [];
-  }
-}
+const AIRPORTS = ["Paris", "Lyon", "Marseille", "Toulouse", "Bordeaux", "Nantes", "Nice", "Beauvais", "Bâle-Mulhouse"];
 
-const faqs = [
-  { q: "C'est quoi GlobeGenius exactement ?", a: "On surveille en continu les prix des vols depuis 10 aéroports français vers l'Europe, la Méditerranée et l'Afrique du Nord. Quand un tarif chute significativement sous le prix habituel, on t'envoie une alerte Telegram avec dates, prix et lien direct pour réserver. On est en beta publique depuis mai 2026." },
-  { q: "Pourquoi c'est gratuit pendant la beta ?", a: "Parce que ce n'est pas encore un produit fini. La couverture est limitée à l'Europe et la Méditerranée — le long-courrier (Asie, Amériques) arrive prochainement. Les 100 premiers inscrits ont le statut « Membre fondateur » et le Premium gratuit pendant 1 an. Les vrais testeurs (usage + retours sur les alertes) gardent leur Premium à vie. Les autres repassent en Free au bout d'un an — ou peuvent prendre l'abonnement payant à 49€/an pour garder le Premium. L'accès au service est conservé dans tous les cas." },
-  { q: "Combien d'alertes je reçois par jour ?", a: "Entre 1 et 3 alertes par jour selon ta config. On plafonne strictement à 5/24h, étalées dans le temps (jamais 4 notifs entre 2h et 4h du matin). Tu peux ajuster ton seuil à tout moment depuis ton profil." },
-  { q: "Comment sont vérifiés les deals ?", a: "Cross-check 2-tier avant envoi (95% de couverture). Tier 1 : on re-requête directement l'API de la compagnie aérienne (Ryanair, Transavia, Vueling). Tier 2 : on confirme sur l'agrégateur Travelpayouts. Les deux sources doivent confirmer pour que l'alerte parte. Ça élimine les ghost fares (prix affiché mais qui n'existe pas au moment de réserver)." },
-  { q: "Comment je gère mes préférences ?", a: "Depuis Telegram directement (commandes /destinations, /pause, ou bouton Masquer sur chaque alerte) ou depuis la page Profil sur le site." },
-  { q: "Et le long-courrier (Tokyo, New York, Bangkok) ?", a: "Pas encore. La baseline statistique sur ces routes n'est pas mature, on enverrait trop de faux positifs. Couverture long-courrier prochainement en beta — les fondateurs y auront accès en priorité." },
-  { q: "Pourquoi certains deals disparaissent avant que j'aie pu réserver ?", a: "Les tarifs erronés (erreurs de prix) sont des oublis des compagnies. Elles corrigent en 1-4 heures dès qu'elles s'en rendent compte. C'est pourquoi on t'envoie l'alerte dans les minutes qui suivent la détection. Réserver dans l'heure maximise les chances." },
+const EXAMPLE_DEALS = [
+  { route: "Paris → Tokyo", price: "449 €", baseline: "720 €", discount: "−38%", tag: "Long-courrier" },
+  { route: "Paris → Phuket", price: "494 €", baseline: "835 €", discount: "−41%", tag: "Long-courrier" },
+  { route: "Toulouse → Lisbonne", price: "64 €", baseline: "178 €", discount: "−64%", tag: "Europe" },
 ];
 
-const faqSchema = {
-  "@context": "https://schema.org",
-  "@type": "FAQPage",
-  mainEntity: faqs.map(f => ({
-    "@type": "Question",
-    name: f.q,
-    acceptedAnswer: { "@type": "Answer", text: f.a },
-  })),
-};
+const FAQS = [
+  {
+    q: "GlobeGenius vend-il les billets ?",
+    a: "Non. GlobeGenius détecte et vérifie les opportunités, puis vous redirige vers le site de réservation. Vous restez libre de réserver ou non.",
+  },
+  {
+    q: "Pourquoi Telegram ?",
+    a: "Parce que certains tarifs ne restent disponibles que quelques heures. Telegram permet de recevoir l’alerte immédiatement, avec le prix, les dates et le lien de réservation.",
+  },
+  {
+    q: "Le service fonctionne-t-il hors de Paris ?",
+    a: "Oui. GlobeGenius surveille 10 aéroports français. Paris fournit davantage de long-courriers, tandis que les aéroports régionaux offrent surtout des opportunités Europe, Méditerranée et quelques pépites long-courrier.",
+  },
+  {
+    q: "Comment un deal est-il vérifié ?",
+    a: "Le tarif détecté est comparé à son prix habituel, puis contrôlé à nouveau avant l’envoi. Les offres qui ne sont plus disponibles sont écartées.",
+  },
+];
+
+function SectionTitle({ eyebrow, title, copy }: { eyebrow: string; title: string; copy?: string }) {
+  return (
+    <div className="mx-auto mb-10 max-w-2xl text-center">
+      <p className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-[var(--color-coral)]">{eyebrow}</p>
+      <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl leading-tight text-[var(--color-ink)] sm:text-4xl">{title}</h2>
+      {copy && <p className="mt-4 text-sm leading-7 text-slate-500 sm:text-base">{copy}</p>}
+    </div>
+  );
+}
 
 export default async function Landing() {
-  const [recentGuides, betaCount] = await Promise.all([
-    fetchRecentDestinationGuides(),
-    getBetaCount(),
-  ]);
+  const betaCount = await getBetaCount().catch(() => ({ founders_count: 0, max_founders: 100 }));
+  const remaining = Math.max(betaCount.max_founders - betaCount.founders_count, 0);
+
   return (
-    <div className="min-h-screen bg-[var(--color-cream)]">
+    <div className="min-h-screen bg-[#FFF9F2] text-[var(--color-ink)]">
       <RedirectIfLoggedIn />
 
-      {/* FAQ JSON-LD — server-rendered, crawler-visible */}
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />
-
-      {/* ── NAVBAR ── */}
-      <nav aria-label="Navigation principale" className="sticky top-0 z-50 flex items-center justify-between px-6 sm:px-12 h-[80px] bg-[var(--color-cream)]/95 backdrop-blur-sm border-b border-[var(--color-sand)]">
-        <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-lg leading-none">
-          <Wordmark />
-        </Link>
-        <div className="flex items-center gap-6 text-sm">
-          <a href="#comment-ca-marche" className="hidden sm:inline text-[var(--color-ink)] hover:text-[var(--color-coral)] transition-colors">Comment ça marche</a>
-          <Link href="/beta" className="hidden sm:inline text-[var(--color-ink)] hover:text-[var(--color-coral)] transition-colors">Beta</Link>
-          <a href="#faq" className="hidden sm:inline text-[var(--color-ink)] hover:text-[var(--color-coral)] transition-colors">FAQ</a>
-          <Link href="/login" className="text-[var(--color-ink)] hover:text-[var(--color-coral)] transition-colors font-medium text-sm">
-            Connexion
-          </Link>
-          <Link href="/signup" className="bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors">
-            Rejoindre la beta
-          </Link>
+      <nav className="sticky top-0 z-50 border-b border-[#EADFD2] bg-[#FFF9F2]/95 backdrop-blur">
+        <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 sm:px-8">
+          <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-xl"><Wordmark /></Link>
+          <div className="hidden items-center gap-7 text-sm text-slate-600 md:flex">
+            <a href="#preuve" className="hover:text-[var(--color-coral)]">Deals récents</a>
+            <a href="#fonctionnement" className="hover:text-[var(--color-coral)]">Fonctionnement</a>
+            <a href="#couverture" className="hover:text-[var(--color-coral)]">Aéroports</a>
+            <a href="#faq" className="hover:text-[var(--color-coral)]">FAQ</a>
+          </div>
+          <div className="flex items-center gap-3">
+            <Link href="/login" className="hidden text-sm font-medium text-slate-600 sm:inline">Connexion</Link>
+            <Link href="/signup" className="rounded-xl bg-[var(--color-coral)] px-4 py-2.5 text-sm font-bold text-white shadow-[0_8px_24px_rgba(255,107,71,0.22)] hover:bg-[var(--color-coral-hover)]">
+              Activer mes alertes
+            </Link>
+          </div>
         </div>
       </nav>
 
       <main>
-        {/* ── HERO ── */}
-        {/*
-          The hero used to show a tropical beach photo, then a clumsy
-          stylised world map. Replaced by a floating Telegram-style
-          notification card that loops through the three V5 deal flavours
-          (round-trip, one-way, split-ticket combo). Shows the product in
-          action: the user receives an alert and reads the price drop.
-        */}
-        <section className="relative md:min-h-[600px] flex items-center overflow-hidden">
+        <section className="relative overflow-hidden bg-[#082B78]">
           <LandingNotificationHero />
-          <HeroContent
-            foundersCount={betaCount.founders_count}
-            maxFounders={betaCount.max_founders}
-          />
+          <div className="relative z-10 mx-auto grid min-h-[650px] max-w-7xl items-center px-5 py-20 sm:px-8 lg:grid-cols-[1.08fr_.92fr]">
+            <div className="max-w-2xl">
+              <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-semibold text-white/85 backdrop-blur">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                Surveillance active depuis 10 aéroports français
+              </div>
+              <h1 className="font-[family-name:var(--font-dm-serif)] text-5xl leading-[1.03] text-white sm:text-6xl lg:text-7xl">
+                Les bons plans vols,
+                <span className="block text-[#FF8265]">avant qu’ils disparaissent.</span>
+              </h1>
+              <p className="mt-7 max-w-xl text-lg leading-8 text-white/72">
+                Long-courriers depuis Paris, vols européens depuis les principaux aéroports français. GlobeGenius détecte les baisses anormales, vérifie les prix et vous alerte immédiatement sur Telegram.
+              </p>
+              <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <Link href="/signup" className="rounded-xl bg-[#FF6B47] px-7 py-4 text-center text-base font-bold text-white shadow-[0_12px_32px_rgba(255,107,71,.35)] hover:bg-[#E95D39]">
+                  Recevoir les prochains deals
+                </Link>
+                <a href="#fonctionnement" className="rounded-xl border border-white/20 bg-white/8 px-7 py-4 text-center text-base font-semibold text-white hover:bg-white/12">
+                  Voir comment ça marche
+                </a>
+              </div>
+              <div className="mt-7 flex flex-wrap gap-x-6 gap-y-2 text-sm text-white/55">
+                <span>✓ Aucune recherche manuelle</span>
+                <span>✓ Prix re-vérifiés</span>
+                <span>✓ Alertes personnalisées</span>
+              </div>
+            </div>
+          </div>
         </section>
         <LandingNotificationStackMobile />
 
-        {/* ── 3 PILIERS DE POSITIONNEMENT ──
-            Replaces the 4-numbers stats bar with the three differentiators
-            that anchor the whole brand (see POSITIONNEMENT.md for the
-            long form). Each pillar is intentionally short: a pictogramme,
-            a 3-4 word headline, a one-line proof. The reader should be
-            able to read all three in under 5 seconds and remember them.
-              1. Géographie    — 10 aéroports français, pas Paris-only
-              2. Identité      — par un Français, pas une équipe US
-              3. Honnêteté     — prix de référence = médiane statistique
-                                  réelle, pas un max gonflé
-        */}
-        <section className="py-12 px-6 sm:px-12 bg-white border-t border-[var(--color-sand)]">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-            <div className="text-center md:text-left">
-              <div className="text-3xl mb-2">🇫🇷</div>
-              <h3 className="font-bold text-[var(--color-ink)] mb-1">10 aéroports français</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                Pas seulement Paris. Lyon, Marseille, Toulouse, Bordeaux, Nantes, Nice et 3 autres.
-              </p>
+        <section className="border-b border-[#EADFD2] bg-white">
+          <div className="mx-auto grid max-w-7xl grid-cols-2 gap-px bg-[#EADFD2] md:grid-cols-4">
+            {[
+              ["10", "aéroports couverts"],
+              ["20 min", "mise à jour sur Paris"],
+              ["< 5 min", "entre détection et alerte"],
+              ["24/7", "surveillance automatisée"],
+            ].map(([value, label]) => (
+              <div key={label} className="bg-white px-5 py-7 text-center">
+                <div className="font-[family-name:var(--font-dm-serif)] text-3xl text-[#082B78]">{value}</div>
+                <div className="mt-1 text-xs uppercase tracking-wide text-slate-400">{label}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section id="preuve" className="px-5 py-20 sm:px-8">
+          <SectionTitle eyebrow="Preuves, pas promesses" title="Des deals réellement détectés" copy="Chaque alerte présente le prix observé, le prix habituel estimé, les dates et le lien de réservation. Les exemples ci-dessous illustrent les types d’opportunités recherchées par GlobeGenius." />
+          <div className="mx-auto grid max-w-6xl gap-5 md:grid-cols-3">
+            {EXAMPLE_DEALS.map((deal) => (
+              <article key={deal.route} className="rounded-3xl border border-[#EADFD2] bg-white p-6 shadow-[0_18px_50px_rgba(8,43,120,.06)]">
+                <div className="flex items-center justify-between">
+                  <span className="rounded-full bg-[#EEF3FF] px-3 py-1 text-xs font-bold text-[#082B78]">{deal.tag}</span>
+                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">Vérifié</span>
+                </div>
+                <h3 className="mt-8 text-xl font-bold text-[#082B78]">{deal.route}</h3>
+                <div className="mt-5 flex items-end gap-3">
+                  <span className="font-[family-name:var(--font-dm-serif)] text-4xl text-[var(--color-coral)]">{deal.price}</span>
+                  <span className="pb-1 text-sm text-slate-300 line-through">{deal.baseline}</span>
+                </div>
+                <div className="mt-5 border-t border-[#F0E7DD] pt-4 text-sm text-slate-500">
+                  Écart au prix habituel <strong className="float-right text-emerald-700">{deal.discount}</strong>
+                </div>
+              </article>
+            ))}
+          </div>
+          <p className="mx-auto mt-6 max-w-2xl text-center text-xs leading-5 text-slate-400">Les tarifs évoluent en permanence et peuvent expirer rapidement. GlobeGenius ne vend pas les billets et ne garantit pas leur disponibilité au moment de la réservation.</p>
+        </section>
+
+        <section id="fonctionnement" className="bg-white px-5 py-20 sm:px-8">
+          <SectionTitle eyebrow="Le produit" title="Vous ne cherchez plus. GlobeGenius surveille." />
+          <div className="mx-auto grid max-w-6xl gap-5 md:grid-cols-3">
+            {[
+              ["01", "Choisissez vos départs", "Sélectionnez Paris, votre aéroport régional ou plusieurs aéroports selon votre mobilité."],
+              ["02", "Les prix sont analysés", "Chaque tarif est comparé à son historique réel selon la route, la période et la durée du séjour."],
+              ["03", "Recevez l’alerte", "Le prix est contrôlé une dernière fois puis envoyé sur Telegram avec les dates et le lien direct."],
+            ].map(([num, title, copy]) => (
+              <div key={num} className="rounded-3xl border border-[#EADFD2] bg-[#FFF9F2] p-7">
+                <div className="font-[family-name:var(--font-dm-serif)] text-5xl text-[#FF6B47]/25">{num}</div>
+                <h3 className="mt-7 text-xl font-bold text-[#082B78]">{title}</h3>
+                <p className="mt-3 text-sm leading-7 text-slate-500">{copy}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section id="couverture" className="px-5 py-20 sm:px-8">
+          <SectionTitle eyebrow="Couverture équilibrée" title="Paris pour le volume. La province pour les opportunités." copy="Le service ne promet pas le même nombre de deals partout. Paris concentre davantage de long-courriers. Les aéroports régionaux apportent surtout des vols européens, méditerranéens et quelques offres exceptionnelles." />
+          <div className="mx-auto grid max-w-6xl gap-5 lg:grid-cols-3">
+            {[
+              ["Paris · Long-courrier", "Tokyo, Bangkok, New York, Montréal, Miami, Phuket et autres destinations mondiales.", "Moteur de désir"],
+              ["Paris · Europe", "Une fréquence plus régulière pour Lisbonne, Rome, Athènes, Marrakech, Istanbul et les capitales européennes.", "Moteur de régularité"],
+              ["Aéroports régionaux", "Lyon, Marseille, Toulouse, Bordeaux, Nantes, Nice, Beauvais et Bâle-Mulhouse.", "Avantage de couverture"],
+            ].map(([title, copy, badge]) => (
+              <div key={title} className="rounded-3xl bg-[#082B78] p-7 text-white">
+                <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#FF9A82]">{badge}</span>
+                <h3 className="mt-5 font-[family-name:var(--font-dm-serif)] text-2xl">{title}</h3>
+                <p className="mt-4 text-sm leading-7 text-white/65">{copy}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mx-auto mt-8 flex max-w-5xl flex-wrap justify-center gap-2">
+            {AIRPORTS.map((airport) => <span key={airport} className="rounded-full border border-[#E1D5C7] bg-white px-4 py-2 text-sm font-medium text-slate-600">{airport}</span>)}
+          </div>
+        </section>
+
+        <section className="bg-[#FFF1EC] px-5 py-20 sm:px-8">
+          <div className="mx-auto grid max-w-6xl items-center gap-10 lg:grid-cols-2">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-[var(--color-coral)]">Pourquoi Telegram</p>
+              <h2 className="mt-4 font-[family-name:var(--font-dm-serif)] text-4xl leading-tight text-[#082B78]">Une bonne affaire peut disparaître avant votre prochain email.</h2>
+              <p className="mt-5 max-w-xl text-base leading-8 text-slate-600">L’alerte apparaît immédiatement sur votre téléphone. Vous pouvez ouvrir le deal, masquer une destination ou suspendre les notifications sans revenir sur le site.</p>
             </div>
-            <div className="text-center md:text-left">
-              <div className="text-3xl mb-2">🤝</div>
-              <h3 className="font-bold text-[var(--color-ink)] mb-1">Pensé en France</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                Un service d&apos;alertes vols pensé en France, pour les voyageurs qui partent de France.
-              </p>
-            </div>
-            <div className="text-center md:text-left">
-              <div className="text-3xl mb-2">💯</div>
-              <h3 className="font-bold text-[var(--color-ink)] mb-1">Sans prix gonflés</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                Référence = médiane statistique sur 6 mois. Pas un prix max théorique pour faire briller le deal.
-              </p>
+            <div className="rounded-[28px] border border-[#D7E7F2] bg-white p-6 shadow-[0_24px_70px_rgba(8,43,120,.10)]">
+              <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#229ED9] font-bold text-white">G</div>
+                <div><div className="font-bold text-[#082B78]">GlobeGenius</div><div className="text-xs text-slate-400">alerte reçue maintenant</div></div>
+              </div>
+              <div className="pt-5">
+                <div className="text-xs font-bold uppercase tracking-wide text-emerald-700">Deal exceptionnel · Vérifié</div>
+                <div className="mt-3 text-xl font-bold text-[#082B78]">Paris → Tokyo</div>
+                <div className="mt-4 text-4xl font-bold text-[#FF6B47]">449 € A/R</div>
+                <div className="mt-1 text-sm text-slate-400">Prix habituel médian : 720 €</div>
+                <button className="mt-6 w-full rounded-xl bg-[#229ED9] py-3 text-sm font-bold text-white">Voir le vol</button>
+              </div>
             </div>
           </div>
         </section>
 
-        {recentGuides.length > 0 && (
-          <section className="py-16 px-6 sm:px-12 bg-white border-t border-[var(--color-sand)]">
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-[var(--color-ink)] text-center mb-2">
-              Nos guides destination
-            </h2>
-            <p className="text-center text-gray-500 text-sm mb-10">
-              Des guides écrits pour préparer chaque destination, mis à jour à chaque nouveau deal détecté.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
-              {recentGuides.map((g) => (
-                <Link key={g.iata} href={`/destination/${slugFor(g.iata)}`}
-                      className="group block overflow-hidden rounded-2xl border border-[var(--color-sand)] bg-white hover:border-[var(--color-coral)] transition-colors">
-                  <div className="relative aspect-video overflow-hidden">
-                    {g.cover_photo ? (
-                      // Using <img> here intentionally — <Image> with `fill` requires extra layout setup
-                      // and these cards are below the fold.
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={g.cover_photo} alt={g.destination}
-                           className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform" />
-                    ) : (
-                      <div className="absolute inset-0 bg-gradient-to-br from-[var(--color-coral-50)] to-[var(--color-cream)] flex items-center justify-center">
-                        <span className="font-[family-name:var(--font-dm-serif)] text-3xl text-[var(--color-coral)]/40">
-                          {g.iata}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-4">
-                    <div className="text-xs text-gray-400">{g.destination}</div>
-                    <div className="font-bold text-[var(--color-ink)]">{g.title}</div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* ── 3 TYPES DE DEALS ── */}
-        <section className="py-16 px-6 sm:px-12 bg-white border-t border-[var(--color-sand)]">
-          <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-[var(--color-ink)] text-center mb-2">
-            On cherche partout pour vous
-          </h2>
-          <p className="text-center text-gray-500 text-sm max-w-xl mx-auto mb-10">
-            La plupart des comparateurs ne regardent qu&apos;un seul type de billet&nbsp;: l&apos;aller-retour classique.
-            Nous, on en surveille trois — c&apos;est comme ça qu&apos;on attrape des deals que les autres laissent passer.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-sand)] rounded-2xl p-6">
-              <div className="text-2xl mb-3">✈️</div>
-              <h3 className="font-bold text-[var(--color-ink)] mb-2">Aller-retour classique</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                Le bon plan le plus courant&nbsp;: aller + retour, mêmes dates, prix total imbattable.
-                Surveillé en continu sur les <strong>10 aéroports français</strong>.
-              </p>
-            </div>
-            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-sand)] rounded-2xl p-6">
-              <div className="text-2xl mb-3">🎫</div>
-              <h3 className="font-bold text-[var(--color-ink)] mb-2">Aller simple</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                Tour du monde, expat, séjour long&nbsp;? On guette aussi les promos sur les sens uniques.
-                Personne d&apos;autre ne le fait.
-              </p>
-            </div>
-            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-sand)] rounded-2xl p-6">
-              <div className="text-2xl mb-3">💡</div>
-              <h3 className="font-bold text-[var(--color-ink)] mb-2">
-                Combo malin <span className="text-[var(--color-coral)]">— 2× aller simple</span>
-              </h3>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                Parfois, deux billets aller simple sur deux compagnies différentes coûtent <strong>moins cher</strong> qu&apos;un A/R.
-                On fait le calcul à votre place — économie typique <strong>-30%</strong>.
-              </p>
-            </div>
-          </div>
-          <p className="text-center text-xs text-gray-400 mt-6 max-w-xl mx-auto">
-            💬 L&apos;aller simple et le combo malin s&apos;activent dans ton profil. Pendant la beta, tous les membres fondateurs y ont accès gratuitement.
-          </p>
-        </section>
-
-        {/* Deals passés, comment ça marche, FAQ */}
-        <LandingAnimated />
-
-        {/* ── POURQUOI TELEGRAM ── */}
-        <section className="py-16 px-6 sm:px-12 bg-white border-t border-[var(--color-sand)]">
-          <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-[var(--color-ink)] text-center mb-2">
-            Pourquoi Telegram, et pas un email&nbsp;?
-          </h2>
-          <p className="text-center text-gray-500 text-sm max-w-xl mx-auto mb-10">
-            Parce qu&apos;un bon plan vol disparaît en 1 à 4 heures. L&apos;email arrive trop tard,
-            une app à installer fait perdre 30 secondes décisives.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-sand)] rounded-2xl p-6">
-              <div className="text-2xl mb-3">⚡</div>
-              <h3 className="font-bold text-[var(--color-ink)] mb-2">5 secondes, pas 5 minutes</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                Une notif Telegram s&apos;affiche sur ton écran de verrouillage en quelques secondes.
-                Le temps qu&apos;un email arrive et soit lu, le tarif est déjà parti.
-              </p>
-            </div>
-            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-sand)] rounded-2xl p-6">
-              <div className="text-2xl mb-3">📱</div>
-              <h3 className="font-bold text-[var(--color-ink)] mb-2">Pas d&apos;app à installer</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                Tu utilises déjà Telegram (ou tu l&apos;installes en 30 secondes — gratuit).
-                Aucun compte à créer chez nous&nbsp;: tu autorises notre bot, c&apos;est tout.
-              </p>
-            </div>
-            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-sand)] rounded-2xl p-6">
-              <div className="text-2xl mb-3">🎚️</div>
-              <h3 className="font-bold text-[var(--color-ink)] mb-2">
-                Tu pilotes tout depuis Telegram
-              </h3>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                Bloque une destination en un tap, mets en pause 7 ou 30 jours,
-                reprends quand tu veux — sans jamais ouvrir le site. C&apos;est toi qui pilotes.
-              </p>
-            </div>
-          </div>
-          <p className="text-center text-xs text-gray-400 mt-6 max-w-xl mx-auto">
-            ✓ Compatible iPhone, Android, ordinateur · ✓ Tes alertes te suivent même hors connexion
-          </p>
-        </section>
-
-        {/* ── POURQUOI GG EXISTE — mot du fondateur ──
-            Materialises the "pensé en France" pillar with a human
-            voice. Short (3 short paragraphs), signed. The point isn't
-            biography, it's trust: a visitor knows a real person stands
-            behind the service, addressable by name and email.
-        */}
-        <section className="py-16 px-6 sm:px-12 bg-[var(--color-cream)] border-t border-[var(--color-sand)]">
-          <div className="max-w-2xl mx-auto">
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-[var(--color-ink)] text-center mb-8">
-              Pourquoi GlobeGenius existe
-            </h2>
-            <div className="bg-white rounded-2xl p-8 border border-[var(--color-sand)] space-y-4">
-              <p className="text-[var(--color-ink)]/85 leading-relaxed">
-                Salut, je suis <strong>Fodé</strong>, dev solo basé en région parisienne.
-              </p>
-              <p className="text-[var(--color-ink)]/85 leading-relaxed">
-                J&apos;ai construit GlobeGenius parce qu&apos;aucun service d&apos;alertes vols ne couvre vraiment la France hors-Paris. Going, Jack&apos;s Flight Club, Les Vols d&apos;Alexi — ils ignorent Lyon, Marseille, Toulouse, Bordeaux, Nantes, Nice.
-              </p>
-              <p className="text-[var(--color-ink)]/85 leading-relaxed">
-                Et je voulais un service qui <strong>ne gonfle pas les prix de référence</strong> pour faire croire à des deals exceptionnels. Ici, le prix &laquo;&nbsp;habituel&nbsp;&raquo; affiché dans chaque alerte est une médiane statistique réelle calculée sur 6 mois — pas un maximum théorique inventé pour faire briller le rabais.
-              </p>
-              <p className="text-sm text-gray-500 pt-4 border-t border-[var(--color-sand)]">
-                Fodé · <a href="mailto:fode@globegenius.app" className="underline hover:text-[var(--color-coral)]">fode@globegenius.app</a>
-              </p>
-            </div>
+        <section id="faq" className="bg-white px-5 py-20 sm:px-8">
+          <SectionTitle eyebrow="Questions fréquentes" title="Ce qu’il faut savoir avant de commencer" />
+          <div className="mx-auto max-w-3xl divide-y divide-[#EADFD2] border-y border-[#EADFD2]">
+            {FAQS.map((faq) => (
+              <details key={faq.q} className="group py-5">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-bold text-[#082B78]">
+                  {faq.q}<span className="text-2xl font-light text-[#FF6B47] transition-transform group-open:rotate-45">+</span>
+                </summary>
+                <p className="max-w-2xl pt-4 text-sm leading-7 text-slate-500">{faq.a}</p>
+              </details>
+            ))}
           </div>
         </section>
 
-        {/* ── BETA TIMELINE ──
-            Three-step horizontal timeline summarising where we are vs
-            where we go. The point is to make the "beta" status concrete
-            and time-bounded without committing to a specific date that
-            could become a credibility liability if missed.
-        */}
-        <section className="py-12 px-6 sm:px-12 bg-white border-t border-[var(--color-sand)]">
-          <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl font-bold text-[var(--color-ink)] text-center mb-2">
-            Où on en est
-          </h2>
-          <p className="text-center text-gray-500 text-sm max-w-xl mx-auto mb-10">
-            Trois étapes, pas de date promise. La beta s&apos;ouvre par paliers — on avance quand chaque palier est prêt.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
-            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-coral)]/40 rounded-2xl p-5">
-              <div className="text-xs font-bold text-[var(--color-coral)] uppercase tracking-wide mb-2">Étape 1 · Maintenant</div>
-              <h3 className="font-bold text-[var(--color-ink)] mb-2">Beta publique</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                162 destinations Europe + Méditerranée matures.
-                10 aéroports français. Gratuit pour les 100 fondateurs.
-              </p>
-            </div>
-            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-sand)] rounded-2xl p-5">
-              <div className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Étape 2 · Prochainement</div>
-              <h3 className="font-bold text-[var(--color-ink)] mb-2">Long-courrier en beta</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                Asie, Amériques, Afrique sub-saharienne.
-                Détection stopover (visite 24-72h d&apos;une 2e ville).
-              </p>
-            </div>
-            <div className="bg-[var(--color-cream-pure)] border border-[var(--color-sand)] rounded-2xl p-5">
-              <div className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Étape 3 · Lancement officiel</div>
-              <h3 className="font-bold text-[var(--color-ink)] mb-2">Premium à 49€/an</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                Ouverture grand public à 49€/an. Tous les fondateurs gardent
-                leur <strong>Premium gratuit pendant 1 an</strong>. Les vrais
-                testeurs (usage + retours) le conservent <strong>à vie</strong>.
-                Les autres repassent en Free au bout d&apos;un an — ou prennent
-                l&apos;abonnement à 49€/an pour garder le Premium.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* ── BETA INVITE ──
-            Replaces the Free vs Premium pricing block during the public
-            beta. Stripe is still wired in the backend, but we don't
-            display a paid plan until the long-haul coverage lands.
-            The "founders for life" framing converts curiosity into
-            commitment without asking for a payment that the product
-            doesn't justify yet.
-        */}
-        <section id="tarifs" className="py-16 px-6 sm:px-12 bg-[var(--color-cream)] border-t border-[var(--color-sand)]">
-          <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-[var(--color-ink)] text-center mb-2">
-            Pendant la beta publique
-          </h2>
-          <p className="text-center text-gray-400 text-sm mb-10">
-            Tout est gratuit pour les {betaCount.max_founders} premiers inscrits.
-            Premium gratuit pendant 1 an · À vie pour les vrais testeurs.
-          </p>
-          <div className="max-w-2xl mx-auto bg-[var(--color-ink)] rounded-2xl p-8 text-center">
-            <div className="text-[var(--color-coral)] text-sm font-bold mb-2">
-              🚧 Beta publique · Lancement officiel prochainement
-            </div>
-            <div className="font-[family-name:var(--font-dm-serif)] text-4xl text-white mb-2">
-              {betaCount.founders_count} / {betaCount.max_founders}
-            </div>
-            <div className="text-gray-400 text-sm mb-6">places fondateurs prises</div>
-            <div className="text-sm text-gray-300 leading-loose mb-8 text-left max-w-md mx-auto">
-              ✓ <span className="text-white">Premium gratuit jusqu&apos;à 1 an · À vie pour les vrais testeurs</span><br />
-              ✓ <span className="text-white">Accès au long-courrier dès son ouverture</span><br />
-              ✓ <span className="text-white">Détection stopover dès qu&apos;elle sera livrée</span><br />
-              ✓ <span className="text-white">Tes préférences personnalisées</span><br />
-              ✓ <span className="text-white">Aucun engagement, désinscription en 1 clic</span>
-            </div>
-            <Link
-              href="/signup"
-              className="inline-block bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-8 py-4 rounded-xl font-bold text-base transition-colors shadow-[0_8px_24px_rgba(255,107,71,0.25)]"
-            >
-              Rejoindre la beta — Premium gratuit jusqu&apos;à 1 an
+        <section className="bg-[#082B78] px-5 py-20 text-center text-white sm:px-8">
+          <div className="mx-auto max-w-3xl">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#FF9A82]">Accès fondateur</p>
+            <h2 className="mt-5 font-[family-name:var(--font-dm-serif)] text-4xl sm:text-5xl">Le prochain bon plan ne prévient pas deux fois.</h2>
+            <p className="mx-auto mt-5 max-w-xl text-base leading-8 text-white/65">Configurez vos aéroports une fois. GlobeGenius surveille les prix et vous prévient quand une vraie opportunité apparaît.</p>
+            <Link href="/signup" className="mt-8 inline-block rounded-xl bg-[#FF6B47] px-8 py-4 text-base font-bold text-white shadow-[0_12px_32px_rgba(255,107,71,.30)] hover:bg-[#E95D39]">
+              Activer mes alertes Telegram
             </Link>
-            <p className="text-xs text-gray-500 mt-4">
-              <Link href="/beta" className="underline hover:text-gray-300">En savoir plus sur le programme fondateur →</Link>
-            </p>
-          </div>
-        </section>
-
-        {/* ── CTA FINAL — 2 cards : déjà Telegram / pas encore ── */}
-        <section className="py-16 px-6 sm:px-12 bg-[var(--color-ink)]">
-          <h2 className="font-[family-name:var(--font-dm-serif)] text-3xl font-bold text-white text-center mb-3">
-            Prêt à recevoir ton premier deal&nbsp;?
-          </h2>
-          <p className="text-gray-400 text-center mb-10">
-            Choisis la voie selon ton équipement. Activation en 30 secondes dans les deux cas.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-4xl mx-auto">
-            {/* Already on Telegram */}
-            <div className="bg-white rounded-2xl p-6 flex flex-col">
-              <div className="text-sm font-semibold text-[var(--color-coral)] mb-2">
-                ✓ Tu as déjà Telegram
-              </div>
-              <h3 className="font-[family-name:var(--font-dm-serif)] text-xl text-[var(--color-ink)] mb-3">
-                Active tes alertes en 30 secondes
-              </h3>
-              <p className="text-sm text-gray-500 leading-relaxed mb-6 flex-1">
-                Crée ton compte gratuit, choisis tes aéroports, lie ton Telegram en un clic.
-                Le premier deal arrive dans les 24h en moyenne.
-              </p>
-              <Link
-                href="/signup"
-                className="block text-center bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-6 py-3 rounded-xl font-bold text-sm transition-colors shadow-[0_8px_24px_rgba(255,107,71,0.25)]"
-              >
-                Activer mes alertes Telegram
-              </Link>
-              <p className="text-xs text-gray-400 mt-2 text-center">Gratuit, sans carte bancaire</p>
-            </div>
-
-            {/* Doesn't have Telegram yet */}
-            <div className="bg-[#0088cc]/10 border border-[#0088cc]/30 rounded-2xl p-6 flex flex-col">
-              <div className="text-sm font-semibold text-[#4DA9DD] mb-2 flex items-center gap-2">
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
-                </svg>
-                Pas encore Telegram&nbsp;?
-              </div>
-              <h3 className="font-[family-name:var(--font-dm-serif)] text-xl text-white mb-3">
-                30 secondes, gratuit, depuis l&apos;App Store
-              </h3>
-              <p className="text-sm text-gray-300 leading-relaxed mb-6 flex-1">
-                Telegram est utilisé par plus d&apos;un milliard de personnes dans le monde.
-                Compatible iPhone, Android et ordinateur. Aucun spam, aucune pub, jamais.
-              </p>
-              <a
-                href="https://telegram.org/apps"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block text-center bg-[#0088cc] hover:bg-[#006daa] text-white px-6 py-3 rounded-xl font-bold text-sm transition-colors"
-              >
-                Télécharger Telegram
-              </a>
-              <p className="text-xs text-gray-400 mt-2 text-center">Puis reviens t&apos;inscrire ici</p>
-            </div>
+            <p className="mt-4 text-xs text-white/40">{remaining > 0 ? `${remaining} places fondateurs encore disponibles` : "Accès fondateur complet — lancement public prochainement"}</p>
           </div>
         </section>
       </main>
 
-      {/* ── FOOTER ── */}
-      <footer className="py-6 px-6 sm:px-12 bg-[#050e1a] flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-gray-500">
-        <span>© 2026 Globe Genius</span>
-        <div className="flex gap-4 flex-wrap justify-center">
-          <Link href="/methodologie" className="hover:text-gray-300 transition-colors">Méthodologie</Link>
-          <Link href="/conditions" className="hover:text-gray-300 transition-colors">Conditions</Link>
-          <Link href="/confidentialite" className="hover:text-gray-300 transition-colors">Confidentialité</Link>
-          <Link href="/mentions-legales" className="hover:text-gray-300 transition-colors">Mentions légales</Link>
-          <a href="mailto:contact@globegenius.app" className="hover:text-gray-300 transition-colors">Contact</a>
+      <footer className="border-t border-[#EADFD2] bg-[#FFF9F2] px-5 py-8 sm:px-8">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 text-xs text-slate-400 sm:flex-row">
+          <div>GlobeGenius © 2026 — Alertes vols vérifiées</div>
+          <div className="flex gap-5"><Link href="/mentions-legales">Mentions légales</Link><Link href="/confidentialite">Confidentialité</Link><Link href="/conditions">Conditions</Link></div>
         </div>
       </footer>
     </div>
