@@ -7,6 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.account_plan_guard import router as account_plan_guard_router
 from app.api.freemium import router as freemium_router
 from app.api.preferences_freemium import (
     normalize_all_free_subscriptions,
@@ -199,9 +200,10 @@ app.add_middleware(
 )
 
 # These routers are registered before the historical monolithic router so their
-# modern public endpoints and entitlement-aware preference route take priority.
+# modern public endpoints and entitlement-aware routes take priority.
 app.include_router(signup_public_router)
 app.include_router(preferences_freemium_router)
+app.include_router(account_plan_guard_router)
 app.include_router(freemium_router)
 app.include_router(router)
 app.include_router(bot_router)
