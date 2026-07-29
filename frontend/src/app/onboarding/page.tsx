@@ -47,7 +47,7 @@ export default function OnboardingPage() {
         if (typeof preferences.accept_longhaul_stopover === "boolean") setAcceptLonghaulStopover(preferences.accept_longhaul_stopover);
       })
       .catch(() => {
-        // First-time users keep the safe defaults.
+        // First-time users keep safe defaults.
       });
   }, [router]);
 
@@ -112,12 +112,17 @@ export default function OnboardingPage() {
               <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-[#0E7490]">Étape 1 sur 3</p>
               <h1 className="mt-3 text-center font-[family-name:var(--font-dm-serif)] text-3xl">Vos aéroports de départ</h1>
               <p className="mx-auto mt-3 max-w-lg text-center text-sm leading-6 text-slate-500">
-                Sélectionnez votre aéroport habituel et les départs supplémentaires que vous accepteriez pour une économie importante.
+                Pendant Premium Découverte, tous les aéroports sélectionnés sont surveillés. Ensuite, le Freemium conserve le premier aéroport de la sélection comme départ principal.
               </p>
+
+              <div className="mt-5 rounded-2xl bg-[#E9F5F7] px-4 py-3 text-sm leading-6 text-slate-600">
+                <strong className="text-[#0B2A3F]">Conseil :</strong> sélectionnez d’abord l’aéroport que vous utilisez le plus souvent.
+              </div>
 
               <div className="mt-7 grid grid-cols-2 gap-3 md:grid-cols-3">
                 {AIRPORTS.map((airport) => {
                   const selected = airports.includes(airport.code);
+                  const primary = selected && airports[0] === airport.code;
                   return (
                     <button
                       key={airport.code}
@@ -127,7 +132,11 @@ export default function OnboardingPage() {
                     >
                       <div className="font-bold text-[#0B2A3F]">{airport.code}</div>
                       <div className="mt-1 text-xs leading-5 text-slate-500">{airport.label}</div>
-                      {selected && <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-[#0E7490] text-xs text-white">✓</span>}
+                      {primary ? (
+                        <span className="absolute right-2 top-2 rounded-full bg-[#0E7490] px-2 py-1 text-[10px] font-bold text-white">Principal</span>
+                      ) : selected ? (
+                        <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-[#0E7490] text-xs text-white">✓</span>
+                      ) : null}
                     </button>
                   );
                 })}
@@ -143,12 +152,16 @@ export default function OnboardingPage() {
             <div>
               <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-[#0E7490]">Étape 2 sur 3</p>
               <h1 className="mt-3 text-center font-[family-name:var(--font-dm-serif)] text-3xl">Les vols qui vous intéressent</h1>
-              <p className="mx-auto mt-3 max-w-lg text-center text-sm leading-6 text-slate-500">Ces préférences peuvent être modifiées à tout moment depuis votre profil.</p>
+              <p className="mx-auto mt-3 max-w-lg text-center text-sm leading-6 text-slate-500">Ces préférences seront pleinement actives pendant vos 7 jours Premium et restent enregistrées pour une future souscription.</p>
+
+              <div className="mt-6 rounded-2xl border border-[#FF7A59]/25 bg-[#FFF0EA] p-4 text-sm leading-6 text-slate-600">
+                Après l’essai, le Freemium envoie les alertes complètes uniquement pour les allers-retours classiques. Les allers simples et les combos restent visibles sous forme d’opportunités Premium.
+              </div>
 
               <div className="mt-8 grid grid-cols-2 gap-3">
                 {[
                   ["round_trip", "Aller-retour", "La majorité des alertes GlobeGenius"],
-                  ["one_way", "Aller simple", "Promotions dans un seul sens"],
+                  ["one_way", "Aller simple", "Disponible en Premium Découverte et Premium"],
                 ].map(([id, label, copy]) => {
                   const type = id as FlightTripType;
                   const selected = flightTripTypes.includes(type);
@@ -166,7 +179,7 @@ export default function OnboardingPage() {
                   <input type="checkbox" checked={includeSplitTickets} disabled={!flightTripTypes.includes("round_trip")} onChange={(event) => setIncludeSplitTickets(event.target.checked)} className="mt-1 h-4 w-4 accent-[#0E7490]" />
                   <span>
                     <span className="block text-sm font-bold text-[#0B2A3F]">Inclure les combos malins</span>
-                    <span className="mt-1 block text-xs leading-5 text-slate-500">Deux billets aller simple séparés lorsqu’ils sont moins chers qu’un aller-retour classique.</span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-500">Deux billets aller simple séparés lorsqu’ils sont moins chers qu’un aller-retour classique. Premium uniquement après l’essai.</span>
                   </span>
                 </label>
                 <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-[#D9E2E3] p-4">
@@ -192,19 +205,19 @@ export default function OnboardingPage() {
           {step === 3 && (
             <div className="text-center">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0E7490]">Étape essentielle</p>
-              <h1 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl">Connectez Telegram</h1>
+              <h1 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl">Connectez Telegram et démarrez vos 7 jours Premium</h1>
               <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-slate-500">
-                GlobeGenius utilise Telegram pour envoyer les alertes assez vite. Sans cette connexion, votre compte existe mais vous ne recevrez aucun deal.
+                La période Premium Découverte commence lorsque vous appuyez sur <strong>Start</strong> dans le bot. Sans connexion Telegram, le compteur ne démarre pas et aucune alerte n’est envoyée.
               </p>
 
               <div className="mx-auto mt-7 max-w-md rounded-3xl bg-[#E9F5F7] p-6">
                 <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#229ED9] text-xl font-bold text-white">G</div>
-                <p className="mt-4 text-sm leading-6 text-slate-600">Ouvrez le bot GlobeGenius puis appuyez sur <strong>Start</strong> pour associer votre compte.</p>
+                <p className="mt-4 text-sm leading-6 text-slate-600">Ouvrez le bot GlobeGenius puis appuyez sur <strong>Start</strong> pour associer votre compte et activer l’essai sans carte bancaire.</p>
               </div>
 
               {!telegramLink ? (
                 <button type="button" onClick={connectTelegram} disabled={loading} className="mt-7 w-full rounded-xl bg-[#229ED9] py-3.5 font-bold text-white hover:bg-[#1B86B8] disabled:opacity-50">
-                  {loading ? "Création du lien…" : "Connecter Telegram"}
+                  {loading ? "Création du lien…" : "Connecter Telegram et démarrer l’essai"}
                 </button>
               ) : (
                 <div className="mt-7 space-y-3">
@@ -214,7 +227,7 @@ export default function OnboardingPage() {
               )}
 
               <button type="button" onClick={() => router.push("/home")} className="mt-5 text-xs leading-5 text-slate-400 underline underline-offset-4 hover:text-slate-600">
-                Continuer sans Telegram — je comprends qu’aucune alerte ne sera envoyée
+                Continuer sans Telegram — l’essai ne démarrera pas et aucune alerte ne sera envoyée
               </button>
             </div>
           )}
