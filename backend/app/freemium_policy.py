@@ -1,4 +1,4 @@
-"""Runtime policy for GlobeGenius Freemium, Premium trials and OG access.
+"""Runtime policy for GlobeGenius Freemium and OG access.
 
 This module deliberately sits outside the deal detection pipeline. The existing
 scheduler still ranks candidates; this policy is the final entitlement gate
@@ -8,7 +8,6 @@ before a Telegram message is sent.
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
 from app.db import db
 from app.notifications.telegram import (
@@ -18,32 +17,10 @@ from app.notifications.telegram import (
 
 logger = logging.getLogger(__name__)
 
-PREMIUM_TRIAL_DAYS = 7
 FREEMIUM_REGULAR_ALERTS_PER_WEEK = 2
 FREEMIUM_EXCEPTIONAL_ALERTS_PER_MONTH = 1
 FREEMIUM_MONTHLY_UNLOCKS = 1
 FREEMIUM_EXCEPTIONAL_MIN_DISCOUNT_PCT = 50
-
-# Existing beta accounts must move to Freemium unless they own the OG badge.
-# Only accounts created after the public-model cutover may start a new trial.
-PUBLIC_TRIAL_ELIGIBILITY_START = datetime(2026, 7, 29, 20, 30, tzinfo=timezone.utc)
-
-
-def _parse_dt(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-    except (TypeError, ValueError):
-        return None
-
-
-def _active_grant(row: dict[str, Any] | None) -> bool:
-    if not row or row.get("revoked"):
-        return False
-    expiry = _parse_dt(row.get("expires_at"))
-    return expiry is None or expiry > datetime.now(timezone.utc)
 
 
 def _count_alerts(user_id: str, prefix: str, since: datetime) -> int:
@@ -91,11 +68,10 @@ async def guarded_send_grouped_flight_alerts(
 ) -> bool:
     """Apply the Freemium entitlement policy before the Telegram send.
 
-    Premium, active trial and OG users reach this function with tier=premium and
-    remain untouched. A free user gets one departure airport, two complete
-    regular A/R alerts per rolling seven days and one exceptional A/R alert per
-    rolling thirty days. The scheduler already excludes one-way and split-ticket
-    full alerts for free users.
+    Paid Premium and OG users remain untouched. A Freemium user gets one
+    departure airport, two complete regular A/R alerts per rolling seven days
+    and one exceptional A/R alert per rolling thirty days. The scheduler already
+    excludes one-way and split-ticket full alerts for Freemium users.
     """
     if tier == "free" and user_id:
         try:
@@ -156,12 +132,18 @@ async def guarded_send_grouped_flight_alerts(
 
 
 def reconcile_legacy_access() -> dict[str, int]:
-    """Keep Premium for OG badges and downgrade legacy non-OG founders.
+    """End all discovery trials and preserve only legitimate Premium access.
 
-    Paid Stripe access, manual grants and active discovery trials are not
-    touched. The operation is idempotent and safe to run on every deployment.
+    OG badges retain lifetime Premium. Stripe subscriptions and manual Premium
+    grants are not touched. Founder-beta grants and every ``auto_premium_trial``
+    grant are revoked. The operation is idempotent and safe on every deployment.
     """
-    stats = {"og_kept": 0, "non_og_downgraded": 0, "grants_revoked": 0}
+    stats = {
+        "og_kept": 0,
+        "non_og_downgraded": 0,
+        "founder_grants_revoked": 0,
+        "trials_revoked": 0,
+    }
     if not db:
         return stats
 
@@ -205,13 +187,24 @@ def reconcile_legacy_access() -> dict[str, int]:
                 or "founder_beta" in str(grant.get("reason") or "")
             )
         )
-        if is_founder_grant and not grant.get("revoked"):
+        is_trial_grant = bool(
+            grant
+            and (
+                grant.get("granted_by") == "auto_premium_trial"
+                or "premium découverte" in str(grant.get("reason") or "").lower()
+            )
+        )
+
+        if grant and not grant.get("revoked") and (is_founder_grant or is_trial_grant):
             db.table("premium_grants").update(
                 {"revoked": True, "revoked_at": now}
             ).eq("user_id", user_id).execute()
-            stats["grants_revoked"] += 1
+            if is_trial_grant:
+                stats["trials_revoked"] += 1
+            else:
+                stats["founder_grants_revoked"] += 1
 
-        if user.get("tier") == "premium_grandfathered":
+        if user.get("tier") in {"premium_grandfathered", "premium_trial"}:
             db.table("users").update({"tier": "free"}).eq("id", user_id).execute()
             stats["non_og_downgraded"] += 1
 
@@ -219,58 +212,8 @@ def reconcile_legacy_access() -> dict[str, int]:
     return stats
 
 
-def _grant_trial_if_eligible(user_id: str) -> tuple[bool, datetime | None]:
-    """Start a one-time seven-day trial for a new public account."""
-    if not db:
-        return False, None
-
-    user_response = (
-        db.table("users")
-        .select("badge,created_at")
-        .eq("id", user_id)
-        .limit(1)
-        .execute()
-    )
-    if not user_response.data:
-        return False, None
-    user = user_response.data[0]
-    if user.get("badge"):
-        return False, None
-
-    created_at = _parse_dt(user.get("created_at"))
-    if not created_at or created_at < PUBLIC_TRIAL_ELIGIBILITY_START:
-        return False, None
-
-    grant_response = (
-        db.table("premium_grants")
-        .select("granted_by,expires_at,revoked")
-        .eq("user_id", user_id)
-        .limit(1)
-        .execute()
-    )
-    existing = grant_response.data[0] if grant_response.data else None
-    if existing and existing.get("granted_by") == "auto_premium_trial":
-        return False, _parse_dt(existing.get("expires_at"))
-    if _active_grant(existing):
-        return False, _parse_dt(existing.get("expires_at"))
-
-    expires_at = datetime.now(timezone.utc) + timedelta(days=PREMIUM_TRIAL_DAYS)
-    db.table("premium_grants").upsert(
-        {
-            "user_id": user_id,
-            "granted_by": "auto_premium_trial",
-            "expires_at": expires_at.isoformat(),
-            "reason": "Premium Découverte — 7 jours",
-            "revoked": False,
-            "revoked_at": None,
-        },
-        on_conflict="user_id",
-    ).execute()
-    return True, expires_at
-
-
-async def link_account_with_trial(chat_id: int, token: str, chat: dict) -> None:
-    """Link Telegram and start Premium Découverte for eligible new accounts."""
+async def link_account_freemium(chat_id: int, token: str, chat: dict) -> None:
+    """Link Telegram. Non-OG accounts start directly on Freemium."""
     bot = _get_bot()
     if not bot or not db:
         return
@@ -290,6 +233,11 @@ async def link_account_with_trial(chat_id: int, token: str, chat: dict) -> None:
     airports = prefs.data[0].get("airport_codes") or ["CDG"]
     primary_airport = airports[0] if airports else "CDG"
 
+    user_row = (
+        db.table("users").select("badge").eq("id", user_id).limit(1).execute()
+    )
+    is_og = bool(user_row.data and user_row.data[0].get("badge"))
+
     db.table("user_preferences").update(
         {
             "telegram_chat_id": chat_id,
@@ -297,30 +245,43 @@ async def link_account_with_trial(chat_id: int, token: str, chat: dict) -> None:
             "telegram_connect_token": None,
         }
     ).eq("user_id", user_id).execute()
+
     db.table("telegram_subscribers").upsert(
         {"chat_id": chat_id, "airport_code": primary_airport, "user_id": user_id},
         on_conflict="chat_id",
     ).execute()
 
-    trial_started, trial_expires = await asyncio.to_thread(
-        _grant_trial_if_eligible, user_id
-    )
-    user_row = (
-        db.table("users").select("badge").eq("id", user_id).limit(1).execute()
-    )
-    is_og = bool(user_row.data and user_row.data[0].get("badge"))
+    if not is_og:
+        # A former trial grant must not survive a reconnect performed between
+        # deployments. Paid Stripe access remains independent in preferences.
+        db.table("premium_grants").update(
+            {"revoked": True, "revoked_at": datetime.now(timezone.utc).isoformat()}
+        ).eq("user_id", user_id).eq("granted_by", "auto_premium_trial").execute()
+
+        # Keep one active departure and round trips only for Freemium.
+        db.table("user_preferences").update(
+            {
+                "airport_codes": [primary_airport],
+                "flight_trip_types": ["round_trip"],
+                "include_split_tickets": False,
+            }
+        ).eq("user_id", user_id).execute()
+        subscriptions = (
+            db.table("telegram_subscribers")
+            .select("airport_code")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        for row in subscriptions.data or []:
+            airport = row.get("airport_code")
+            if airport and airport != primary_airport:
+                db.table("telegram_subscribers").delete().eq(
+                    "user_id", user_id
+                ).eq("airport_code", airport).execute()
 
     name = chat.get("first_name", "")
     if is_og:
-        plan_text = (
-            "🏅 Ton badge OG maintient ton accès Premium sans limite de durée."
-        )
-    elif trial_started or (trial_expires and trial_expires > datetime.now(timezone.utc)):
-        expiry_text = trial_expires.astimezone(timezone.utc).strftime("%d/%m/%Y") if trial_expires else ""
-        plan_text = (
-            "🎁 Tes 7 jours de Premium Découverte commencent maintenant, "
-            f"sans carte bancaire. Fin prévue le {expiry_text}."
-        )
+        plan_text = "🏅 Ton badge OG maintient ton accès Premium sans limite de durée."
     else:
         plan_text = (
             "🆓 Ton compte Freemium comprend 2 alertes complètes par semaine, "
@@ -343,6 +304,10 @@ async def link_account_with_trial(chat_id: int, token: str, chat: dict) -> None:
     )
 
 
+# Compatibility for the current startup patch; no trial is created anymore.
+link_account_with_trial = link_account_freemium
+
+
 async def send_unlinked_welcome(chat_id: int) -> None:
     """Welcome copy for a Telegram user who has not linked an account yet."""
     bot = _get_bot()
@@ -358,7 +323,7 @@ async def send_unlinked_welcome(chat_id: int) -> None:
             "1️⃣ Créez votre compte sur https://globegenius.app\n"
             "2️⃣ Choisissez votre aéroport de départ\n"
             "3️⃣ Reliez Telegram depuis votre espace\n\n"
-            "🎁 Les nouveaux comptes bénéficient de 7 jours de Premium Découverte, "
-            "sans carte bancaire."
+            "🆓 Le compte Freemium inclut 2 alertes complètes par semaine, "
+            "1 pépite exceptionnelle par mois et 1 joker mensuel."
         ),
     )
