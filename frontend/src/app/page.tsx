@@ -8,12 +8,12 @@ import { Wordmark } from "./_components/Wordmark";
 export const metadata: Metadata = {
   title: "GlobeGenius — Alertes vols vérifiées avant que les prix disparaissent",
   description:
-    "Long-courriers depuis Paris, vols européens depuis les principaux aéroports français. GlobeGenius détecte les baisses anormales, vérifie les prix et vous alerte sur Telegram.",
+    "Essayez Premium 7 jours sans carte bancaire, puis gardez le Freemium. GlobeGenius détecte les baisses anormales, vérifie les prix et vous alerte sur Telegram.",
   alternates: { canonical: "https://globegenius.app" },
   openGraph: {
     title: "GlobeGenius — Les bons plans vols, avant qu’ils disparaissent",
     description:
-      "Des baisses de prix vérifiées, envoyées rapidement sur Telegram depuis Paris et les principaux aéroports régionaux.",
+      "Des baisses de prix vérifiées, envoyées rapidement sur Telegram. 7 jours Premium sans carte, puis une formule Freemium.",
     url: "https://globegenius.app",
     type: "website",
   },
@@ -31,6 +31,14 @@ const AIRPORTS = [
 ] as const;
 
 const FAQS = [
+  {
+    q: "Comment fonctionnent les 7 jours Premium ?",
+    a: "Ils commencent lorsque vous reliez votre compte au bot Telegram et appuyez sur Start. Aucune carte bancaire n’est demandée. Pendant 7 jours, les fonctions Premium sont ouvertes sans quota.",
+  },
+  {
+    q: "Que reste-t-il après l’essai ?",
+    a: "Le compte passe automatiquement en Freemium : un aéroport principal, deux alertes complètes par semaine, une pépite complète et un joker Premium par mois. Les autres opportunités restent visibles sous forme de teasers.",
+  },
   {
     q: "GlobeGenius vend-il les billets ?",
     a: "Non. GlobeGenius détecte et vérifie les opportunités, puis vous redirige vers le site de réservation. Vous restez libre de réserver ou non.",
@@ -70,17 +78,17 @@ export default function Landing() {
           <div className="hidden items-center gap-7 text-sm text-slate-600 lg:flex">
             <a href="#deals" className="hover:text-[#0E7490]">Deals récents</a>
             <a href="#fonctionnement" className="hover:text-[#0E7490]">Fonctionnement</a>
+            <a href="#formules" className="hover:text-[#0E7490]">Formules</a>
             <a href="#couverture" className="hover:text-[#0E7490]">Aéroports</a>
-            <a href="#premium" className="hover:text-[#0E7490]">Premium</a>
             <Link href="/methodologie" className="hover:text-[#0E7490]">Méthodologie</Link>
           </div>
           <div className="flex items-center gap-3">
             <Link href="/login" className="hidden text-sm font-medium text-slate-600 sm:inline">Connexion</Link>
             <Link
-              href="/signup?utm_source=site&utm_medium=header&utm_campaign=activation"
+              href="/signup?utm_source=site&utm_medium=header&utm_campaign=trial_activation"
               className="rounded-xl bg-[#0E7490] px-4 py-2.5 text-sm font-bold text-white shadow-[0_8px_24px_rgba(14,116,144,.20)] hover:bg-[#0A6078]"
             >
-              Activer mes alertes
+              Essayer 7 jours
             </Link>
           </div>
         </div>
@@ -100,23 +108,23 @@ export default function Landing() {
                 <span className="block text-[#FF9478]">avant qu’ils disparaissent.</span>
               </h1>
               <p className="mt-7 max-w-xl text-lg leading-8 text-white/72">
-                Long-courriers depuis Paris, vols européens depuis les principaux aéroports français. GlobeGenius détecte les baisses anormales, vérifie les prix et vous alerte immédiatement sur Telegram.
+                GlobeGenius détecte les baisses anormales, re-vérifie les prix et vous alerte immédiatement sur Telegram — sans recherche manuelle.
               </p>
               <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <Link
-                  href="/signup?utm_source=site&utm_medium=hero&utm_campaign=activation"
+                  href="/signup?utm_source=site&utm_medium=hero&utm_campaign=trial_activation"
                   className="rounded-xl bg-[#FF7A59] px-7 py-4 text-center text-base font-bold text-white shadow-[0_12px_32px_rgba(255,122,89,.30)] hover:bg-[#E96543]"
                 >
-                  Recevoir les prochains deals
+                  Tester Premium 7 jours
                 </Link>
                 <a href="#deals" className="rounded-xl border border-white/20 bg-white/8 px-7 py-4 text-center text-base font-semibold text-white hover:bg-white/12">
                   Voir les deals détectés
                 </a>
               </div>
               <div className="mt-7 flex flex-wrap gap-x-6 gap-y-2 text-sm text-white/55">
-                <span>✓ Compte gratuit</span>
+                <span>✓ Sans carte bancaire</span>
+                <span>✓ Puis Freemium</span>
                 <span>✓ Prix re-vérifiés</span>
-                <span>✓ Aucune recherche manuelle</span>
               </div>
             </div>
           </div>
@@ -152,7 +160,7 @@ export default function Landing() {
           <SectionTitle eyebrow="Le produit" title="Vous ne cherchez plus. GlobeGenius surveille." />
           <div className="mx-auto grid max-w-6xl gap-5 md:grid-cols-3">
             {[
-              ["01", "Choisissez vos départs", "Sélectionnez Paris, votre aéroport régional ou plusieurs aéroports selon votre mobilité."],
+              ["01", "Choisissez vos départs", "Sélectionnez Paris, votre aéroport régional ou plusieurs aéroports pendant Premium."],
               ["02", "Les prix sont analysés", "Chaque tarif est comparé à son historique réel selon la route, la période et la durée du séjour."],
               ["03", "Recevez l’alerte", "Le prix est contrôlé une dernière fois puis envoyé sur Telegram avec les dates et le lien direct."],
             ].map(([num, title, copy]) => (
@@ -165,7 +173,55 @@ export default function Landing() {
           </div>
         </section>
 
-        <section id="couverture" className="px-5 py-20 sm:px-8">
+        <section id="formules" className="px-5 py-20 sm:px-8">
+          <SectionTitle
+            eyebrow="Commencer sans risque"
+            title="Découvrez toute la valeur. Gardez ensuite l’essentiel gratuitement."
+            copy="Le Freemium limite le nombre d’alertes, jamais leur fraîcheur. Nous préférons envoyer moins de deals plutôt qu’un tarif arrivé trop tard."
+          />
+          <div className="mx-auto grid max-w-6xl gap-5 lg:grid-cols-3">
+            <div className="rounded-[32px] border-2 border-[#2AB7A9] bg-white p-7 shadow-[0_20px_55px_rgba(42,183,169,.12)]">
+              <span className="rounded-full bg-[#E9F5F7] px-3 py-1 text-xs font-bold text-[#0E7490]">À l’activation Telegram</span>
+              <h3 className="mt-6 font-[family-name:var(--font-dm-serif)] text-3xl">Premium Découverte</h3>
+              <div className="mt-3 text-2xl font-bold text-[#168F73]">7 jours offerts</div>
+              <ul className="mt-6 space-y-3 text-sm leading-6 text-slate-600">
+                <li>✓ Toutes les alertes sans quota</li>
+                <li>✓ Tous les aéroports sélectionnés</li>
+                <li>✓ Allers simples et combos malins</li>
+                <li>✓ Aucun paiement, aucune carte</li>
+              </ul>
+            </div>
+
+            <div className="rounded-[32px] border border-[#D9E2E3] bg-white p-7">
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-500">Après l’essai</span>
+              <h3 className="mt-6 font-[family-name:var(--font-dm-serif)] text-3xl">Freemium</h3>
+              <div className="mt-3 text-2xl font-bold">0 €</div>
+              <ul className="mt-6 space-y-3 text-sm leading-6 text-slate-600">
+                <li>✓ 1 aéroport principal</li>
+                <li>✓ 2 alertes complètes par semaine</li>
+                <li>✓ 1 pépite complète par mois</li>
+                <li>✓ 1 joker Premium par mois</li>
+              </ul>
+            </div>
+
+            <div className="rounded-[32px] bg-[#0B2A3F] p-7 text-white">
+              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-[#52C9BE]">Ouverture prochaine</span>
+              <h3 className="mt-6 font-[family-name:var(--font-dm-serif)] text-3xl">Premium</h3>
+              <div className="mt-3 text-2xl font-bold">49 € / an</div>
+              <ul className="mt-6 space-y-3 text-sm leading-6 text-white/70">
+                <li>✓ Alertes complètes sans quota</li>
+                <li>✓ Plusieurs aéroports</li>
+                <li>✓ Tous les types de deals</li>
+                <li>✓ Réglages avancés</li>
+              </ul>
+            </div>
+          </div>
+          <div className="mx-auto mt-8 max-w-3xl rounded-2xl bg-[#FFF0EA] px-6 py-5 text-center text-sm leading-7 text-slate-600">
+            <strong className="text-[#0B2A3F]">Une seule réservation peut amortir l’abonnement plusieurs fois.</strong> Une économie de 100 € représente plus de deux années à 49 €, et 150 € plus de trois. Le montant réellement économisé dépend du billet réservé.
+          </div>
+        </section>
+
+        <section id="couverture" className="bg-white px-5 py-20 sm:px-8">
           <SectionTitle
             eyebrow="Couverture équilibrée"
             title="Paris pour le volume. Les régions pour les opportunités."
@@ -186,7 +242,7 @@ export default function Landing() {
           </div>
           <div className="mx-auto mt-8 flex max-w-5xl flex-wrap justify-center gap-2">
             {AIRPORTS.map(([label, slug]) => (
-              <Link key={slug} href={`/depart/${slug}`} className="rounded-full border border-[#D9E2E3] bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:border-[#0E7490] hover:text-[#0E7490]">
+              <Link key={slug} href={`/depart/${slug}`} className="rounded-full border border-[#D9E2E3] bg-[#F7F3EA] px-4 py-2 text-sm font-medium text-slate-600 hover:border-[#0E7490] hover:text-[#0E7490]">
                 {label}
               </Link>
             ))}
@@ -198,10 +254,10 @@ export default function Landing() {
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#0E7490]">Premium · ouverture prochaine</p>
               <h2 className="mt-4 font-[family-name:var(--font-dm-serif)] text-4xl leading-tight text-[#0B2A3F] sm:text-5xl">
-                49 € par an. Un seul bon deal peut suffire à rentabiliser plusieurs années.
+                49 € par an pour ne plus laisser passer les meilleurs deals.
               </h2>
               <p className="mt-5 max-w-2xl text-base leading-8 text-slate-600">
-                Une économie de 100 € sur une première réservation représente plus de deux années d’abonnement. Une économie de 150 € en représente plus de trois. Le résultat dépend naturellement du vol réservé et du tarif réellement disponible.
+                Toutes les alertes qualifiées, tous les types de billets et plusieurs aéroports, avec le prix, les dates et le lien dès la détection.
               </p>
               <div className="mt-7 flex flex-wrap gap-3 text-sm text-[#0B2A3F]">
                 <span className="rounded-full bg-white px-4 py-2 font-semibold">4,08 € / mois</span>
@@ -209,7 +265,7 @@ export default function Landing() {
                 <span className="rounded-full bg-white px-4 py-2 font-semibold">Deals exceptionnels</span>
               </div>
               <p className="mt-6 text-sm text-slate-500">
-                Stripe sera activé ultérieurement. Pour l’instant, la création du compte et la configuration des alertes n’entraînent aucun paiement.
+                Stripe sera activé ultérieurement. Pour l’instant, la création du compte et Premium Découverte n’entraînent aucun paiement.
               </p>
             </div>
             <div className="rounded-[32px] border border-white/80 bg-white p-8 shadow-[0_25px_70px_rgba(11,42,63,.10)]">
@@ -222,13 +278,13 @@ export default function Landing() {
                 <span className="rounded-full bg-[#FFF0EA] px-3 py-1 text-xs font-bold text-[#E96543]">Bientôt</span>
               </div>
               <ul className="mt-7 space-y-3 text-sm text-slate-600">
-                <li>✓ Toutes les alertes qualifiées sans quota hebdomadaire</li>
+                <li>✓ Toutes les alertes qualifiées sans quota</li>
                 <li>✓ Deals exceptionnels, aller simple et combos malins</li>
                 <li>✓ Choix étendu des aéroports et seuils personnalisés</li>
                 <li>✓ Garantie satisfait ou remboursé 30 jours à l’ouverture</li>
               </ul>
-              <Link href="/signup?utm_source=site&utm_medium=pricing&utm_campaign=premium_prelaunch" className="mt-8 block w-full rounded-xl bg-[#0E7490] px-6 py-3.5 text-center text-sm font-bold text-white hover:bg-[#0A6078]">
-                Créer mon compte gratuitement
+              <Link href="/signup?utm_source=site&utm_medium=pricing&utm_campaign=trial_activation" className="mt-8 block w-full rounded-xl bg-[#0E7490] px-6 py-3.5 text-center text-sm font-bold text-white hover:bg-[#0A6078]">
+                Commencer les 7 jours offerts
               </Link>
               <p className="mt-3 text-center text-xs text-slate-400">Aucune carte bancaire demandée aujourd’hui</p>
             </div>
@@ -239,9 +295,9 @@ export default function Landing() {
           <div className="mx-auto max-w-4xl text-center">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#52C9BE]">Activation Telegram</p>
             <h2 className="mt-4 font-[family-name:var(--font-dm-serif)] text-4xl sm:text-5xl">La bonne affaire arrive sur votre téléphone, pas dans un tableau à surveiller.</h2>
-            <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-white/65">Créez votre compte, choisissez vos aéroports et connectez Telegram. Sans connexion Telegram, aucune alerte ne peut être envoyée.</p>
-            <Link href="/signup?utm_source=site&utm_medium=final_cta&utm_campaign=activation" className="mt-8 inline-flex rounded-xl bg-[#FF7A59] px-7 py-4 font-bold text-white hover:bg-[#E96543]">
-              Configurer mes alertes
+            <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-white/65">Créez votre compte, choisissez vos aéroports et connectez Telegram. Vos 7 jours Premium commencent seulement lorsque les alertes peuvent réellement vous parvenir.</p>
+            <Link href="/signup?utm_source=site&utm_medium=final_cta&utm_campaign=trial_activation" className="mt-8 inline-flex rounded-xl bg-[#FF7A59] px-7 py-4 font-bold text-white hover:bg-[#E96543]">
+              Tester Premium 7 jours
             </Link>
           </div>
         </section>
