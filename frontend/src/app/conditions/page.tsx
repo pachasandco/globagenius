@@ -4,7 +4,7 @@ import { Wordmark } from "../_components/Wordmark";
 
 export const metadata: Metadata = {
   title: "Conditions d’utilisation et de vente — GlobeGenius",
-  description: "Conditions de la formule Freemium GlobeGenius et de la future offre Premium à 49 € par an.",
+  description: "Conditions de la formule Freemium GlobeGenius et de l’offre Premium à 39 € par an.",
   alternates: { canonical: "https://globegenius.app/conditions" },
   robots: { index: false, follow: false },
 };
@@ -23,13 +23,13 @@ export default function Conditions() {
         <h1 className="mt-3 font-[family-name:var(--font-dm-serif)] text-4xl">Conditions d’utilisation et de vente</h1>
 
         <div className="mt-8 rounded-2xl border border-[#2AB7A9]/30 bg-[#E9F5F7] p-5 text-sm leading-7 text-slate-600">
-          <strong className="text-[#0B2A3F]">Information avant lancement du paiement :</strong> Premium est prévu à 49 € TTC par an, mais Stripe n’est pas encore ouvert. La création et l’utilisation d’un compte Freemium n’entraînent aucun paiement, aucun renouvellement et aucune demande de carte bancaire.
+          <strong className="text-[#0B2A3F]">Information avant ouverture commerciale :</strong> Premium est fixé à 39 € TTC par an. Tant que le bouton public de souscription n’est pas ouvert, la création et l’utilisation d’un compte Freemium n’entraînent aucun paiement, aucun renouvellement et aucune demande de carte bancaire.
         </div>
 
         <div className="mt-10 space-y-9 text-[15px] leading-8 text-slate-600">
           <section>
             <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">1. Objet</h2>
-            <p className="mt-3">Les présentes conditions encadrent l’utilisation de GlobeGenius, accessible sur globegenius.app, ainsi que la future souscription à l’offre Premium lorsqu’elle sera commercialement ouverte.</p>
+            <p className="mt-3">Les présentes conditions encadrent l’utilisation de GlobeGenius, accessible sur globegenius.app, ainsi que la souscription à l’offre Premium lorsqu’elle sera commercialement ouverte.</p>
           </section>
 
           <section>
@@ -62,19 +62,19 @@ export default function Conditions() {
           </section>
 
           <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">6. Offre Premium prévue</h2>
-            <p className="mt-3">L’offre Premium sera proposée au tarif public de <strong className="text-[#0B2A3F]">49 € TTC par an</strong>, payable en une fois. Elle est destinée à inclure toutes les alertes qualifiées sans quota Freemium, plusieurs aéroports, les deals exceptionnels, les allers simples, les combos malins et des options de personnalisation supplémentaires.</p>
-            <p className="mt-3">Les comparaisons de rentabilité présentées sur le site sont des illustrations. Une économie de 100 € sur un billet représente plus de deux années à 49 €, et une économie de 150 € plus de trois, mais GlobeGenius ne garantit ni le montant d’une économie, ni la disponibilité d’un tarif, ni la réalisation d’une réservation.</p>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">6. Offre Premium</h2>
+            <p className="mt-3">L’offre Premium est fixée au tarif public de <strong className="text-[#0B2A3F]">39 € TTC par an</strong>, payable en une fois et renouvelable annuellement. Elle est destinée à inclure toutes les alertes qualifiées sans quota Freemium, plusieurs aéroports, les deals exceptionnels, les allers simples, les combos malins et des options de personnalisation supplémentaires.</p>
+            <p className="mt-3">Les comparaisons de rentabilité présentées sur le site sont des illustrations. Une économie de 100 € sur un billet représente plus de deux années à 39 €, et une économie de 150 € plus de trois, mais GlobeGenius ne garantit ni le montant d’une économie, ni la disponibilité d’un tarif, ni la réalisation d’une réservation.</p>
           </section>
 
           <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">7. Paiement et renouvellement à l’ouverture</h2>
-            <p className="mt-3">Lorsque le paiement sera activé, il sera traité par Stripe. Avant toute validation, l’utilisateur verra le prix, la durée, les conditions de renouvellement et le moyen d’annulation. Aucun prélèvement ne sera effectué avant une action explicite de souscription.</p>
+            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">7. Paiement et renouvellement</h2>
+            <p className="mt-3">Le paiement est traité par Stripe. Avant toute validation, l’utilisateur voit le prix, la durée, les conditions de renouvellement et le moyen d’annulation. Aucun prélèvement n’est effectué avant une action explicite de souscription.</p>
           </section>
 
           <section>
             <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-[#0B2A3F]">8. Garantie commerciale prévue</h2>
-            <p className="mt-3">À l’ouverture de Premium, GlobeGenius prévoit une garantie satisfait ou remboursé de 30 jours à compter de la souscription. Les modalités opérationnelles seront rappelées au moment du paiement et pourront être exercées par email à <a href="mailto:contact@globegenius.app" className="font-medium text-[#0E7490] hover:underline">contact@globegenius.app</a>.</p>
+            <p className="mt-3">À l’ouverture commerciale de Premium, GlobeGenius prévoit une garantie satisfait ou remboursé de 30 jours à compter de la souscription. Les modalités opérationnelles seront rappelées au moment du paiement et pourront être exercées par email à <a href="mailto:contact@globegenius.app" className="font-medium text-[#0E7490] hover:underline">contact@globegenius.app</a>.</p>
           </section>
 
           <section>
@@ -97,7 +97,7 @@ export default function Conditions() {
             <p className="mt-3">Les présentes conditions sont soumises au droit français. Toute question peut être adressée à <a href="mailto:contact@globegenius.app" className="font-medium text-[#0E7490] hover:underline">contact@globegenius.app</a>.</p>
           </section>
 
-          <p className="border-t border-[#D9E2E3] pt-6 text-sm text-slate-400">Dernière mise à jour : 29 juillet 2026.</p>
+          <p className="border-t border-[#D9E2E3] pt-6 text-sm text-slate-400">Dernière mise à jour : 30 juillet 2026.</p>
         </div>
       </main>
     </div>
