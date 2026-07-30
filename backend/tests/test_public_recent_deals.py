@@ -24,9 +24,9 @@ def test_one_way_and_missing_return_are_excluded():
         },
         {
             "item_id": "valid-round-trip",
-            "price": 449,
-            "baseline_price": 720,
-            "discount_pct": 38,
+            "price": 520,
+            "baseline_price": 1040,
+            "discount_pct": 50,
             "created_at": "2026-07-20T10:00:00+00:00",
             "trip_type": "round_trip",
         },
@@ -55,9 +55,12 @@ def test_one_way_and_missing_return_are_excluded():
         },
     ]
 
-    # The valid row is below the public 40% floor and is therefore also
-    # excluded. This protects the showcase from silently relaxing its promise.
-    assert build_round_trip_candidates(qualified, raw) == []
+    candidates = build_round_trip_candidates(qualified, raw)
+
+    assert len(candidates) == 1
+    assert candidates[0]["destination"] == "NRT"
+    assert candidates[0]["trip_type"] == "round_trip"
+    assert candidates[0]["return_date"] == "2026-10-18"
 
 
 def test_valid_round_trips_are_kept_with_real_baseline():
@@ -103,6 +106,30 @@ def test_valid_round_trips_are_kept_with_real_baseline():
     assert all(item["return_date"] for item in candidates)
     assert candidates[0]["baseline"] == 1040
     assert candidates[1]["is_province"] is True
+
+
+def test_suspicious_long_haul_baseline_is_excluded():
+    qualified = [
+        {
+            "item_id": "cheap-tokyo",
+            "price": 162,
+            "baseline_price": 352,
+            "discount_pct": 54,
+            "created_at": "2026-07-21T10:00:00+00:00",
+            "trip_type": "round_trip",
+        }
+    ]
+    raw = [
+        {
+            "id": "cheap-tokyo",
+            "origin": "CDG",
+            "destination": "NRT",
+            "trip_type": "round_trip",
+            "return_date": "2026-09-12",
+        }
+    ]
+
+    assert build_round_trip_candidates(qualified, raw) == []
 
 
 def test_first_showcase_cards_include_long_haul_and_province():
