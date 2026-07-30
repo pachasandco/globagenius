@@ -74,7 +74,7 @@ export async function generateMetadata({ params }: { params: Promise<{ airport: 
   if (!data) return {};
   return {
     title: `Alertes vols pas chers depuis ${data.city} — GlobeGenius`,
-    description: `Recevez sur Telegram les baisses de prix vérifiées depuis ${data.city}. ${data.promise}.`,
+    description: `Radar français de bons plans vols : recevez sur Telegram les baisses de prix vérifiées depuis ${data.city}. ${data.promise}.`,
     alternates: { canonical: `https://globegenius.app/depart/${airport}` },
   };
 }
@@ -90,7 +90,7 @@ export default async function AirportPage({ params }: { params: Promise<{ airpor
         <div className="mx-auto flex h-20 max-w-6xl items-center justify-between px-5">
           <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-xl"><Wordmark /></Link>
           <Link href={`/signup?utm_source=airport_page&utm_medium=seo&utm_campaign=${airport}`} className="rounded-xl bg-[#0E7490] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#0A6078]">
-            Activer mes alertes
+            Activer mon radar
           </Link>
         </div>
       </nav>
@@ -98,7 +98,7 @@ export default async function AirportPage({ params }: { params: Promise<{ airpor
       <main>
         <section className="bg-[#0B2A3F] px-5 py-20 text-white">
           <div className="mx-auto max-w-4xl text-center">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#52C9BE]">Départ {data.codes}</p>
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#52C9BE]">Radar français · Départ {data.codes}</p>
             <h1 className="mt-5 font-[family-name:var(--font-dm-serif)] text-4xl leading-tight sm:text-6xl">
               Les bons plans vols depuis {data.city}, vérifiés avant l’alerte.
             </h1>
@@ -106,7 +106,9 @@ export default async function AirportPage({ params }: { params: Promise<{ airpor
             <Link href={`/signup?utm_source=airport_page&utm_medium=seo&utm_campaign=${airport}&utm_content=hero`} className="mt-9 inline-flex rounded-xl bg-[#FF7A59] px-7 py-4 font-bold text-white hover:bg-[#E96543]">
               Surveiller les vols depuis {data.city}
             </Link>
-            <p className="mt-4 text-xs text-white/45">Compte gratuit · Telegram requis pour recevoir les alertes</p>
+            <p className="mx-auto mt-4 max-w-xl text-xs leading-5 text-white/45">
+              Compte gratuit · Telegram requis · fréquence variable selon les prix réellement disponibles
+            </p>
           </div>
         </section>
 
@@ -126,8 +128,8 @@ export default async function AirportPage({ params }: { params: Promise<{ airpor
             </div>
 
             <div className="mt-14 rounded-[32px] bg-white p-7 shadow-[0_18px_60px_rgba(11,42,63,.06)] sm:p-10">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#FF7A59]">Destinations surveillées</p>
-              <h2 className="mt-4 font-[family-name:var(--font-dm-serif)] text-3xl">Quelques routes typiques depuis {data.city}</h2>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#FF7A59]">Routes typiquement surveillées</p>
+              <h2 className="mt-4 font-[family-name:var(--font-dm-serif)] text-3xl">Quelques destinations suivies depuis {data.city}</h2>
               <div className="mt-7 flex flex-wrap gap-3">
                 {data.examples.map((destination) => (
                   <span key={destination} className="rounded-full border border-[#D9E2E3] bg-[#E9F5F7] px-4 py-2 text-sm font-semibold text-[#0B2A3F]">
@@ -135,9 +137,9 @@ export default async function AirportPage({ params }: { params: Promise<{ airpor
                   </span>
                 ))}
               </div>
-              <p className="mt-7 text-sm leading-7 text-slate-500">
-                Le volume varie selon les compagnies, les saisons et les routes. GlobeGenius préfère ne rien envoyer plutôt que de présenter une promotion ordinaire comme une affaire exceptionnelle.
-              </p>
+              <div className="mt-7 rounded-2xl bg-[#F7F3EA] p-5 text-sm leading-7 text-slate-500">
+                <strong className="text-[#0B2A3F]">Une surveillance active ne garantit pas un nombre fixe d’alertes.</strong> Le volume varie selon les compagnies, les saisons et les routes. GlobeGenius préfère ne rien envoyer plutôt que de présenter une promotion ordinaire comme une affaire exceptionnelle.
+              </div>
             </div>
           </div>
         </section>
