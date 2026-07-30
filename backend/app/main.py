@@ -21,7 +21,9 @@ from app.freemium_policy import (
     send_unlinked_welcome,
 )
 from app.notifications import bot_handler as bot_handler_module
+from app.notifications import telegram as telegram_module
 from app.notifications.bot_handler import bot_router
+from app.notifications.climate_cards import install_climate_card_formatters
 from app.scheduler import jobs as scheduler_jobs
 from app.scheduler.jobs import get_scheduler_jobs
 
@@ -30,6 +32,10 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# Add an honest monthly climate estimate to Telegram deal cards. This patches
+# only the message formatters: deal detection, quotas and dispatch stay intact.
+install_climate_card_formatters(telegram_module)
 
 # Keep the mature ranking/dispatch pipeline intact and replace only its final
 # entitlement boundary. The webhook resolves these module globals at runtime,
