@@ -97,9 +97,9 @@ export default function OnboardingPage() {
           {step === 1 && (
             <div>
               <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-[#0E7490]">Étape 1 sur 3</p>
-              <h1 className="mt-3 text-center font-[family-name:var(--font-dm-serif)] text-3xl">Votre aéroport principal</h1>
+              <h1 className="mt-3 text-center font-[family-name:var(--font-dm-serif)] text-3xl">Votre véritable aéroport de départ</h1>
               <p className="mx-auto mt-3 max-w-lg text-center text-sm leading-6 text-slate-500">
-                Le compte Freemium surveille un aéroport de départ. Choisissez celui que vous utilisez le plus souvent.
+                Le compte Freemium surveille un aéroport. Choisissez celui que vous pouvez réellement utiliser, sans devoir ajouter un trajet coûteux vers Paris.
               </p>
 
               <div className="mt-7 grid grid-cols-2 gap-3 md:grid-cols-3">
@@ -120,6 +120,10 @@ export default function OnboardingPage() {
                 })}
               </div>
 
+              <div className="mt-5 rounded-2xl border border-[#D9E2E3] bg-[#F7F3EA] p-4 text-xs leading-6 text-slate-500">
+                <strong className="text-[#0B2A3F]">À savoir :</strong> la fréquence des alertes varie selon l’aéroport et la période. Paris offre généralement plus de volume ; les régions peuvent être plus irrégulières. GlobeGenius ne garantit pas un nombre fixe de deals et préfère rester silencieux plutôt que signaler une promotion ordinaire.
+              </div>
+
               <button type="button" onClick={() => setStep(2)} className="mt-8 w-full rounded-xl bg-[#0E7490] py-3.5 font-bold text-white hover:bg-[#0A6078]">
                 Continuer
               </button>
@@ -131,7 +135,7 @@ export default function OnboardingPage() {
               <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-[#0E7490]">Étape 2 sur 3</p>
               <h1 className="mt-3 text-center font-[family-name:var(--font-dm-serif)] text-3xl">Votre formule Freemium</h1>
               <p className="mx-auto mt-3 max-w-lg text-center text-sm leading-6 text-slate-500">
-                Vous recevrez les meilleurs allers-retours vérifiés depuis {airport}, dans la limite du quota gratuit.
+                Vous recevrez les meilleurs allers-retours vérifiés depuis {airport}, dans la limite du quota gratuit et uniquement lorsqu’un prix mérite réellement votre attention.
               </p>
 
               <div className="mt-7 grid gap-3 sm:grid-cols-3">
@@ -160,7 +164,7 @@ export default function OnboardingPage() {
               </div>
 
               <div className="mt-5 rounded-2xl border border-[#FF7A59]/25 bg-[#FFF0EA] p-4 text-sm leading-6 text-slate-600">
-                Les allers simples, les combos malins, plusieurs aéroports et les alertes sans quota seront réservés au futur Premium à 49 € par an.
+                Les allers simples, les combos malins, plusieurs aéroports et les alertes sans quota seront réservés au futur Premium à 49 € par an. Premium débloque toutes les opportunités qualifiées, mais ne crée pas artificiellement des deals lorsqu’un aéroport est calme.
               </div>
 
               {error && <div className="mt-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>}
