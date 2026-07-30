@@ -77,9 +77,7 @@ export default function HomePage() {
   }, [router]);
 
   // Deep-link des emails freemium (?upgrade=1) : ouvre le checkout Stripe
-  // directement — un clic de moins entre l'email et le paiement. Stripe
-  // est live côté backend même si la nouvelle UI n'affiche pas encore de
-  // bouton d'achat ; le lien email reste donc fonctionnel. Session
+  // directement — un clic de moins entre l'email et le paiement. Session
   // expirée → redirection /login gérée par handleCheckout.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -216,14 +214,14 @@ export default function HomePage() {
             <section className="mb-8 grid gap-6 rounded-[32px] bg-[#0B2A3F] p-7 text-white md:grid-cols-[1fr_auto] md:items-center md:p-9">
               <div>
                 <div className="text-xs font-bold uppercase tracking-[0.18em] text-[#52C9BE]">Premium · ouverture prochaine</div>
-                <h2 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl">49 € par an, soit 4,08 € par mois.</h2>
+                <h2 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl">39 € par an, soit 3,25 € par mois.</h2>
                 <p className="mt-3 max-w-2xl text-sm leading-7 text-white/65">
-                  Une seule réservation peut amortir l’abonnement plusieurs fois : 100 € économisés représentent plus de deux années, et 150 € plus de trois. L’économie réelle dépend du billet réservé.
+                  Une seule réservation peut amortir l’abonnement plusieurs fois. L’économie réelle dépend du billet réservé et de sa disponibilité.
                 </p>
-                <p className="mt-3 text-xs text-white/45">Stripe sera configuré ultérieurement. Aucun paiement et aucune carte bancaire ne sont demandés aujourd’hui.</p>
+                <p className="mt-3 text-xs text-white/45">Le paiement sera ouvert officiellement lors du lancement commercial. Aucun paiement et aucune carte bancaire ne sont demandés aujourd’hui.</p>
               </div>
               <div className="rounded-2xl border border-white/15 bg-white/10 px-6 py-5 text-center">
-                <div className="font-[family-name:var(--font-dm-serif)] text-4xl">49 €</div>
+                <div className="font-[family-name:var(--font-dm-serif)] text-4xl">39 €</div>
                 <div className="text-xs text-white/55">par an</div>
                 <button disabled className="mt-4 cursor-not-allowed rounded-xl bg-white/15 px-5 py-2.5 text-sm font-semibold text-white/70">Paiement bientôt disponible</button>
               </div>
