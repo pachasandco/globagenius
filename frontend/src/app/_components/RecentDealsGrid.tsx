@@ -5,25 +5,32 @@ import Link from "next/link";
 import { getRecentDeals, type RecentDeal } from "@/lib/api";
 
 const FALLBACK_DEALS = [
-  { origin_city: "Paris", dest_city: "Tokyo", price: 449, baseline: 720, discount_pct: 38 },
-  { origin_city: "Paris", dest_city: "Phuket", price: 494, baseline: 835, discount_pct: 41 },
-  { origin_city: "Toulouse", dest_city: "Lisbonne", price: 64, baseline: 178, discount_pct: 64 },
-  { origin_city: "Marseille", dest_city: "Barcelone", price: 40, baseline: 121, discount_pct: 67 },
-  { origin_city: "Paris", dest_city: "Marrakech", price: 74, baseline: 155, discount_pct: 52 },
-  { origin_city: "Lyon", dest_city: "Rome", price: 58, baseline: 146, discount_pct: 60 },
-];
+  { origin_city: "Paris", dest_city: "Tokyo", price: 449, baseline: 720, discount_pct: 38, trip_type: "round_trip" },
+  { origin_city: "Paris", dest_city: "Phuket", price: 494, baseline: 835, discount_pct: 41, trip_type: "round_trip" },
+  { origin_city: "Toulouse", dest_city: "Lisbonne", price: 64, baseline: 178, discount_pct: 64, trip_type: "round_trip" },
+  { origin_city: "Marseille", dest_city: "Barcelone", price: 40, baseline: 121, discount_pct: 67, trip_type: "round_trip" },
+  { origin_city: "Paris", dest_city: "Marrakech", price: 74, baseline: 155, discount_pct: 52, trip_type: "round_trip" },
+  { origin_city: "Lyon", dest_city: "Rome", price: 58, baseline: 146, discount_pct: 60, trip_type: "round_trip" },
+] as const;
 
-type DisplayDeal = Pick<RecentDeal, "origin_city" | "dest_city" | "price" | "baseline" | "discount_pct">;
+type DisplayDeal = Pick<RecentDeal, "origin_city" | "dest_city" | "price" | "baseline" | "discount_pct"> & {
+  trip_type?: string;
+};
 
 export function RecentDealsGrid() {
-  const [deals, setDeals] = useState<DisplayDeal[]>(FALLBACK_DEALS);
+  const [deals, setDeals] = useState<DisplayDeal[]>([...FALLBACK_DEALS]);
 
   useEffect(() => {
     let active = true;
     getRecentDeals()
       .then((items) => {
         if (!active || !items?.length) return;
-        setDeals(items.slice(0, 6));
+        const roundTrips = (items as Array<RecentDeal & { trip_type?: string }>).filter(
+          (item) => item.trip_type === "round_trip"
+        );
+        // Keep the curated A/R fallback rather than ever showing an old API
+        // payload whose trip shape is unknown.
+        if (roundTrips.length) setDeals(roundTrips.slice(0, 6));
       })
       .catch(() => {
         // The fallback keeps the proof section useful during API maintenance.
@@ -43,9 +50,9 @@ export function RecentDealsGrid() {
           >
             <div className="flex items-center justify-between gap-3">
               <span className="rounded-full bg-[#E9F5F7] px-3 py-1 text-xs font-bold text-[#0E7490]">
-                Deal détecté
+                Aller-retour
               </span>
-              <span className="text-xs font-semibold text-[#168F73]">Prix vérifié</span>
+              <span className="text-xs font-semibold text-[#168F73]">Prix A/R vérifié</span>
             </div>
             <h3 className="mt-7 text-lg font-bold text-[#0B2A3F]">
               {deal.origin_city} → {deal.dest_city}
@@ -59,7 +66,7 @@ export function RecentDealsGrid() {
               </span>
             </div>
             <div className="mt-5 flex items-center justify-between border-t border-[#EEF1F1] pt-4 text-sm text-slate-500">
-              <span>Écart au prix habituel</span>
+              <span>Écart au prix habituel A/R</span>
               <strong className="text-[#168F73]">−{Math.round(deal.discount_pct)} %</strong>
             </div>
           </article>
@@ -73,7 +80,7 @@ export function RecentDealsGrid() {
           Configurer mes alertes gratuites
         </Link>
         <p className="mt-3 text-xs text-slate-400">
-          Les prix évoluent en permanence. GlobeGenius ne vend pas les billets et ne garantit pas leur disponibilité au moment du clic.
+          Tarifs aller-retour par personne, vérifiés au moment de la détection. Les prix évoluent en permanence et GlobeGenius ne vend pas les billets.
         </p>
       </div>
     </div>
