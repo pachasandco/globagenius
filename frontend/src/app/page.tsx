@@ -57,7 +57,7 @@ const FAQS = [
   },
   {
     q: "Combien coûtera Premium ?",
-    a: "Premium est actuellement prévu à 49 € par an. Le paiement public n’est pas encore ouvert sur cette page : la création du compte Freemium ne déclenche aucun prélèvement.",
+    a: "Premium est proposé à 39 € par an, soit 3,25 € par mois. La création du compte Freemium ne déclenche aucun prélèvement.",
   },
 ];
 
@@ -222,7 +222,7 @@ export default function Landing() {
             <div className="rounded-[32px] bg-[#0B2A3F] p-7 text-white">
               <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-[#52C9BE]">Ouverture prochaine</span>
               <h3 className="mt-6 font-[family-name:var(--font-dm-serif)] text-3xl">Premium</h3>
-              <div className="mt-3 text-2xl font-bold">49 € / an</div>
+              <div className="mt-3 text-2xl font-bold">39 € / an</div>
               <ul className="mt-6 space-y-3 text-sm leading-6 text-white/70">
                 <li>✓ Alertes complètes sans quota</li>
                 <li>✓ Plusieurs aéroports</li>
@@ -275,13 +275,13 @@ export default function Landing() {
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#0E7490]">Premium · ouverture prochaine</p>
               <h2 className="mt-4 font-[family-name:var(--font-dm-serif)] text-4xl leading-tight text-[#0B2A3F] sm:text-5xl">
-                49 € par an pour recevoir toutes les opportunités qualifiées de vos aéroports.
+                39 € par an pour recevoir toutes les opportunités qualifiées de vos aéroports.
               </h2>
               <p className="mt-5 max-w-2xl text-base leading-8 text-slate-600">
                 Plusieurs aéroports, tous les types de billets et aucune limite Freemium. La fréquence reste liée aux vrais prix disponibles : Premium débloque les résultats, il ne fabrique pas de fausses affaires.
               </p>
               <div className="mt-7 flex flex-wrap gap-3 text-sm text-[#0B2A3F]">
-                <span className="rounded-full bg-white px-4 py-2 font-semibold">4,08 € / mois</span>
+                <span className="rounded-full bg-white px-4 py-2 font-semibold">3,25 € / mois</span>
                 <span className="rounded-full bg-white px-4 py-2 font-semibold">Alertes sans quota</span>
                 <span className="rounded-full bg-white px-4 py-2 font-semibold">Plusieurs départs</span>
               </div>
@@ -293,7 +293,7 @@ export default function Landing() {
               <div className="flex items-baseline justify-between">
                 <div>
                   <div className="text-sm font-bold text-[#0E7490]">GlobeGenius Premium</div>
-                  <div className="mt-2 font-[family-name:var(--font-dm-serif)] text-5xl text-[#0B2A3F]">49 €</div>
+                  <div className="mt-2 font-[family-name:var(--font-dm-serif)] text-5xl text-[#0B2A3F]">39 €</div>
                   <div className="text-sm text-slate-400">par an</div>
                 </div>
                 <span className="rounded-full bg-[#FFF0EA] px-3 py-1 text-xs font-bold text-[#E96543]">Bientôt</span>
