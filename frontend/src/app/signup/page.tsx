@@ -144,7 +144,7 @@ export default function SignupPage() {
           <div className="mt-5 space-y-3 rounded-2xl bg-[#E9F5F7] p-4 text-sm leading-6 text-slate-600">
             <p><strong className="text-[#0B2A3F]">Freemium :</strong> 2 alertes complètes par semaine, 1 pépite exceptionnelle et 1 joker par mois.</p>
             <p><strong className="text-[#0B2A3F]">Couverture :</strong> Paris et plusieurs grands aéroports régionaux. La fréquence varie selon les vrais prix disponibles ; aucun volume fixe n’est garanti.</p>
-            <p><strong className="text-[#0B2A3F]">Premium :</strong> alertes sans quota, plusieurs aéroports, allers simples et combos malins pour 49 € par an à l’ouverture.</p>
+            <p><strong className="text-[#0B2A3F]">Premium :</strong> alertes sans quota, plusieurs aéroports, allers simples et combos malins pour 39 € par an.</p>
             <p>Aucune carte bancaire et aucun paiement ne sont demandés aujourd’hui.</p>
           </div>
 
