@@ -21,9 +21,11 @@ from app.freemium_policy import (
     send_unlinked_welcome,
 )
 from app.notifications import bot_handler as bot_handler_module
+from app.notifications import freemium_digest as freemium_digest_module
 from app.notifications import telegram as telegram_module
 from app.notifications.bot_handler import bot_router
 from app.notifications.climate_cards import install_climate_card_formatters
+from app.notifications.freemium_savings_guard import install_freemium_savings_guard
 from app.scheduler import jobs as scheduler_jobs
 from app.scheduler.jobs import get_scheduler_jobs
 
@@ -36,6 +38,10 @@ logger = logging.getLogger(__name__)
 # Add an honest monthly climate estimate to Telegram deal cards. This patches
 # only the message formatters: deal detection, quotas and dispatch stay intact.
 install_climate_card_formatters(telegram_module)
+
+# Protect Freemium email value claims: rank the best missed deal by real euro
+# savings and reject incoherent/implausible baselines from the marketing block.
+install_freemium_savings_guard(freemium_digest_module)
 
 # Keep the mature ranking/dispatch pipeline intact and replace only its final
 # entitlement boundary. The webhook resolves these module globals at runtime,
