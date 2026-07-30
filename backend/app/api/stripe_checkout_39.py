@@ -110,7 +110,7 @@ def _resolve_39_eur_price_id() -> str:
 
 @router.post("/api/stripe/create-checkout")
 async def create_checkout_39(user: dict = Depends(get_current_user)):
-    """Create a subscription Checkout session at 39 EUR per year."""
+    """Create a subscription Checkout session at exactly 39 EUR per year."""
     if not settings.STRIPE_SECRET_KEY:
         raise HTTPException(status_code=503, detail="Stripe not configured")
 
@@ -151,11 +151,6 @@ async def create_checkout_39(user: dict = Depends(get_current_user)):
             mode="subscription",
             payment_method_types=["card"],
             line_items=[{"price": price_id, "quantity": 1}],
-            discounts=(
-                [{"coupon": settings.STRIPE_COUPON_ID}]
-                if settings.STRIPE_COUPON_ID
-                else []
-            ),
             success_url=f"{settings.FRONTEND_URL}/home?payment=success",
             cancel_url=f"{settings.FRONTEND_URL}/home?payment=cancel",
             subscription_data={
