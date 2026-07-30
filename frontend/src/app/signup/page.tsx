@@ -12,6 +12,8 @@ export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  // CNIL : case décochée par défaut, consentement explicite uniquement.
+  const [marketingConsent, setMarketingConsent] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -21,7 +23,7 @@ export default function SignupPage() {
     const response = await fetch(`${API_URL}/api/auth/signup-public`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, marketing_consent: marketingConsent }),
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -115,6 +117,20 @@ export default function SignupPage() {
                 className="w-full rounded-xl border border-[#D9E2E3] px-4 py-3 text-sm outline-none transition-colors focus:border-[#0E7490] focus:ring-1 focus:ring-[#0E7490]"
               />
             </div>
+
+            <label className="flex cursor-pointer select-none items-start gap-2.5">
+              <input
+                type="checkbox"
+                checked={marketingConsent}
+                onChange={(event) => setMarketingConsent(event.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-[#D9E2E3] accent-[#0E7490]"
+              />
+              <span className="text-xs leading-relaxed text-slate-500">
+                J&apos;accepte de recevoir par email les récapitulatifs de deals,
+                les nouveautés et les offres de GlobeGenius. (facultatif —
+                modifiable à tout moment depuis mon profil)
+              </span>
+            </label>
 
             {error && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>}
 

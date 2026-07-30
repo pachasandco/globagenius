@@ -35,13 +35,20 @@ export function clearSessionCookie() {
   }
 }
 
-export async function signup(email: string, password: string) {
+export async function signup(email: string, password: string, marketingConsent = false) {
   const res = await fetchAPI<{ user_id: string; email: string; token: string }>("/api/auth/signup", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, marketing_consent: marketingConsent }),
   });
   _setSessionCookie();
   return res;
+}
+
+export async function updateMarketingConsent(userId: string, consent: boolean) {
+  return fetchAPI<{ marketing_consent: boolean }>(`/api/users/${userId}/marketing-consent`, {
+    method: "PUT",
+    body: JSON.stringify({ consent }),
+  });
 }
 
 export async function login(email: string, password: string) {
@@ -87,6 +94,8 @@ export interface UserPreferences {
   max_budget: number | null;
   preferred_destinations: string[] | null;
   telegram_connected: boolean;
+  /** Consentement emails marketing (colonne users, mergée par GET preferences). */
+  marketing_consent?: boolean;
   telegram_chat_id: number | null;
   notifications_enabled: boolean;
   deal_tier: string;

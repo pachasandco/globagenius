@@ -76,6 +76,41 @@ export default function HomePage() {
     };
   }, [router]);
 
+  // Deep-link des emails freemium (?upgrade=1) : ouvre le checkout Stripe
+  // directement — un clic de moins entre l'email et le paiement. Stripe
+  // est live côté backend même si la nouvelle UI n'affiche pas encore de
+  // bouton d'achat ; le lien email reste donc fonctionnel. Session
+  // expirée → redirection /login gérée par handleCheckout.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("upgrade") === "1") {
+      handleCheckout();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleCheckout() {
+    try {
+      const token = localStorage.getItem("gg_token");
+      if (!token) {
+        router.push("/login");
+        return;
+      }
+      const res = await fetch(`${API_URL}/api/stripe/create-checkout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      if (data.checkout_url) {
+        window.location.href = data.checkout_url;
+      } else {
+        alert(data.detail || "Erreur lors de la création du paiement. Réessayez.");
+      }
+    } catch {
+      alert("Erreur de connexion au serveur. Réessayez.");
+    }
+  }
+
   function handleLogout() {
     localStorage.removeItem("gg_user_id");
     localStorage.removeItem("gg_email");

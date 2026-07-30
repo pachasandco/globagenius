@@ -53,6 +53,12 @@ class Settings:
     # free account stays"). 0 = template not configured yet → the
     # downgrade endpoint still removes Premium but skips the email.
     BREVO_DOWNGRADE_TEMPLATE_ID: int = int(os.getenv("BREVO_DOWNGRADE_TEMPLATE_ID", "0") or 0)
+    # Programme d'emails freemium (2026-07-30) — boucle de conversion.
+    # 0 = flow désactivé (déploiement sûr avant création des templates).
+    # Destinataires : users free avec marketing_consent uniquement (CNIL).
+    BREVO_FREEMIUM_DIGEST_TEMPLATE_ID: int = int(os.getenv("BREVO_FREEMIUM_DIGEST_TEMPLATE_ID", "0") or 0)
+    BREVO_FREEMIUM_QUOTA_TEMPLATE_ID: int = int(os.getenv("BREVO_FREEMIUM_QUOTA_TEMPLATE_ID", "0") or 0)
+    BREVO_FREEMIUM_MONTHLY_TEMPLATE_ID: int = int(os.getenv("BREVO_FREEMIUM_MONTHLY_TEMPLATE_ID", "0") or 0)
     BREVO_SENDER_EMAIL: str = os.getenv("BREVO_SENDER_EMAIL", "contact@globegenius.app")
     BREVO_SENDER_NAME: str = os.getenv("BREVO_SENDER_NAME", "Globe Genius")
     SCRAPE_FLIGHTS_INTERVAL_HOURS: int = int(os.getenv("SCRAPE_FLIGHTS_INTERVAL_HOURS", "6"))

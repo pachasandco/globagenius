@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
@@ -55,13 +56,19 @@ async def signup_public(req: SignupRequest, request: Request, bg_tasks: Backgrou
         raise HTTPException(status_code=409, detail="Cet email est déjà utilisé")
 
     password_hash = await loop.run_in_executor(None, _hash_password, req.password)
+    signup_row = {
+        "email": req.email,
+        "password_hash": password_hash,
+        "tier": "free",
+    }
+    # Consentement marketing (CNIL) : case décochée par défaut côté front,
+    # horodaté comme preuve. Alimente le programme d'emails freemium.
+    if req.marketing_consent:
+        signup_row["marketing_consent"] = True
+        signup_row["marketing_consent_at"] = datetime.now(timezone.utc).isoformat()
     user = await loop.run_in_executor(
         None,
-        lambda: db.table("users").insert({
-            "email": req.email,
-            "password_hash": password_hash,
-            "tier": "free",
-        }).execute(),
+        lambda: db.table("users").insert(signup_row).execute(),
     )
     if not user.data:
         raise HTTPException(status_code=500, detail="Erreur lors de la création du compte")
