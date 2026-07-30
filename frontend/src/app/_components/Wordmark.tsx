@@ -1,22 +1,73 @@
 import Image from "next/image";
+import type { CSSProperties } from "react";
+
+type WordmarkVariant = "default" | "inverse" | "monochrome";
+type WordmarkSize = "sm" | "md" | "lg";
 
 type Props = {
   className?: string;
+  variant?: WordmarkVariant;
+  size?: WordmarkSize;
+  priority?: boolean;
 };
 
-// Wordmark = the full GlobeGenius logo (icon + text baked into one PNG).
-// Source ratio is 600x408 ≈ 1.47. We render at a fixed pixel height so the
-// brand stays the same size everywhere it appears (nav, auth pages, footers)
-// regardless of the surrounding font-size. Tweak h-* below to resize globally.
-export function Wordmark({ className = "" }: Props) {
+const SIZE_CLASSES: Record<WordmarkSize, string> = {
+  sm: "h-8",
+  md: "h-12",
+  lg: "h-16",
+};
+
+const MASK_STYLE: CSSProperties = {
+  aspectRatio: "600 / 295",
+  WebkitMaskImage: "url('/logo2.png')",
+  maskImage: "url('/logo2.png')",
+  WebkitMaskPosition: "center",
+  maskPosition: "center",
+  WebkitMaskRepeat: "no-repeat",
+  maskRepeat: "no-repeat",
+  WebkitMaskSize: "contain",
+  maskSize: "contain",
+};
+
+/**
+ * GlobeGenius wordmark variants:
+ * - default: original coloured logo, for light backgrounds;
+ * - inverse: white monochrome silhouette, for dark backgrounds;
+ * - monochrome: night-blue silhouette, for neutral/print contexts.
+ */
+export function Wordmark({
+  className = "",
+  variant = "default",
+  size = "lg",
+  priority = false,
+}: Props) {
+  const sizing = SIZE_CLASSES[size];
+
+  if (variant !== "default") {
+    return (
+      <span
+        role="img"
+        aria-label="GlobeGenius"
+        data-wordmark-variant={variant}
+        className={`inline-block shrink-0 align-middle ${sizing} ${className}`}
+        style={{
+          ...MASK_STYLE,
+          backgroundColor: variant === "inverse" ? "#FFFFFF" : "#0B2A3F",
+        }}
+      />
+    );
+  }
+
   return (
     <Image
       src="/logo2.png"
       alt="GlobeGenius"
       width={600}
       height={295}
-      priority
-      className={`inline-block align-middle h-16 w-auto ${className}`}
+      priority={priority}
+      draggable={false}
+      data-wordmark-variant="default"
+      className={`inline-block w-auto shrink-0 align-middle ${sizing} ${className}`}
     />
   );
 }
