@@ -39,7 +39,7 @@ export function Wordmark({
   className = "",
   variant = "default",
   size = "lg",
-  priority = false,
+  priority = true,
 }: Props) {
   const sizing = SIZE_CLASSES[size];
 
