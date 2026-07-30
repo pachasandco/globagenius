@@ -57,7 +57,7 @@ function Seal({ n }: { n: string }) {
         }}
       >
         <div
-          className="flex items-center justify-center rounded-full mb-2"
+          className="mb-2 flex items-center justify-center rounded-full"
           style={{
             width: 72,
             height: 72,
@@ -69,12 +69,12 @@ function Seal({ n }: { n: string }) {
           🌍
         </div>
         <div
-          className="text-[#FFF8F0] font-bold leading-none"
+          className="font-bold leading-none text-[#FFF8F0]"
           style={{ fontSize: 64, letterSpacing: 3 }}
         >
           OG
         </div>
-        <div className="text-[#E8C37E] font-bold mt-1" style={{ fontSize: 34 }}>
+        <div className="mt-1 font-bold text-[#E8C37E]" style={{ fontSize: 34 }}>
           #{n}
         </div>
       </div>
@@ -88,20 +88,17 @@ export default async function BadgePage({ params }: PageProps) {
   const n = ogNumber(number);
 
   return (
-    <div className="min-h-screen bg-[#0A1F3D] flex flex-col items-center justify-center px-6 py-12 text-center">
-      <Link
-        href="/"
-        className="font-[family-name:var(--font-dm-serif)] text-lg text-white mb-10"
-      >
-        <Wordmark />
+    <div className="flex min-h-screen flex-col items-center justify-center bg-[#0A1F3D] px-6 py-12 text-center">
+      <Link href="/" className="mb-10 inline-flex" aria-label="Retour à l’accueil GlobeGenius">
+        <Wordmark variant="inverse" size="md" className="opacity-95" />
       </Link>
 
       <Seal n={n} />
 
-      <p className="text-[var(--color-coral)] font-bold uppercase tracking-widest text-sm mt-8 mb-3">
+      <p className="mb-3 mt-8 text-sm font-bold uppercase tracking-widest text-[var(--color-coral)]">
         OG #{n} · Membre fondateur
       </p>
-      <p className="text-gray-400 max-w-md leading-relaxed mb-10">
+      <p className="mb-10 max-w-md leading-relaxed text-gray-400">
         {display} fait partie des tout premiers à avoir fait vivre la beta de
         GlobeGenius — usage, retours honnêtes et partages qui ont façonné le
         produit dès ses débuts. 🙏
@@ -109,12 +106,12 @@ export default async function BadgePage({ params }: PageProps) {
 
       <Link
         href="/beta"
-        className="inline-block bg-[var(--color-coral)] hover:bg-[var(--color-coral-hover)] text-white px-8 py-3 rounded-xl font-bold transition-colors"
+        className="inline-block rounded-xl bg-[var(--color-coral)] px-8 py-3 font-bold text-white transition-colors hover:bg-[var(--color-coral-hover)]"
       >
         Rejoindre la beta
       </Link>
 
-      <p className="text-gray-600 text-xs mt-8">globegenius.app</p>
+      <p className="mt-8 text-xs text-gray-600">globegenius.app</p>
     </div>
   );
 }
