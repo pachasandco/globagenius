@@ -110,6 +110,86 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/*
+ * Visual hierarchy for actions
+ * ---------------------------------
+ * - Ocean + white text: primary action on light surfaces.
+ * - White + ink text: primary action on dark surfaces.
+ * - Telegram blue: reserved for actions that actually open/connect Telegram.
+ * - Lagoon/green and yellow: status indicators only, never competing CTAs.
+ * - Coral: editorial/marketing accent, not a button background.
+ *
+ * A few legacy screens still use hard-coded Tailwind colors. These selectors
+ * make their semantic role consistent while the components are progressively
+ * migrated to shared button variants.
+ */
+:where(a, button)[class*="bg-[#FF7A59]"],
+:where(a, button)[class*="bg-[#52C9BE]"],
+:where(a, button)[class*="bg-[#2AB7A9]"],
+:where(a, button)[class*="bg-[#F4B942]"] {
+  background-color: var(--color-ocean) !important;
+  color: #FFFFFF !important;
+}
+
+:where(a, button)[class*="bg-[#FF7A59]"]:hover,
+:where(a, button)[class*="bg-[#52C9BE]"]:hover,
+:where(a, button)[class*="bg-[#2AB7A9]"]:hover,
+:where(a, button)[class*="bg-[#F4B942]"]:hover {
+  background-color: var(--color-ocean-hover) !important;
+  color: #FFFFFF !important;
+}
+
+/* Primary actions placed on night-blue surfaces use one inverted treatment. */
+:where(section, div)[class*="bg-[#0B2A3F]"] :where(a, button)[class*="bg-[#0E7490]"],
+:where(section, div)[class*="bg-[#0B2A3F]"] :where(a, button)[class*="bg-[#FF7A59]"],
+:where(section, div)[class*="bg-[#0B2A3F]"] :where(a, button)[class*="bg-[#52C9BE]"],
+:where(section, div)[class*="bg-[#0B2A3F]"] :where(a, button)[class*="bg-[#2AB7A9]"],
+:where(section, div)[class*="bg-[#0B2A3F]"] :where(a, button)[class*="bg-[#F4B942]"] {
+  background-color: #FFFFFF !important;
+  color: var(--color-ink) !important;
+  box-shadow: 0 12px 30px rgb(0 0 0 / 18%);
+}
+
+:where(section, div)[class*="bg-[#0B2A3F]"] :where(a, button)[class*="bg-[#0E7490]"]:hover,
+:where(section, div)[class*="bg-[#0B2A3F]"] :where(a, button)[class*="bg-[#FF7A59]"]:hover,
+:where(section, div)[class*="bg-[#0B2A3F]"] :where(a, button)[class*="bg-[#52C9BE]"]:hover,
+:where(section, div)[class*="bg-[#0B2A3F]"] :where(a, button)[class*="bg-[#2AB7A9]"]:hover,
+:where(section, div)[class*="bg-[#0B2A3F]"] :where(a, button)[class*="bg-[#F4B942]"]:hover {
+  background-color: var(--color-sky) !important;
+  color: var(--color-ink) !important;
+}
+
+/*
+ * Landing hero: replace the generic aircraft photo with an abstract,
+ * premium night/ocean atmosphere. The animated deal cards remain the proof.
+ */
+main > section:first-child[class*="bg-[#0B2A3F]"] > div:first-child > div:first-child[style*="photo-1436491865332"] {
+  background-image:
+    radial-gradient(circle at 75% 24%, rgb(42 183 169 / 34%), transparent 34%),
+    radial-gradient(circle at 28% 4%, rgb(14 116 144 / 46%), transparent 42%),
+    linear-gradient(135deg, #061824 0%, #0B2A3F 48%, #0A6078 100%) !important;
+  background-position: center !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+main > section:first-child[class*="bg-[#0B2A3F]"] > div:first-child > div:nth-child(2) {
+  background: linear-gradient(90deg, rgb(6 24 36 / 92%) 0%, rgb(11 42 63 / 74%) 50%, rgb(10 96 120 / 24%) 100%) !important;
+}
+
+/* Mobile continuation of the hero uses the same visual language. */
+div[class*="bg-[#082B78]"] {
+  background:
+    radial-gradient(circle at 72% 12%, rgb(42 183 169 / 26%), transparent 38%),
+    linear-gradient(160deg, #061824 0%, #0B2A3F 58%, #0A6078 100%) !important;
+}
+
+div[class*="bg-[#082B78]"] > div[style*="photo-1436491865332"] {
+  background-image: none !important;
+  opacity: 0 !important;
+  filter: none !important;
+}
+
 /* The travel planner has been retired. Keep stale links out of legacy screens. */
 a[href="/planificateur"] {
   display: none !important;
