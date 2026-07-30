@@ -262,9 +262,9 @@ export default function DealsPage() {
         {!isUnlimited && (
           <section className="mt-10 rounded-[32px] bg-[#0B2A3F] p-7 text-white md:flex md:items-center md:justify-between md:gap-8 md:p-9">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#52C9BE]">Premium · 49 € par an</p>
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#52C9BE]">Premium · 39 € par an</p>
               <h2 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl">Une seule réservation peut amortir l’abonnement plusieurs fois.</h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/65">Toutes les alertes, tous les aéroports, les prix, les dates et les liens immédiatement. Le paiement sera ouvert lorsque Stripe sera configuré.</p>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/65">Toutes les alertes, plusieurs aéroports, les prix, les dates et les liens immédiatement. Le paiement public ouvrira lors du lancement commercial.</p>
             </div>
             <button disabled className="mt-6 rounded-xl bg-white/15 px-6 py-3 text-sm font-bold text-white/70 md:mt-0">Ouverture prochaine</button>
           </section>
