@@ -10,8 +10,12 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
+        inverse:
+          "bg-white text-[#0B2A3F] shadow-[0_12px_30px_rgba(0,0,0,.18)] hover:bg-[#E9F5F7]",
+        telegram:
+          "bg-[#229ED9] text-white hover:bg-[#1B86B8] focus-visible:ring-[#229ED9]/35",
         outline:
-          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+          "border-border bg-background text-[#0B2A3F] hover:border-[#0E7490] hover:bg-[#E9F5F7] hover:text-[#0E7490] aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:
