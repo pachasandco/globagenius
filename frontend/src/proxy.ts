@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PROTECTED = ["/home", "/profile", "/onboarding"];
+const PROTECTED = ["/home", "/profile", "/onboarding", "/deals"];
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "https://globagenius-production-b887.up.railway.app").trim();
 
@@ -27,7 +27,6 @@ export function proxy(request: NextRequest) {
     (path) => pathname === path || pathname.startsWith(path + "/")
   );
 
-  // Auth gate — redirect unauthenticated users to /login
   if (isProtected) {
     const session = request.cookies.get("gg_session");
     if (!session) {
@@ -43,5 +42,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/home/:path*", "/profile/:path*", "/onboarding/:path*"],
+  matcher: ["/home/:path*", "/profile/:path*", "/onboarding/:path*", "/deals/:path*"],
 };

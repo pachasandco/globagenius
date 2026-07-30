@@ -1,42 +1,31 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { getPreferences, updatePreferences, generateTelegramLink, type FlightTripType } from "@/lib/api";
+import { useRouter } from "next/navigation";
+import { generateTelegramLink, getPreferences, updatePreferences } from "@/lib/api";
 import { Wordmark } from "../_components/Wordmark";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 const AIRPORTS = [
   { code: "CDG", label: "Paris Charles de Gaulle" },
   { code: "ORY", label: "Paris Orly" },
-  { code: "LYS", label: "Lyon Saint-Exupery" },
+  { code: "BVA", label: "Paris Beauvais" },
+  { code: "LYS", label: "Lyon Saint-Exupéry" },
   { code: "MRS", label: "Marseille Provence" },
-  { code: "NCE", label: "Nice Cote d'Azur" },
-  { code: "BOD", label: "Bordeaux Merignac" },
+  { code: "NCE", label: "Nice Côte d’Azur" },
+  { code: "BOD", label: "Bordeaux Mérignac" },
   { code: "NTE", label: "Nantes Atlantique" },
   { code: "TLS", label: "Toulouse Blagnac" },
-  { code: "BVA", label: "Paris Beauvais" },
   { code: "BSL", label: "Bâle-Mulhouse" },
-];
-
-const OFFER_TYPES = [
-  { id: "flight", label: "Vols à prix cassés", desc: "Billets d'avion aller-retour en promo", icon: "✈️" },
 ];
 
 export default function OnboardingPage() {
   const [step, setStep] = useState(1);
-  const [airports, setAirports] = useState<string[]>(["CDG"]);
-  const [offerTypes, setOfferTypes] = useState<string[]>(["flight"]);
-  const [flightTripTypes, setFlightTripTypes] = useState<FlightTripType[]>(["round_trip"]);
-  const [includeSplitTickets, setIncludeSplitTickets] = useState<boolean>(false);
-  const [acceptLonghaulStopover, setAcceptLonghaulStopover] = useState<boolean>(true);
-  const [dealTier, setDealTier] = useState<string>("regular");
-  const [isPremium, setIsPremium] = useState(false);
+  const [airport, setAirport] = useState("CDG");
+  const [acceptLonghaulStopover, setAcceptLonghaulStopover] = useState(true);
   const [telegramLink, setTelegramLink] = useState("");
   const [loading, setLoading] = useState(false);
-  const [saveError, setSaveError] = useState("");
+  const [error, setError] = useState("");
   const [userId, setUserId] = useState("");
   const router = useRouter();
 
@@ -48,74 +37,44 @@ export default function OnboardingPage() {
     }
     setUserId(id);
 
-    // Preload existing preferences so returning users see their current selection
     getPreferences(id)
-      .then((prefs) => {
-        if (prefs.airport_codes && prefs.airport_codes.length > 0) {
-          setAirports(prefs.airport_codes);
-        }
-        if (prefs.offer_types && prefs.offer_types.length > 0) {
-          setOfferTypes(prefs.offer_types);
-        }
-        if (prefs.deal_tier) {
-          setDealTier(prefs.deal_tier);
-        }
-        if (prefs.flight_trip_types && prefs.flight_trip_types.length > 0) {
-          setFlightTripTypes(prefs.flight_trip_types);
-        }
-        if (typeof prefs.include_split_tickets === "boolean") {
-          setIncludeSplitTickets(prefs.include_split_tickets);
-        }
-        if (typeof prefs.accept_longhaul_stopover === "boolean") {
-          setAcceptLonghaulStopover(prefs.accept_longhaul_stopover);
+      .then((preferences) => {
+        if (preferences.airport_codes?.length) setAirport(preferences.airport_codes[0]);
+        if (typeof preferences.accept_longhaul_stopover === "boolean") {
+          setAcceptLonghaulStopover(preferences.accept_longhaul_stopover);
         }
       })
       .catch(() => {
-        // First-time user or API error — keep defaults
+        // First-time users keep safe defaults.
       });
-
-    // Check premium status for upsell gating on high thresholds
-    const token = localStorage.getItem("gg_token");
-    if (token) {
-      fetch(`${API_URL}/api/stripe/status`, { headers: { Authorization: `Bearer ${token}` } })
-        .then((r) => r.json())
-        .then((d) => setIsPremium(d.is_premium || false))
-        .catch(() => {});
-    }
   }, [router]);
 
-  function toggleOfferType(id: string) {
-    setOfferTypes((prev) =>
-      prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]
-    );
-  }
-
-
-  async function handleSavePreferences() {
+  async function savePreferences() {
     setLoading(true);
-    setSaveError("");
+    setError("");
     try {
       await updatePreferences(userId, {
-        airport_codes: airports.length > 0 ? airports : ["CDG"],
-        offer_types: offerTypes.length > 0 ? offerTypes : ["flight"],
-        deal_tier: dealTier,
-        flight_trip_types: flightTripTypes.length > 0 ? flightTripTypes : ["round_trip"],
-        include_split_tickets: includeSplitTickets && flightTripTypes.includes("round_trip"),
+        airport_codes: [airport],
+        offer_types: ["flight"],
+        deal_tier: "regular",
+        flight_trip_types: ["round_trip"],
+        include_split_tickets: false,
         accept_longhaul_stopover: acceptLonghaulStopover,
       });
       setStep(3);
     } catch {
-      setSaveError("Erreur lors de la sauvegarde. Vérifiez votre connexion et réessayez.");
+      setError("Impossible d’enregistrer vos préférences. Vérifiez votre connexion puis réessayez.");
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleConnectTelegram() {
+  async function connectTelegram() {
     setLoading(true);
+    setError("");
     try {
-      const res = await generateTelegramLink(userId);
-      setTelegramLink(res.link);
+      const response = await generateTelegramLink(userId);
+      setTelegramLink(response.link);
     } catch {
       setTelegramLink("https://t.me/Globegenius_bot");
     } finally {
@@ -124,308 +83,127 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FFF8F0] flex items-start md:items-center justify-center px-4 md:px-5 py-8 md:py-0">
-      <div className="w-full max-w-lg">
-        {/* Logo */}
-        <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-xl leading-none block text-center mb-8">
-          <Wordmark />
-        </Link>
+    <div className="min-h-screen bg-[#F7F3EA] px-4 py-8 md:flex md:items-center md:justify-center md:py-12">
+      <div className="w-full max-w-2xl">
+        <Link href="/" className="mb-8 block text-center font-[family-name:var(--font-dm-serif)] text-xl"><Wordmark /></Link>
 
-        {/* Progress — 3 steps: airports / alerts / telegram */}
-        <div className="flex gap-2 mb-8 max-w-xs mx-auto">
-          {[1, 2, 3].map((s) => (
-            <div
-              key={s}
-              className="h-1 flex-1 rounded-full transition-colors"
-              style={{ background: s <= step ? "#FF6B47" : "#F0E6D8" }}
-            />
+        <div className="mb-8 flex gap-2 px-8">
+          {[1, 2, 3].map((item) => (
+            <div key={item} className={`h-1 flex-1 rounded-full ${item <= step ? "bg-[#0E7490]" : "bg-[#D9E2E3]"}`} />
           ))}
         </div>
 
-        {/* ── STEP 1: Airport ── */}
-        {step === 1 && (
-          <div>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-center mb-2">
-              Vos aeroports de depart
-            </h2>
-            <p className="text-gray-400 text-sm text-center mb-6">
-              Selectionnez un ou plusieurs aeroports. On surveillera les vols au depart de chacun.
-            </p>
+        <div className="rounded-[30px] border border-[#D9E2E3] bg-white p-6 shadow-[0_22px_60px_rgba(11,42,63,.07)] md:p-9">
+          {step === 1 && (
+            <div>
+              <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-[#0E7490]">Étape 1 sur 3</p>
+              <h1 className="mt-3 text-center font-[family-name:var(--font-dm-serif)] text-3xl">Votre aéroport principal</h1>
+              <p className="mx-auto mt-3 max-w-lg text-center text-sm leading-6 text-slate-500">
+                Le compte Freemium surveille un aéroport de départ. Choisissez celui que vous utilisez le plus souvent.
+              </p>
 
-            <div className="grid grid-cols-2 gap-3 mb-8">
-              {AIRPORTS.map((ap) => {
-                const selected = airports.includes(ap.code);
-                return (
-                  <button
-                    key={ap.code}
-                    onClick={() =>
-                      setAirports((prev) =>
-                        selected ? prev.filter((c) => c !== ap.code) : [...prev, ap.code]
-                      )
-                    }
-                    className="text-left p-3 rounded-xl border-2 transition-all relative"
-                    style={{
-                      borderColor: selected ? "#06b6d4" : "#e5e7eb",
-                      background: selected ? "#ecfeff" : "white",
-                    }}
-                  >
-                    <div className="font-semibold text-sm">{ap.code}</div>
-                    <div className="text-xs text-gray-400">{ap.label}</div>
-                    {selected && (
-                      <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-cyan-500 flex items-center justify-center">
-                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                        </svg>
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
-            <button
-              onClick={() => setStep(2)}
-              disabled={airports.length === 0}
-              className="w-full bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold py-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Continuer ({airports.length} aeroport{airports.length !== 1 ? "s" : ""})
-            </button>
-          </div>
-        )}
-
-        {/* ── STEP 2: Deal tier ── */}
-        {step === 2 && (
-          <div>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl text-center mb-2">
-              Type d&apos;alertes
-            </h2>
-            <p className="text-gray-400 text-sm text-center mb-6">
-              Choisissez le niveau de deal que vous souhaitez recevoir.
-            </p>
-
-            {/* Flight trip types */}
-            <div className="mb-6">
-              <p className="text-sm font-semibold text-[#082B78] mb-2">Types de vols</p>
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { id: "round_trip" as FlightTripType, label: "Aller-retour", icon: "🔄" },
-                  { id: "one_way" as FlightTripType, label: "Aller simple", icon: "➡️" },
-                ].map((tt) => {
-                  const selected = flightTripTypes.includes(tt.id);
+              <div className="mt-7 grid grid-cols-2 gap-3 md:grid-cols-3">
+                {AIRPORTS.map((item) => {
+                  const selected = airport === item.code;
                   return (
                     <button
-                      key={tt.id}
+                      key={item.code}
                       type="button"
-                      onClick={() =>
-                        setFlightTripTypes((prev) =>
-                          selected
-                            ? (prev.length > 1 ? prev.filter((t) => t !== tt.id) : prev)
-                            : [...prev, tt.id]
-                        )
-                      }
-                      className="text-left p-3 rounded-xl border-2 transition-all relative"
-                      style={{
-                        borderColor: selected ? "#06b6d4" : "#e5e7eb",
-                        background: selected ? "#ecfeff" : "white",
-                      }}
+                      onClick={() => setAirport(item.code)}
+                      className={`relative rounded-2xl border-2 p-4 text-left transition-all ${selected ? "border-[#0E7490] bg-[#E9F5F7]" : "border-[#D9E2E3] bg-white hover:border-[#2AB7A9]"}`}
                     >
-                      <div className="flex items-center gap-2">
-                        <span>{tt.icon}</span>
-                        <span className="font-semibold text-sm">{tt.label}</span>
-                      </div>
-                      {selected && (
-                        <div className="absolute top-2 right-2 w-4 h-4 rounded-full bg-cyan-500 flex items-center justify-center">
-                          <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                          </svg>
-                        </div>
-                      )}
+                      <div className="font-bold text-[#0B2A3F]">{item.code}</div>
+                      <div className="mt-1 text-xs leading-5 text-slate-500">{item.label}</div>
+                      {selected && <span className="absolute right-2 top-2 rounded-full bg-[#0E7490] px-2 py-1 text-[10px] font-bold text-white">Principal</span>}
                     </button>
                   );
                 })}
               </div>
 
-              {/* Sub-option of 'Aller-retour' — combos malins (2x one-way) */}
-              {flightTripTypes.includes("round_trip") && (
-                <div className="mt-3 ml-3 pl-3 border-l-2 border-cyan-100">
-                  <label className="flex items-start gap-2 cursor-pointer group">
-                    <input
-                      type="checkbox"
-                      checked={includeSplitTickets}
-                      onChange={(e) => setIncludeSplitTickets(e.target.checked)}
-                      className="mt-0.5 w-4 h-4 accent-cyan-500 cursor-pointer"
-                    />
-                    <div className="flex-1">
-                      <div className="text-sm font-medium text-[#082B78] group-hover:text-cyan-700 transition-colors">
-                        💡 Inclure les combos malins (2 billets)
-                      </div>
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        A/R reconstitués avec 2 aller simples séparés quand c&apos;est moins cher.
-                      </div>
-                    </div>
-                  </label>
+              <button type="button" onClick={() => setStep(2)} className="mt-8 w-full rounded-xl bg-[#0E7490] py-3.5 font-bold text-white hover:bg-[#0A6078]">
+                Continuer
+              </button>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div>
+              <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-[#0E7490]">Étape 2 sur 3</p>
+              <h1 className="mt-3 text-center font-[family-name:var(--font-dm-serif)] text-3xl">Votre formule Freemium</h1>
+              <p className="mx-auto mt-3 max-w-lg text-center text-sm leading-6 text-slate-500">
+                Vous recevrez les meilleurs allers-retours vérifiés depuis {airport}, dans la limite du quota gratuit.
+              </p>
+
+              <div className="mt-7 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl bg-[#E9F5F7] p-4 text-center">
+                  <div className="font-[family-name:var(--font-dm-serif)] text-3xl text-[#0E7490]">2</div>
+                  <div className="mt-1 text-xs leading-5 text-slate-600">alertes complètes par semaine</div>
+                </div>
+                <div className="rounded-2xl bg-[#FFF0EA] p-4 text-center">
+                  <div className="font-[family-name:var(--font-dm-serif)] text-3xl text-[#E96543]">1</div>
+                  <div className="mt-1 text-xs leading-5 text-slate-600">pépite exceptionnelle par mois</div>
+                </div>
+                <div className="rounded-2xl bg-[#F7F3EA] p-4 text-center">
+                  <div className="font-[family-name:var(--font-dm-serif)] text-3xl text-[#0B2A3F]">1</div>
+                  <div className="mt-1 text-xs leading-5 text-slate-600">joker de déverrouillage par mois</div>
+                </div>
+              </div>
+
+              <div className="mt-6 rounded-2xl border border-[#D9E2E3] p-4">
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input type="checkbox" checked={acceptLonghaulStopover} onChange={(event) => setAcceptLonghaulStopover(event.target.checked)} className="mt-1 h-4 w-4 accent-[#0E7490]" />
+                  <span>
+                    <span className="block text-sm font-bold text-[#0B2A3F]">Accepter une escale en long-courrier</span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-500">Les vols européens restent directs. Cette option augmente les opportunités vers les destinations lointaines.</span>
+                  </span>
+                </label>
+              </div>
+
+              <div className="mt-5 rounded-2xl border border-[#FF7A59]/25 bg-[#FFF0EA] p-4 text-sm leading-6 text-slate-600">
+                Les allers simples, les combos malins, plusieurs aéroports et les alertes sans quota seront réservés au futur Premium à 49 € par an.
+              </div>
+
+              {error && <div className="mt-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>}
+
+              <div className="mt-8 flex gap-3">
+                <button type="button" onClick={() => setStep(1)} className="flex-1 rounded-xl border border-[#D9E2E3] py-3.5 font-semibold text-slate-500 hover:bg-slate-50">Retour</button>
+                <button type="button" onClick={savePreferences} disabled={loading} className="flex-1 rounded-xl bg-[#0E7490] py-3.5 font-bold text-white hover:bg-[#0A6078] disabled:opacity-50">
+                  {loading ? "Enregistrement…" : "Enregistrer"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="text-center">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0E7490]">Étape essentielle</p>
+              <h1 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl">Connectez Telegram</h1>
+              <p className="mx-auto mt-3 max-w-lg text-center text-sm leading-6 text-slate-500">
+                Les alertes sont envoyées dans le bot dès qu’un prix intéressant est confirmé. Sans connexion Telegram, aucune alerte ne peut être reçue.
+              </p>
+
+              <div className="mx-auto mt-7 max-w-md rounded-3xl bg-[#E9F5F7] p-6">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#229ED9] text-xl font-bold text-white">G</div>
+                <p className="mt-4 text-sm leading-6 text-slate-600">Ouvrez le bot GlobeGenius puis appuyez sur <strong>Start</strong> pour associer votre compte Freemium.</p>
+              </div>
+
+              {!telegramLink ? (
+                <button type="button" onClick={connectTelegram} disabled={loading} className="mt-7 w-full rounded-xl bg-[#229ED9] py-3.5 font-bold text-white hover:bg-[#1B86B8] disabled:opacity-50">
+                  {loading ? "Création du lien…" : "Connecter Telegram"}
+                </button>
+              ) : (
+                <div className="mt-7 space-y-3">
+                  <a href={telegramLink} target="_blank" rel="noopener noreferrer" className="block w-full rounded-xl bg-[#229ED9] py-3.5 font-bold text-white hover:bg-[#1B86B8]">Ouvrir Telegram</a>
+                  <button type="button" onClick={() => router.push("/home")} className="w-full rounded-xl bg-[#0E7490] py-3.5 font-bold text-white hover:bg-[#0A6078]">J’ai lancé le bot — accéder à mon espace</button>
                 </div>
               )}
 
-              {/* Long-haul with 1 stopover — Europe stays direct regardless */}
-              <div className="mt-3">
-                <label className="flex items-start gap-2 cursor-pointer group">
-                  <input
-                    type="checkbox"
-                    checked={acceptLonghaulStopover}
-                    onChange={(e) => setAcceptLonghaulStopover(e.target.checked)}
-                    className="mt-0.5 w-4 h-4 accent-cyan-500 cursor-pointer"
-                  />
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-[#082B78] group-hover:text-cyan-700 transition-colors">
-                      🌍 Vols long-courrier avec escale
-                    </div>
-                    <div className="text-xs text-gray-500 mt-0.5">
-                      Recevez aussi les longs-courriers avec 1 escale (ex&nbsp;: Paris→Sydney à -55&nbsp;%). Les vols en Europe restent toujours directs.
-                    </div>
-                  </div>
-                </label>
-              </div>
-            </div>
-
-            <p className="text-sm font-semibold text-[#082B78] mb-2">Niveau de deal</p>
-
-            <div className="mb-8 grid grid-cols-1 gap-3">
-              {[
-                {
-                  id: "regular",
-                  icon: "✈️",
-                  label: "Bons deals",
-                  desc: isPremium ? "-30% à -50% · quelques alertes par semaine" : "-30% à -40% · quelques alertes par semaine",
-                  locked: false,
-                },
-                {
-                  id: "exceptional",
-                  icon: "🔥",
-                  label: "Deals exceptionnels",
-                  desc: "-50% et plus · rare, réservation urgente",
-                  locked: !isPremium,
-                },
-              ].map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => { if (!opt.locked) setDealTier(opt.id); }}
-                  className="text-left p-4 rounded-xl border-2 transition-all relative"
-                  style={{
-                    borderColor: dealTier === opt.id ? "#FF6B47" : "#e5e7eb",
-                    background: dealTier === opt.id ? "#FFF1EC" : opt.locked ? "#f9fafb" : "white",
-                    opacity: opt.locked ? 0.7 : 1,
-                    cursor: opt.locked ? "default" : "pointer",
-                  }}
-                >
-                  <div className="text-xl mb-1">{opt.icon}</div>
-                  <div className="font-semibold text-sm text-[#082B78] flex items-center gap-2">
-                    {opt.label}
-                    {opt.locked && <span className="text-xs font-normal text-[#FF6B47] bg-[#FFF1EC] px-2 py-0.5 rounded-full">Premium</span>}
-                  </div>
-                  <div className="text-xs text-gray-400 mt-0.5">{opt.desc}</div>
-                  {dealTier === opt.id && (
-                    <div className="absolute top-3 right-3 w-4 h-4 rounded-full bg-[#FF6B47] flex items-center justify-center">
-                      <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
-
-            {!isPremium && (
-              <div className="mb-8 bg-[#FFF1EC] border border-[#FF6B47] rounded-xl p-4 text-sm text-[#082B78]/70">
-                💎 Les deals exceptionnels (-50% et plus) sont réservés aux membres premium.{" "}
-                <button
-                  onClick={async () => {
-                    try {
-                      await updatePreferences(userId, {
-                        airport_codes: airports.length > 0 ? airports : ["CDG"],
-                        offer_types: offerTypes.length > 0 ? offerTypes : ["flight"],
-                        deal_tier: dealTier,
-                        flight_trip_types: flightTripTypes.length > 0 ? flightTripTypes : ["round_trip"],
-                        include_split_tickets: includeSplitTickets && flightTripTypes.includes("round_trip"),
-                        accept_longhaul_stopover: acceptLonghaulStopover,
-                      });
-                    } catch { /* ignore */ }
-                    router.push("/home?upgrade=1");
-                  }}
-                  className="underline font-semibold hover:opacity-80 transition-opacity"
-                >
-                  Passer à Premium →
-                </button>
-              </div>
-            )}
-
-            {saveError && (
-              <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
-                {saveError}
-              </div>
-            )}
-
-            <div className="flex gap-3">
-              <button onClick={() => setStep(1)} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-500 font-medium hover:bg-gray-50 transition-colors">
-                Retour
-              </button>
-              <button
-                onClick={handleSavePreferences}
-                disabled={loading}
-                className="flex-1 bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold py-3 rounded-xl transition-all disabled:opacity-50"
-              >
-                {loading ? "Enregistrement..." : "Continuer"}
+              <button type="button" onClick={() => router.push("/home")} className="mt-5 text-xs leading-5 text-slate-400 underline underline-offset-4 hover:text-slate-600">
+                Continuer sans Telegram — je comprends qu’aucune alerte ne sera envoyée
               </button>
             </div>
-          </div>
-        )}
-
-        {/* ── STEP 3: Telegram ── */}
-        {step === 3 && (
-          <div className="text-center">
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-2xl mb-2">
-              Connecter Telegram
-            </h2>
-            <p className="text-gray-400 text-sm mb-8">
-              Recevez vos alertes de deals directement sur Telegram.
-            </p>
-
-            {!telegramLink ? (
-              <button
-                onClick={handleConnectTelegram}
-                disabled={loading}
-                className="w-full bg-[#0088cc] text-white font-semibold py-3.5 rounded-xl hover:bg-[#006daa] transition-colors flex items-center justify-center gap-2 disabled:opacity-50 mb-4"
-              >
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
-                </svg>
-                {loading ? "Generation du lien..." : "Connecter Telegram"}
-              </button>
-            ) : (
-              <div className="mb-6">
-                <a
-                  href={telegramLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block w-full bg-[#0088cc] text-white font-semibold py-3.5 rounded-xl hover:bg-[#006daa] transition-colors mb-3"
-                >
-                  Ouvrir Telegram →
-                </a>
-                <p className="text-xs text-gray-400">
-                  Cliquez sur "Start" dans Telegram pour activer les alertes.
-                </p>
-              </div>
-            )}
-
-            <button
-              onClick={() => router.push("/home")}
-              className="w-full py-3 rounded-xl border border-gray-200 text-gray-500 font-medium hover:bg-gray-50 transition-colors"
-            >
-              {telegramLink ? "Acceder a mon espace" : "Passer cette etape"}
-            </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
