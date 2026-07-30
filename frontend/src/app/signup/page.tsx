@@ -11,6 +11,8 @@ export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  // CNIL : case décochée par défaut, consentement explicite uniquement.
+  const [marketingConsent, setMarketingConsent] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   // Beta cohort cap: when 100 founders are reached, the signup form is
@@ -43,7 +45,7 @@ export default function SignupPage() {
 
     setLoading(true);
     try {
-      const res = await signup(email, password);
+      const res = await signup(email, password, marketingConsent);
       localStorage.setItem("gg_user_id", res.user_id);
       localStorage.setItem("gg_email", res.email);
       localStorage.setItem("gg_token", res.token);
@@ -158,6 +160,20 @@ export default function SignupPage() {
               className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none text-sm transition-colors"
             />
           </div>
+
+          <label className="flex items-start gap-2.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={marketingConsent}
+              onChange={(e) => setMarketingConsent(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#FF6B47] focus:ring-[#FF6B47]"
+            />
+            <span className="text-xs text-gray-500 leading-relaxed">
+              J&apos;accepte de recevoir par email les récapitulatifs de deals,
+              les nouveautés et les offres de GlobeGenius. (facultatif —
+              modifiable à tout moment depuis mon profil)
+            </span>
+          </label>
 
           {error && (
             <div className="bg-red-50 text-red-600 text-sm rounded-xl px-4 py-3">

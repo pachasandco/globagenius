@@ -92,6 +92,17 @@ export default function HomePage() {
     };
   }, [router]);
 
+  // Deep-link des emails freemium (?upgrade=1) : ouvre le checkout Stripe
+  // directement — un clic de moins entre l'email et le paiement. Si la
+  // session a expiré, handleCheckout redirige déjà vers /login.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("upgrade") === "1") {
+      handleCheckout();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function handleCheckout() {
     try {
       const token = localStorage.getItem("gg_token");

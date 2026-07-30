@@ -203,6 +203,9 @@ def _require_admin(request: Request):
 class SignupRequest(BaseModel):
     email: str
     password: str
+    # Consentement marketing (CNIL) : case décochée par défaut côté front,
+    # donc False sauf action explicite de l'utilisateur.
+    marketing_consent: bool = False
 
     @field_validator("email")
     @classmethod
@@ -761,12 +764,16 @@ async def signup(req: SignupRequest, request: Request, bg_tasks: BackgroundTasks
 
     password_hash = await loop.run_in_executor(None, _hash_password, req.password)
 
+    signup_row = {
+        "email": req.email,
+        "password_hash": password_hash,
+    }
+    if req.marketing_consent:
+        signup_row["marketing_consent"] = True
+        signup_row["marketing_consent_at"] = datetime.now(timezone.utc).isoformat()
     user = await loop.run_in_executor(
         None,
-        lambda: db.table("users").insert({
-            "email": req.email,
-            "password_hash": password_hash,
-        }).execute(),
+        lambda: db.table("users").insert(signup_row).execute(),
     )
     if not user.data:
         raise HTTPException(status_code=500, detail="Erreur lors de la creation du compte")
@@ -1012,7 +1019,7 @@ def get_preferences(user_id: str, user: dict = Depends(get_current_user)):
     try:
         u = (
             db.table("users")
-            .select("badge,display_name,badge_number")
+            .select("badge,display_name,badge_number,marketing_consent")
             .eq("id", user_id)
             .execute()
         )
@@ -1020,9 +1027,34 @@ def get_preferences(user_id: str, user: dict = Depends(get_current_user)):
             out["badge"] = bool(u.data[0].get("badge"))
             out["display_name"] = u.data[0].get("display_name")
             out["badge_number"] = u.data[0].get("badge_number")
+            out["marketing_consent"] = bool(u.data[0].get("marketing_consent"))
     except Exception as e:
         logger.debug(f"badge lookup in get_preferences failed: {e}")
     return out
+
+
+class MarketingConsentRequest(BaseModel):
+    consent: bool
+
+
+@router.put("/api/users/{user_id}/marketing-consent")
+def update_marketing_consent(
+    user_id: str, req: MarketingConsentRequest, user: dict = Depends(get_current_user)
+):
+    """Opt-in / opt-out des emails marketing (récaps de deals, offres).
+
+    CNIL : le consentement est horodaté (marketing_consent_at) comme
+    preuve ; un opt-out remet le flag à false mais conserve l'horodatage
+    du dernier consentement pour l'historique."""
+    if user.get("sub") != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    patch: dict = {"marketing_consent": req.consent}
+    if req.consent:
+        patch["marketing_consent_at"] = datetime.now(timezone.utc).isoformat()
+    db.table("users").update(patch).eq("id", user_id).execute()
+    return {"marketing_consent": req.consent}
 
 
 @router.put("/api/users/{user_id}/preferences")

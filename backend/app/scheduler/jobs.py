@@ -158,6 +158,29 @@ def get_scheduler_jobs() -> list[dict]:
             "minute": 0,
             "timezone": "Europe/Paris",
         },
+        # ── PROGRAMME FREEMIUM : digest hebdo + bilan mensuel ──
+        # Dimanche 18h Paris : moment « rêve de voyage » du week-end, avant
+        # la reprise. Le bilan mensuel part le 1er à 18h10 (décalé pour ne
+        # jamais chevaucher un dimanche de digest). Emails quota : event-
+        # driven depuis le dispatcher, pas de cron.
+        {
+            "id": "freemium_weekly_digest",
+            "func": job_freemium_weekly_digest,
+            "trigger": "cron",
+            "day_of_week": "sun",
+            "hour": 18,
+            "minute": 0,
+            "timezone": "Europe/Paris",
+        },
+        {
+            "id": "freemium_monthly_recap",
+            "func": job_freemium_monthly_recap,
+            "trigger": "cron",
+            "day": 1,
+            "hour": 18,
+            "minute": 10,
+            "timezone": "Europe/Paris",
+        },
         # ── TIER 1 : toutes les 40 min (CDG + ORY via endpoints directs LCC) ──
         # Ryanair + Transavia directs → données quasi temps-réel pour les routes chaudes.
         # 2026-06-14: passé de 20 → 40 min pour alléger raw_flights (la table
@@ -931,6 +954,10 @@ async def _dispatch_grouped_flight_alerts(
         "min_stay": 0, "bad_dates": 0,
         "sent": 0, "send_failed": 0,
     }
+    # Users free dont des deals ont été retenus faute de place dans les
+    # couloirs (free_no_room) — alimente l'email « quota atteint » du
+    # programme freemium (max 1/user/semaine, voir freemium_digest).
+    quota_hit_user_ids: set[str] = set()
 
     groups: dict[tuple[str, str], list[tuple[dict, object, str]]] = defaultdict(list)
     for flight, anomaly, tier in qualified_flights:
@@ -1301,6 +1328,8 @@ async def _dispatch_grouped_flight_alerts(
                     room = free_lane_room.get(user_id, {"daily": 0, "weekly": 0}) if user_id else {"daily": 0, "weekly": 0}
                     if room["daily"] <= 0 and room["weekly"] <= 0:
                         drop_counts["free_no_room"] += 1
+                        if user_id:
+                            quota_hit_user_ids.add(user_id)
                         continue
                     weekly_pool = []
                     daily_pool = []
@@ -1933,6 +1962,19 @@ async def _dispatch_grouped_flight_alerts(
     # without a 2-hour archaeology session. The guard blocks (L1/L3/L2,
     # freshness, pépite) already log individually above.
     logger.info(f"dispatch summary: {drop_counts}")
+
+    # Programme freemium : email « quota atteint » pour les users free dont
+    # des deals ont été retenus ce cycle. Best-effort, max 1/user/semaine
+    # (clé périodique), consentement marketing requis — tout est géré dans
+    # le module. Un échec ici ne doit jamais impacter le dispatch.
+    if quota_hit_user_ids:
+        try:
+            from app.notifications.freemium_digest import send_quota_reached_emails
+            qc = await send_quota_reached_emails(quota_hit_user_ids)
+            if qc.get("sent"):
+                logger.info(f"freemium quota emails: {qc}")
+        except Exception as e:
+            logger.warning(f"freemium quota emails failed (non-fatal): {e}")
 
 
 async def job_recalculate_baselines():
@@ -2666,6 +2708,55 @@ async def job_send_onboarding_emails():
     if sent_total:
         try:
             await send_admin_text(summary)
+        except Exception:
+            pass
+    return counts
+
+
+async def job_freemium_weekly_digest():
+    """Cron hebdo (dimanche soir) — récap freemium « reçu vs manqué ».
+
+    Destinataires : free + marketing_consent uniquement. Idempotent par
+    semaine ISO via onboarding_email_log (freemium_digest_YYYY_WW)."""
+    from app.notifications.freemium_digest import send_freemium_digest_once
+    try:
+        counts = await send_freemium_digest_once()
+    except Exception as e:
+        logger.exception("freemium weekly digest failed")
+        try:
+            await send_admin_alert(f"Freemium digest crashed: {e}")
+        except Exception:
+            pass
+        return
+    logger.info(f"Freemium digest hebdo: {counts}")
+    if counts.get("sent"):
+        try:
+            await send_admin_text(
+                f"📮 Digest freemium hebdo : {counts['sent']} envoyés / {counts.get('skipped', 0)} skippés"
+            )
+        except Exception:
+            pass
+    return counts
+
+
+async def job_freemium_monthly_recap():
+    """Cron mensuel (le 1er) — « relevé GlobeGenius » cumulé sur 30j."""
+    from app.notifications.freemium_digest import send_freemium_monthly_once
+    try:
+        counts = await send_freemium_monthly_once()
+    except Exception as e:
+        logger.exception("freemium monthly recap failed")
+        try:
+            await send_admin_alert(f"Freemium bilan mensuel crashed: {e}")
+        except Exception:
+            pass
+        return
+    logger.info(f"Freemium bilan mensuel: {counts}")
+    if counts.get("sent"):
+        try:
+            await send_admin_text(
+                f"📮 Bilan freemium mensuel : {counts['sent']} envoyés / {counts.get('skipped', 0)} skippés"
+            )
         except Exception:
             pass
     return counts
