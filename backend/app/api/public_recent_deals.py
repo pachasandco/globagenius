@@ -21,6 +21,8 @@ router = APIRouter()
 
 POOL_SIZE = 12
 MIN_DISCOUNT_PCT = 40.0
+MAX_DISCOUNT_MISMATCH_PCT = 3.0
+MIN_LONG_HAUL_BASELINE_EUR = 500
 PROVINCE_AIRPORTS = {"LYS", "MRS", "NCE", "BOD", "NTE", "TLS", "BSL"}
 PARIS_AIRPORTS = {"CDG", "ORY", "BVA"}
 FRENCH_ORIGINS = PARIS_AIRPORTS | PROVINCE_AIRPORTS
@@ -71,14 +73,24 @@ def build_round_trip_candidates(
 
         try:
             price = float(qualified.get("price") or 0)
-            discount = float(qualified.get("discount_pct") or 0)
+            declared_discount = float(qualified.get("discount_pct") or 0)
         except (TypeError, ValueError):
             continue
-        if price <= 0 or discount < MIN_DISCOUNT_PCT or discount >= 95:
+        if price <= 0 or declared_discount < MIN_DISCOUNT_PCT or declared_discount >= 95:
             continue
 
-        baseline = _safe_baseline(price, discount, qualified.get("baseline_price"))
+        baseline = _safe_baseline(price, declared_discount, qualified.get("baseline_price"))
         if baseline is None:
+            continue
+
+        verified_discount = (baseline - price) / baseline * 100
+        if abs(verified_discount - declared_discount) > MAX_DISCOUNT_MISMATCH_PCT:
+            continue
+        if verified_discount < MIN_DISCOUNT_PCT:
+            continue
+
+        is_long_haul = destination in LONG_HAUL_DESTINATIONS
+        if is_long_haul and baseline < MIN_LONG_HAUL_BASELINE_EUR:
             continue
 
         candidates.append({
@@ -88,11 +100,11 @@ def build_round_trip_candidates(
             "dest_city": IATA_TO_CITY.get(destination, destination),
             "price": round(price),
             "baseline": baseline,
-            "discount_pct": round(discount),
+            "discount_pct": round(verified_discount),
             "trip_type": "round_trip",
             "return_date": return_date,
             "is_province": origin in PROVINCE_AIRPORTS,
-            "is_long_haul": destination in LONG_HAUL_DESTINATIONS,
+            "is_long_haul": is_long_haul,
             "detected_at": qualified.get("created_at"),
         })
 
@@ -187,15 +199,20 @@ def recent_round_trip_deals():
     if not item_ids:
         return {"deals": []}
 
+    raw_rows: list[dict] = []
     try:
-        raw_rows = (
-            db.table("raw_flights")
-            .select("id,origin,destination,return_date,trip_type,direction")
-            .in_("id", item_ids)
-            .execute()
-            .data
-            or []
-        )
+        # Keep each PostgREST URL bounded: hundreds of UUIDs in one ``in``
+        # filter can exceed proxy limits and make the whole showcase disappear.
+        for offset in range(0, len(item_ids), 100):
+            chunk = item_ids[offset:offset + 100]
+            raw_rows.extend(
+                db.table("raw_flights")
+                .select("id,origin,destination,return_date,trip_type,direction")
+                .in_("id", chunk)
+                .execute()
+                .data
+                or []
+            )
     except Exception:
         return {"deals": []}
 
@@ -207,6 +224,8 @@ def recent_round_trip_deals():
         detected_at = candidate.get("detected_at")
         try:
             detected = datetime.fromisoformat(str(detected_at).replace("Z", "+00:00"))
+            if detected.tzinfo is None:
+                detected = detected.replace(tzinfo=timezone.utc)
         except (TypeError, ValueError):
             detected = datetime.min.replace(tzinfo=timezone.utc)
         (recent if detected >= cutoff_30d else older).append(candidate)
