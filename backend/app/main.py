@@ -12,6 +12,7 @@ from app.api.preferences_freemium import (
     normalize_all_free_subscriptions,
     router as preferences_freemium_router,
 )
+from app.api.public_recent_deals import router as public_recent_deals_router
 from app.api.routes import router
 from app.api.signup_public import router as signup_public_router
 from app.api.stripe_checkout_39 import router as stripe_checkout_39_router
@@ -213,6 +214,7 @@ app.add_middleware(
 
 # These routers are registered before the historical monolithic router so their
 # modern public endpoints and entitlement-aware preference route take priority.
+app.include_router(public_recent_deals_router)
 app.include_router(signup_public_router)
 app.include_router(preferences_freemium_router)
 app.include_router(freemium_router)
