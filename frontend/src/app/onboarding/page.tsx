@@ -164,7 +164,7 @@ export default function OnboardingPage() {
               </div>
 
               <div className="mt-5 rounded-2xl border border-[#FF7A59]/25 bg-[#FFF0EA] p-4 text-sm leading-6 text-slate-600">
-                Les allers simples, les combos malins, plusieurs aéroports et les alertes sans quota seront réservés au futur Premium à 49 € par an. Premium débloque toutes les opportunités qualifiées, mais ne crée pas artificiellement des deals lorsqu’un aéroport est calme.
+                Les allers simples, les combos malins, plusieurs aéroports et les alertes sans quota sont réservés au Premium à 39 € par an. Premium débloque toutes les opportunités qualifiées, mais ne crée pas artificiellement des deals lorsqu’un aéroport est calme.
               </div>
 
               {error && <div className="mt-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>}
