@@ -14,6 +14,7 @@ from app.api.preferences_freemium import (
 )
 from app.api.routes import router
 from app.api.signup_public import router as signup_public_router
+from app.api.stripe_checkout_39 import router as stripe_checkout_39_router
 from app.freemium_policy import (
     guarded_send_grouped_flight_alerts,
     link_account_with_trial,
@@ -215,5 +216,6 @@ app.add_middleware(
 app.include_router(signup_public_router)
 app.include_router(preferences_freemium_router)
 app.include_router(freemium_router)
+app.include_router(stripe_checkout_39_router)
 app.include_router(router)
 app.include_router(bot_router)
