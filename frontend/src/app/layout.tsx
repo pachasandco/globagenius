@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DM_Serif_Display, Plus_Jakarta_Sans, Geist } from "next/font/google";
 import "./globals.css";
+import "./site-system.css";
 import { cn } from "@/lib/utils";
 import { CampaignTracker } from "./_components/CampaignTracker";
 
@@ -124,12 +125,12 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       {
         "@type": "Offer",
         name: "GlobeGenius Premium annuel",
-        price: "49",
+        price: "39",
         priceCurrency: "EUR",
         availability: "https://schema.org/PreOrder",
         priceSpecification: {
           "@type": "UnitPriceSpecification",
-          price: "49",
+          price: "39",
           priceCurrency: "EUR",
           billingDuration: "P1Y",
         },
