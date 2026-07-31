@@ -1,0 +1,53 @@
+/* Route-level compatibility for the connected product area. */
+
+.app-route-shell > :nth-child(2) > :first-child:is(nav, header, div)[class*="border-b"] {
+  display: none !important;
+}
+
+.app-route-shell > :nth-child(2) {
+  min-height: auto !important;
+  background-color: #F7F3EA !important;
+  color: #0B2A3F;
+}
+
+.app-route-profile > :nth-child(2) > div[class*="max-w-2xl"] {
+  max-width: 72rem !important;
+  padding-top: 3rem !important;
+  padding-bottom: 4rem !important;
+}
+
+.app-route-profile > :nth-child(2) > div[class*="max-w-2xl"] > h1,
+.app-route-profile > :nth-child(2) > div[class*="max-w-2xl"] > p {
+  max-width: 48rem;
+}
+
+.app-route-profile :where(div)[class*="bg-gray-50"],
+.app-route-profile :where(div)[class*="bg-[#FFF8F0]"] {
+  background-color: #FFFCF7 !important;
+}
+
+.app-route-profile :where(button)[class*="text-[#FF6B47]"],
+.app-route-profile :where(a)[class*="text-[#FF6B47]"] {
+  color: #0E7490 !important;
+}
+
+.app-route-profile :where(button)[class*="bg-[var(--color-coral)]"] {
+  background-color: #0E7490 !important;
+  color: #fff !important;
+}
+
+.app-route-profile :where(div)[class*="rounded-xl"][class*="border-gray-200"],
+.app-route-profile :where(div)[class*="rounded-2xl"][class*="border-gray-200"] {
+  border-color: #D9E2E3 !important;
+}
+
+.app-route-deals > :nth-child(2) main {
+  padding-top: 3rem;
+  padding-bottom: 4rem;
+}
+
+@media (max-width: 640px) {
+  .app-route-profile > :nth-child(2) > div[class*="max-w-2xl"] {
+    padding-top: 2rem !important;
+  }
+}
