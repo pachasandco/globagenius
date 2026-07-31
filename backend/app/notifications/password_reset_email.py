@@ -92,12 +92,51 @@ def _build_text(reset_url: str) -> str:
     )
 
 
+async def _send_via_brevo_api(to_email: str, reset_url: str) -> bool:
+    """Primary transport: Brevo transactional HTTP API.
+
+    2026-07-31 : Railway bloque les ports SMTP sortants (587/465) — le
+    transport aiosmtplib pendait ~60s puis échouait, l'écran restait sur
+    « envoi en cours » et AUCUN email de reset ne partait. Tous les
+    autres emails de l'app passent déjà par l'API HTTP Brevo ; celui-ci
+    était le dernier en SMTP brut. Timeout court : cet appel ne doit
+    jamais suspendre une requête."""
+    if not settings.BREVO_API_KEY:
+        return False
+    import httpx
+    payload = {
+        "sender": {"name": "Globe Genius", "email": "fode@globegenius.app"},
+        "to": [{"email": to_email}],
+        "subject": "Réinitialiser votre mot de passe Globe Genius",
+        "htmlContent": _build_html(reset_url),
+        "textContent": _build_text(reset_url),
+    }
+    headers = {
+        "api-key": settings.BREVO_API_KEY,
+        "accept": "application/json",
+        "content-type": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post("https://api.brevo.com/v3/smtp/email", json=payload, headers=headers)
+            resp.raise_for_status()
+        logger.info(f"Password reset email sent to {to_email} (Brevo API)")
+        return True
+    except Exception as e:
+        logger.error(f"Brevo API reset email failed for {to_email}: {e}")
+        return False
+
+
 async def send_password_reset_email(to_email: str, reset_url: str) -> bool:
     """Send the password-reset email. Returns True iff the message went out.
 
-    Returns False (no exception) when SMTP is unconfigured or the send
-    fails — callers do NOT surface this to the user (anti-enumeration).
-    """
+    Primary: Brevo HTTP API (SMTP ports are blocked on Railway).
+    Fallback: SMTP with a hard 10s timeout — never hangs the caller.
+    Returns False (no exception) on failure — callers do NOT surface
+    this to the user (anti-enumeration)."""
+    if await _send_via_brevo_api(to_email, reset_url):
+        return True
+
     smtp_host = settings.SMTP_HOST
     smtp_port = settings.SMTP_PORT
     smtp_user = settings.SMTP_USER
@@ -123,6 +162,7 @@ async def send_password_reset_email(to_email: str, reset_url: str) -> bool:
             port=smtp_port,
             username=smtp_user,
             password=smtp_pass,
+            timeout=10,  # jamais pendre une requête sur un port bloqué
         )
         if smtp_port == 465:
             send_kwargs["use_tls"] = True
