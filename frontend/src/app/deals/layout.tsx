@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AppRouteShell } from "../_components/SiteChrome";
 
 export const metadata: Metadata = {
   title: "Mes deals — GlobeGenius",
@@ -7,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function DealsLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return children;
+  return <AppRouteShell route="deals">{children}</AppRouteShell>;
 }

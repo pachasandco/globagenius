@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useParams } from "next/navigation";
+import { Wordmark } from "../../_components/Wordmark";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -10,17 +11,16 @@ export default function RedirectPage() {
   const token = params?.token as string | undefined;
 
   useEffect(() => {
-    if (token) {
-      // Redirect to backend — it records the click and issues a 302 to the real URL.
-      window.location.replace(`${API_URL}/r/${token}`);
-    }
+    if (token) window.location.replace(`${API_URL}/r/${token}`);
   }, [token]);
 
   return (
-    <div className="min-h-screen bg-[#FFF8F0] flex items-center justify-center">
+    <div className="site-hero-soft flex min-h-screen items-center justify-center px-5 text-white">
       <div className="text-center">
-        <div className="text-2xl mb-2">✈️</div>
-        <p className="text-sm text-gray-400">Redirection en cours...</p>
+        <Wordmark variant="inverse" size="md" />
+        <div className="mx-auto mt-9 h-10 w-10 animate-spin rounded-full border-2 border-white/25 border-t-white" aria-hidden="true" />
+        <h1 className="mt-6 font-[family-name:var(--font-dm-serif)] text-3xl">Vérification du lien</h1>
+        <p className="mt-3 text-sm text-white/60">Vous allez être redirigé vers le vendeur du billet.</p>
       </div>
     </div>
   );
