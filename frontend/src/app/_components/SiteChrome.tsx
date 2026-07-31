@@ -27,6 +27,21 @@ export function SimpleHeader({ backHref = "/", backLabel = "Retour à l’accuei
   );
 }
 
+export function AppHeader() {
+  return (
+    <header className="site-header sticky top-0 z-50 border-b border-[#D9E2E3] bg-[#FFFCF7]/95 backdrop-blur">
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:h-20 sm:px-8">
+        <Link href="/home" aria-label="Accueil de votre espace GlobeGenius"><Wordmark size="sm" /></Link>
+        <nav aria-label="Navigation de l’espace utilisateur" className="flex items-center gap-1 rounded-xl border border-[#D9E2E3] bg-white p-1 text-xs font-semibold sm:gap-2 sm:text-sm">
+          <Link href="/home" className="rounded-lg px-2.5 py-2 text-slate-600 transition-colors hover:bg-[#E9F5F7] hover:text-[#0E7490] sm:px-4">Accueil</Link>
+          <Link href="/deals" className="rounded-lg px-2.5 py-2 text-slate-600 transition-colors hover:bg-[#E9F5F7] hover:text-[#0E7490] sm:px-4">Deals</Link>
+          <Link href="/profile" className="rounded-lg px-2.5 py-2 text-slate-600 transition-colors hover:bg-[#E9F5F7] hover:text-[#0E7490] sm:px-4">Profil</Link>
+        </nav>
+      </div>
+    </header>
+  );
+}
+
 export function SiteFooter() {
   return (
     <footer className="border-t border-[#D9E2E3] bg-[#FFFCF7] py-8">
@@ -40,6 +55,16 @@ export function SiteFooter() {
         </div>
       </div>
     </footer>
+  );
+}
+
+export function AppRouteShell({ route, children }: { route: "deals" | "profile"; children: ReactNode }) {
+  return (
+    <div className={`app-route-shell app-route-${route} min-h-screen bg-[#F7F3EA] text-[#0B2A3F]`}>
+      <AppHeader />
+      {children}
+      <SiteFooter />
+    </div>
   );
 }
 
