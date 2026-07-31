@@ -1,93 +1,25 @@
-import Link from "next/link";
 import type { Metadata } from "next";
-import { Wordmark } from "../_components/Wordmark";
+import { EditorialShell } from "../_components/SiteChrome";
 
 export const metadata: Metadata = {
-  title: "Mentions légales — Globe Genius",
-  description: "Mentions légales et conditions générales d'utilisation du service Globe Genius.",
+  title: "Mentions légales — GlobeGenius",
+  description: "Mentions légales du service GlobeGenius.",
   alternates: { canonical: "https://globegenius.app/mentions-legales" },
   robots: { index: false, follow: false },
 };
 
 export default function MentionsLegales() {
   return (
-    <div className="min-h-screen bg-[#FFF8F0]">
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
-        <div className="max-w-4xl mx-auto px-4 md:px-5 h-[80px] flex items-center">
-          <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-[19px] leading-none">
-            <Wordmark />
-          </Link>
-        </div>
-      </nav>
-
-      <div className="max-w-4xl mx-auto px-4 md:px-5 py-12">
-        <h1 className="font-[family-name:var(--font-dm-serif)] text-3xl md:text-4xl mb-8 text-[#082B78]">Mentions légales</h1>
-
-        <div className="prose prose-gray max-w-none text-[#082B78]/80 space-y-8">
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Éditeur du site</h2>
-            <p>
-              Le site <strong>globegenius.app</strong> est édité par Globe Genius.<br />
-              Email de contact : <a href="mailto:contact@globegenius.app" className="text-[#FF6B47] hover:underline">contact@globegenius.app</a>
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Hébergement</h2>
-            <p>
-              Le site est hébergé par Railway Corporation, 548 Market St, San Francisco, CA 94104, États-Unis.<br />
-              Site : <a href="https://railway.app" className="text-[#FF6B47] hover:underline" target="_blank" rel="noopener noreferrer">railway.app</a>
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Propriété intellectuelle</h2>
-            <p>
-              L&apos;ensemble du contenu du site (textes, images, logos, design) est la propriété exclusive de Globe Genius, sauf mention contraire. Toute reproduction, représentation, modification ou adaptation de tout ou partie du site est interdite sans autorisation écrite préalable.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Données personnelles</h2>
-            <p>
-              Globe Genius collecte les données suivantes lors de l&apos;inscription : adresse email, préférences de voyage (aéroports de départ, destinations). Ces données sont utilisées uniquement pour le fonctionnement du service (alertes Telegram, personnalisation des deals).
-            </p>
-            <p>
-              Les données sont stockées sur des serveurs sécurisés (Supabase, Railway). Elles ne sont jamais vendues ni partagées avec des tiers à des fins commerciales.
-            </p>
-            <p>
-              Conformément au RGPD, vous disposez d&apos;un droit d&apos;accès, de rectification et de suppression de vos données. Pour exercer ces droits, contactez <a href="mailto:contact@globegenius.app" className="text-[#FF6B47] hover:underline">contact@globegenius.app</a>.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Cookies</h2>
-            <p>
-              Le site utilise des cookies techniques nécessaires au fonctionnement du service (authentification, session). Aucun cookie publicitaire ou de tracking tiers n&apos;est utilisé.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Liens affiliés</h2>
-            <p>
-              Globe Genius participe au programme d&apos;affiliation Travelpayouts. Les liens de réservation vers Aviasales et Booking.com contiennent un identifiant affilié. Globe Genius perçoit une commission sur les réservations effectuées via ces liens, sans surcoût pour l&apos;utilisateur. Les liens d’alerte Telegram passent par une URL courte (globegenius.app/r/…) qui enregistre le clic avant de rediriger vers la compagnie aérienne. Aucune donnée personnelle supplémentaire n’est collectée lors de ce passage.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Limitation de responsabilité</h2>
-            <p>
-              Globe Genius s&apos;efforce de fournir des informations exactes et à jour sur les prix des vols. Cependant, les prix affichés sont issus de sources tierces (Travelpayouts/Aviasales) et peuvent varier entre le moment de la détection et la réservation effective. Globe Genius ne garantit pas la disponibilité des tarifs affichés.
-            </p>
-          </section>
-        </div>
-      </div>
-
-      <footer className="border-t border-gray-100 py-6">
-        <div className="max-w-4xl mx-auto px-4 md:px-5 text-center text-xs text-gray-300">
-          Globe Genius © 2026 · <Link href="/conditions" className="hover:text-gray-500">CGV</Link> · <Link href="/confidentialite" className="hover:text-gray-500">Confidentialité</Link>
-        </div>
-      </footer>
-    </div>
+    <EditorialShell eyebrow="Informations légales" title="Mentions légales" intro="Les informations relatives à l’édition, à l’hébergement et au fonctionnement du site GlobeGenius.">
+      <section><h2>Éditeur du site</h2><p>Le site <strong>globegenius.app</strong> est édité par GlobeGenius. Contact : <a href="mailto:contact@globegenius.app">contact@globegenius.app</a>.</p></section>
+      <section><h2>Hébergement</h2><p>Le service applicatif est hébergé par Railway Corporation. Les composants techniques peuvent également s’appuyer sur des prestataires spécialisés nécessaires au fonctionnement de GlobeGenius.</p></section>
+      <section><h2>Propriété intellectuelle</h2><p>Les textes, éléments graphiques, interfaces, logos et composants originaux du site sont protégés. Leur reproduction ou adaptation substantielle nécessite une autorisation préalable, sauf exception prévue par la loi.</p></section>
+      <section><h2>Données personnelles</h2><p>Les modalités de traitement des données et l’exercice des droits sont détaillés dans la <a href="/confidentialite">politique de confidentialité</a>.</p></section>
+      <section><h2>Cookies et session</h2><p>Le site utilise les mécanismes techniques nécessaires à l’authentification, à la continuité de session et à l’attribution de campagne. Aucun cookie publicitaire tiers n’est requis pour accéder au service.</p></section>
+      <section><h2>Liens affiliés</h2><p>Certains liens de réservation peuvent contenir un identifiant affilié. GlobeGenius peut percevoir une commission lorsqu’une réservation éligible est réalisée, sans modification du prix facturé à l’utilisateur. Les liens d’alerte peuvent passer par une URL courte GlobeGenius afin d’enregistrer l’ouverture avant la redirection.</p></section>
+      <section><h2>Limitation de responsabilité</h2><p>Les tarifs sont fournis par des services tiers et peuvent évoluer rapidement. GlobeGenius ne vend pas le billet, ne garantit pas la disponibilité finale du prix et invite l’utilisateur à vérifier toutes les informations auprès du vendeur avant de réserver.</p></section>
+      <section><h2>Contact</h2><p>Pour toute question : <a href="mailto:contact@globegenius.app">contact@globegenius.app</a>.</p></section>
+      <p className="mt-10 border-t border-[#D9E2E3] pt-6 text-sm text-slate-400">Dernière mise à jour : 31 juillet 2026.</p>
+    </EditorialShell>
   );
 }
