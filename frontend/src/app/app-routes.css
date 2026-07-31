@@ -46,6 +46,23 @@
   padding-bottom: 4rem;
 }
 
+/* Airport pages previously carried their own header. The shared public chrome
+   now owns navigation and footer for every /depart route. */
+.depart-route-shell > :nth-child(2) > nav:first-child {
+  display: none !important;
+}
+
+.depart-route-shell > :nth-child(2) {
+  min-height: auto !important;
+}
+
+.depart-route-shell > :nth-child(2) > main > section:first-child {
+  background:
+    radial-gradient(circle at 78% 18%, rgb(42 183 169 / 30%), transparent 34%),
+    radial-gradient(circle at 18% 0%, rgb(14 116 144 / 44%), transparent 38%),
+    linear-gradient(135deg, #061824 0%, #0B2A3F 52%, #0A6078 100%) !important;
+}
+
 @media (max-width: 640px) {
   .app-route-profile > :nth-child(2) > div[class*="max-w-2xl"] {
     padding-top: 2rem !important;
