@@ -461,7 +461,7 @@ export default function AdminPage() {
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <KpiCard label="Comptes" value={number(metrics.totalUsers)} note="Utilisateurs enregistrés" accent="bg-[#0B2A3F]" />
-            <KpiCard label="Freemium" value={number(metrics.freemiumUsers)} note="Audience à convertir vers 49 €/an" accent="bg-[#FF7A59]" />
+            <KpiCard label="Freemium" value={number(metrics.freemiumUsers)} note="Audience à convertir vers 39 € / an" accent="bg-[#FF7A59]" />
             <KpiCard label="Premium" value={number(metrics.premiumUsers)} note={`${percent(metrics.premiumRate)} de la base`} accent="bg-[#2AB7A9]" />
             <KpiCard label="Membres OG" value={number(metrics.ogUsers)} note="Accès Premium conservé" accent="bg-amber-400" />
             <KpiCard label="Telegram actif" value={percent(metrics.activationRate)} note={`${number(metrics.telegramUsers)} comptes connectés`} accent="bg-[#229ED9]" />
@@ -499,7 +499,7 @@ export default function AdminPage() {
                 <div className="mt-1 text-sm leading-6 text-white/60">Freemium actifs pouvant recevoir les relances Brevo</div>
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="text-2xl font-bold">49 € / an</div>
+                <div className="text-2xl font-bold">39 € / an</div>
                 <div className="mt-1 text-sm leading-6 text-white/60">offre Premium à convertir lorsque Stripe sera ouvert</div>
               </div>
             </div>

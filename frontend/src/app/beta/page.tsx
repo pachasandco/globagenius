@@ -56,7 +56,7 @@ export default async function BetaPage() {
             premiers inscrits ont le statut Membre fondateur et le Premium gratuit
             pendant 1 an. Les vrais testeurs (usage + retours honnêtes sur les
             alertes) gardent leur Premium à vie. Les autres repassent en Free au
-            bout d&apos;un an — ou prennent l&apos;abonnement à 49€/an.
+            bout d&apos;un an — ou prennent l&apos;abonnement à 39€/an.
           </p>
         </header>
 
@@ -107,7 +107,7 @@ export default async function BetaPage() {
               ✓ <strong>Préférences personnalisées</strong> : aéroports, seuil de réduction, destinations bloquées
             </li>
             <li>
-              ✓ <strong>Premium gratuit pendant 1 an</strong>. Si tu participes vraiment (usage + retours honnêtes), le Premium reste <strong>à vie</strong>. Sinon, ton compte repasse en Free au bout d&apos;un an, ou tu peux prendre l&apos;abonnement à 49€/an pour garder le Premium. L&apos;accès au service est conservé dans tous les cas.
+              ✓ <strong>Premium gratuit pendant 1 an</strong>. Si tu participes vraiment (usage + retours honnêtes), le Premium reste <strong>à vie</strong>. Sinon, ton compte repasse en Free au bout d&apos;un an, ou tu peux prendre l&apos;abonnement à 39€/an pour garder le Premium. L&apos;accès au service est conservé dans tous les cas.
             </li>
           </ul>
         </section>
@@ -160,7 +160,7 @@ export default async function BetaPage() {
             <div>
               <div className="font-semibold text-[var(--color-ink)] mb-2">Lancement officiel</div>
               <ul className="space-y-1 text-sm text-gray-600">
-                <li>○ Premium à 49€/an (les fondateurs actifs gardent leur Premium gratuit ; l&apos;accès au service Free reste pour tous)</li>
+                <li>○ Premium à 39€/an (les fondateurs actifs gardent leur Premium gratuit ; l&apos;accès au service Free reste pour tous)</li>
                 <li>○ Extension Belgique francophone, Suisse romande, Luxembourg</li>
                 <li>○ App PWA installable</li>
               </ul>
