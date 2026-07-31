@@ -1,0 +1,159 @@
+/* GlobeGenius site-wide visual system.
+   This compatibility layer aligns legacy customer-facing routes while their
+   JSX is progressively migrated to shared components. */
+
+.site-page,
+.site-auth-page,
+.site-app-page {
+  background: var(--color-cream);
+  color: var(--color-ink);
+}
+
+.site-hero-soft {
+  background:
+    radial-gradient(circle at 78% 18%, rgb(42 183 169 / 30%), transparent 34%),
+    radial-gradient(circle at 18% 0%, rgb(14 116 144 / 44%), transparent 38%),
+    linear-gradient(135deg, #061824 0%, #0B2A3F 52%, #0A6078 100%);
+}
+
+.site-cta-primary {
+  background: var(--color-ocean);
+  color: #fff;
+  box-shadow: 0 10px 26px rgb(14 116 144 / 20%);
+  transition: background-color .2s ease, transform .2s ease, box-shadow .2s ease;
+}
+
+.site-cta-primary:hover {
+  background: var(--color-ocean-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 14px 30px rgb(14 116 144 / 24%);
+}
+
+.site-card,
+.site-editorial-card,
+.site-form-card {
+  background: #fff;
+  border-color: var(--color-border, #D9E2E3);
+  box-shadow: 0 18px 55px rgb(11 42 63 / 7%);
+}
+
+.site-editorial-card h2,
+.site-editorial-card h3 {
+  color: var(--color-ink);
+}
+
+.site-editorial-card h2 {
+  margin-top: 2.25rem;
+  font-family: var(--font-dm-serif), serif;
+  font-size: clamp(1.65rem, 3vw, 2.25rem);
+  line-height: 1.2;
+}
+
+.site-editorial-card h3 {
+  margin-top: 1.75rem;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.site-editorial-card p,
+.site-editorial-card li {
+  color: #526773;
+  line-height: 1.85;
+}
+
+.site-editorial-card a {
+  color: var(--color-ocean);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.site-editorial-card hr {
+  margin-block: 2rem;
+  border-color: #D9E2E3;
+}
+
+/* Form controls: one treatment for auth, onboarding, profile and admin. */
+:where(.site-page, .site-auth-page, .site-app-page) :where(input, select, textarea) {
+  border-color: #D9E2E3 !important;
+  background-color: #fff !important;
+  color: #0B2A3F !important;
+  box-shadow: none;
+}
+
+:where(.site-page, .site-auth-page, .site-app-page) :where(input, select, textarea):focus {
+  border-color: #0E7490 !important;
+  outline: 3px solid rgb(42 183 169 / 18%) !important;
+  outline-offset: 1px;
+}
+
+:where(.site-page, .site-auth-page, .site-app-page) :where(input, textarea)::placeholder {
+  color: #94A3B8;
+}
+
+/* Normalize old page backgrounds without changing functional state colours. */
+:where(.site-page, .site-auth-page, .site-app-page)[class*="bg-gray-"],
+:where(.site-page, .site-auth-page, .site-app-page)[class*="bg-slate-"],
+:where(.site-page, .site-auth-page, .site-app-page)[class*="bg-zinc-"] {
+  background-color: #F7F3EA !important;
+}
+
+/* Legacy primary CTAs are converted to Ocean. Destructive and Telegram remain distinct. */
+:where(.site-page, .site-auth-page, .site-app-page) :where(a, button)[class*="bg-blue-"],
+:where(.site-page, .site-auth-page, .site-app-page) :where(a, button)[class*="bg-cyan-"],
+:where(.site-page, .site-auth-page, .site-app-page) :where(a, button)[class*="bg-teal-"],
+:where(.site-page, .site-auth-page, .site-app-page) :where(a, button)[class*="bg-indigo-"] {
+  background-color: #0E7490 !important;
+  color: #fff !important;
+}
+
+:where(.site-page, .site-auth-page, .site-app-page) :where(a, button)[class*="bg-blue-"]:hover,
+:where(.site-page, .site-auth-page, .site-app-page) :where(a, button)[class*="bg-cyan-"]:hover,
+:where(.site-page, .site-auth-page, .site-app-page) :where(a, button)[class*="bg-teal-"]:hover,
+:where(.site-page, .site-auth-page, .site-app-page) :where(a, button)[class*="bg-indigo-"]:hover {
+  background-color: #0A6078 !important;
+}
+
+/* Cards and separators. */
+:where(.site-page, .site-auth-page, .site-app-page) :where(section, article, div)[class*="border-gray-"],
+:where(.site-page, .site-auth-page, .site-app-page) :where(section, article, div)[class*="border-slate-"] {
+  border-color: #D9E2E3 !important;
+}
+
+/* Shared selected state used by airport and flight-type tiles. */
+.gg-choice {
+  border: 1px solid #D9E2E3;
+  background: #fff;
+  color: #0B2A3F;
+  transition: border-color .2s ease, background-color .2s ease, box-shadow .2s ease;
+}
+
+.gg-choice:hover {
+  border-color: #8FC9D2;
+}
+
+.gg-choice[data-selected="true"],
+.gg-choice[aria-pressed="true"] {
+  border-color: #0E7490;
+  background: #E9F5F7;
+  box-shadow: 0 0 0 2px rgb(14 116 144 / 9%);
+}
+
+.gg-status-success {
+  border-color: rgb(22 143 115 / 22%);
+  background: rgb(22 143 115 / 8%);
+  color: #116B58;
+}
+
+.gg-status-warning {
+  border-color: rgb(255 122 89 / 28%);
+  background: #FFF0EA;
+  color: #9B432F;
+}
+
+/* Consistent motion, with accessibility fallback. */
+@media (prefers-reduced-motion: reduce) {
+  .site-cta-primary,
+  .gg-choice {
+    transition: none;
+  }
+}
