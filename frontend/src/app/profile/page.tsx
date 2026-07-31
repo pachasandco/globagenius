@@ -538,6 +538,18 @@ export default function ProfilePage() {
             <Link href="/planificateur" className="text-gray-400 text-sm hover:text-gray-600">
               Planificateur
             </Link>
+            <button
+              onClick={() => {
+                localStorage.removeItem("gg_user_id");
+                localStorage.removeItem("gg_email");
+                localStorage.removeItem("gg_token");
+                clearSessionCookie();
+                router.push("/");
+              }}
+              className="text-gray-400 text-sm hover:text-red-500"
+            >
+              Déconnexion
+            </button>
           </div>
         </div>
       </div>

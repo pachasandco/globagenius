@@ -14,6 +14,18 @@ async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
     headers,
     ...options,
   });
+  // Session expirée/invalide (ex: rotation du secret JWT) : purger et
+  // renvoyer au login au lieu d'afficher une erreur générique. On exclut
+  // les endpoints d'auth eux-mêmes — un mauvais mot de passe renvoie 401
+  // et doit afficher son message, pas boucler vers /login.
+  if (res.status === 401 && !path.startsWith("/api/auth/") && typeof window !== "undefined") {
+    localStorage.removeItem("gg_user_id");
+    localStorage.removeItem("gg_email");
+    localStorage.removeItem("gg_token");
+    clearSessionCookie();
+    window.location.href = "/login";
+    throw new Error("Session expirée — reconnectez-vous.");
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || `API error: ${res.status}`);
