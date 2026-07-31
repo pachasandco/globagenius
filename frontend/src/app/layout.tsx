@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { DM_Serif_Display, Plus_Jakarta_Sans, Geist } from "next/font/google";
 import "./globals.css";
 import "./site-system.css";
+import "./app-routes.css";
 import { cn } from "@/lib/utils";
 import { CampaignTracker } from "./_components/CampaignTracker";
 
