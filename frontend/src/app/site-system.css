@@ -150,6 +150,63 @@
   color: #9B432F;
 }
 
+/* Legacy brand compatibility. These selectors remove the previous royal-blue /
+   orange UI from pages that have not yet been structurally rewritten. */
+.site-page :where(div, main, section)[class*="bg-[#FFF8F0]"],
+.site-page :where(div, main, section)[class*="bg-[#FFF8F0]"] {
+  background-color: #F7F3EA !important;
+}
+
+.site-page :where(h1, h2, h3, h4, p, span, label, strong)[class*="text-[#082B78]"] {
+  color: #0B2A3F !important;
+}
+
+.site-page :where(a, button)[class*="bg-[#FF6B47]"],
+.site-page :where(a, button)[class*="bg-[var(--color-coral)]"],
+.site-page :where(a, button)[class*="bg-[#E55A38]"] {
+  background-color: #0E7490 !important;
+  color: #fff !important;
+}
+
+.site-page :where(a, button)[class*="bg-[#FF6B47]"]:hover,
+.site-page :where(a, button)[class*="bg-[var(--color-coral)]"]:hover,
+.site-page :where(a, button)[class*="bg-[#E55A38]"]:hover {
+  background-color: #0A6078 !important;
+}
+
+.site-page :where(nav, header)[class*="bg-white/80"],
+.site-page :where(nav, header)[class*="bg-white/90"],
+.site-page :where(nav, header)[class*="bg-white/95"] {
+  background-color: rgb(255 252 247 / 95%) !important;
+  border-color: #D9E2E3 !important;
+}
+
+.site-page :where(section, article, div)[class*="bg-gray-50"],
+.site-page :where(section, article, div)[class*="bg-slate-50"] {
+  background-color: #FFFCF7 !important;
+}
+
+.site-page :where(section, article, div)[class*="rounded-2xl"][class*="bg-white"],
+.site-page :where(section, article, div)[class*="rounded-3xl"][class*="bg-white"] {
+  border-color: #D9E2E3;
+  box-shadow: 0 12px 34px rgb(11 42 63 / 5%);
+}
+
+.site-page :where(a)[class*="text-[#FF6B47]"],
+.site-page :where(a)[class*="text-[var(--color-coral)]"] {
+  color: #0E7490 !important;
+}
+
+.site-page :where(a)[class*="hover:text-[var(--color-coral)]"]:hover,
+.site-page :where(a)[class*="hover:text-[#FF6B47]"]:hover {
+  color: #0A6078 !important;
+}
+
+/* User-facing headers should all feel related, even before component migration. */
+.site-page > div > :where(nav, header, div):first-child[class*="border-b"] {
+  border-color: #D9E2E3 !important;
+}
+
 /* Consistent motion, with accessibility fallback. */
 @media (prefers-reduced-motion: reduce) {
   .site-cta-primary,
