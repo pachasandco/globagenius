@@ -901,7 +901,7 @@ async def login(req: LoginRequest, request: Request):
 # differs. The user-facing message is the same in both cases.
 
 @router.post("/api/auth/forgot-password")
-async def forgot_password(req: ForgotPasswordRequest, request: Request):
+async def forgot_password(req: ForgotPasswordRequest, request: Request, bg_tasks: BackgroundTasks):
     _check_rate_limit(f"forgot:{_client_ip(request)}")
     if not db:
         raise HTTPException(status_code=503, detail="Database not configured")
@@ -942,10 +942,11 @@ async def forgot_password(req: ForgotPasswordRequest, request: Request):
         return {"ok": True}
 
     reset_url = f"{settings.FRONTEND_URL}/reset-password/{token}"
-    try:
-        await send_password_reset_email(user_data["email"], reset_url)
-    except Exception as e:
-        logger.warning(f"forgot-password: email send failed: {e}")
+    # 2026-07-31 : envoi en tâche de fond — la requête répondait avant en
+    # attendant le transport (l'UI restait sur « envoi en cours » pendant
+    # 60s quand le SMTP pendait sur un port bloqué). La réponse est
+    # identique quoi qu'il arrive (anti-énumération), donc rien à attendre.
+    bg_tasks.add_task(send_password_reset_email, user_data["email"], reset_url)
 
     return {"ok": True}
 
