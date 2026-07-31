@@ -140,7 +140,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
 
   return (
     <html lang="fr" className={cn(dmSerif.variable, plusJakarta.variable, "font-sans", geist.variable)}>
-      <body className="min-h-screen w-full">
+      <body className="site-page min-h-screen w-full">
         <CampaignTracker />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organization) }} />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(software) }} />
