@@ -192,11 +192,15 @@ async def _get_user_tier_async(user_id: str | None) -> str:
 
 
 def _require_admin(request: Request):
-    """Check admin API key in X-Admin-Key header."""
+    """Check admin API key in X-Admin-Key header.
+
+    Audit sécu 2026-07-31 : comparaison constant-time (hmac.compare_digest)
+    pour neutraliser les timing attacks sur la clé admin."""
+    import hmac as _hmac
     admin_key = request.headers.get("X-Admin-Key", "")
     if not settings.ADMIN_API_KEY:
         return  # No admin key configured = dev mode, allow all
-    if admin_key != settings.ADMIN_API_KEY:
+    if not _hmac.compare_digest(admin_key, settings.ADMIN_API_KEY):
         raise HTTPException(status_code=403, detail="Acces admin requis")
 
 

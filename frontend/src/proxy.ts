@@ -3,7 +3,10 @@ import type { NextRequest } from "next/server";
 
 const PROTECTED = ["/home", "/profile", "/onboarding", "/deals"];
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "https://globagenius-production-b887.up.railway.app").trim();
+// Fallback corrigé (audit 2026-07-31) : b887 est un ancien domaine Railway
+// mort (404) — un build sans NEXT_PUBLIC_API_URL cassait silencieusement
+// le proxy. Le domaine backend actif est -1380.
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "https://globagenius-production-1380.up.railway.app").trim();
 
 function buildCsp(): string {
   return [

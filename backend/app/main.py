@@ -205,7 +205,9 @@ app.add_middleware(
         "http://localhost:3000",
         "https://www.globegenius.app",
         "https://globegenius.app",
-        "https://globagenius-production-b887.up.railway.app",
+        # b887 : ancien domaine Railway mort (404) — retiré à l'audit sécu
+        # 2026-07-31. Le domaine backend actif est ...-1380, jamais appelé
+        # cross-origin (le front passe par son proxy même-origine).
     ],
     allow_credentials=True,
     allow_methods=["*"],
