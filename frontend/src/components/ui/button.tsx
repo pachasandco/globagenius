@@ -13,7 +13,7 @@ const buttonVariants = cva(
         inverse:
           "bg-white text-[#0B2A3F] shadow-[0_12px_30px_rgba(0,0,0,.18)] hover:bg-[#E9F5F7]",
         telegram:
-          "bg-[#229ED9] text-white hover:bg-[#1B86B8] focus-visible:ring-[#229ED9]/35",
+          "bg-[#0E7490] text-white hover:bg-[#0A6078] focus-visible:ring-[#0E7490]/35",
         outline:
           "border-border bg-background text-[#0B2A3F] hover:border-[#0E7490] hover:bg-[#E9F5F7] hover:text-[#0E7490] aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:

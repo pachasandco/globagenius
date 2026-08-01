@@ -464,7 +464,7 @@ export default function AdminPage() {
             <KpiCard label="Freemium" value={number(metrics.freemiumUsers)} note="Audience à convertir vers 39 € / an" accent="bg-[#FF7A59]" />
             <KpiCard label="Premium" value={number(metrics.premiumUsers)} note={`${percent(metrics.premiumRate)} de la base`} accent="bg-[#2AB7A9]" />
             <KpiCard label="Membres OG" value={number(metrics.ogUsers)} note="Accès Premium conservé" accent="bg-amber-400" />
-            <KpiCard label="Telegram actif" value={percent(metrics.activationRate)} note={`${number(metrics.telegramUsers)} comptes connectés`} accent="bg-[#229ED9]" />
+            <KpiCard label="Telegram actif" value={percent(metrics.activationRate)} note={`${number(metrics.telegramUsers)} comptes connectés`} accent="bg-[#0E7490]" />
             <KpiCard label="Inscriptions 7 j" value={number(metrics.newUsers7d)} note="Nouveaux comptes sur 7 jours" accent="bg-violet-500" />
           </div>
         </section>
