@@ -187,17 +187,17 @@ export default function OnboardingPage() {
               </p>
 
               <div className="mx-auto mt-7 max-w-md rounded-3xl bg-[#E9F5F7] p-6">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#229ED9] text-xl font-bold text-white">G</div>
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#0E7490] text-xl font-bold text-white">G</div>
                 <p className="mt-4 text-sm leading-6 text-slate-600">Ouvrez le bot GlobeGenius puis appuyez sur <strong>Start</strong> pour associer votre compte Freemium.</p>
               </div>
 
               {!telegramLink ? (
-                <button type="button" onClick={connectTelegram} disabled={loading} className="mt-7 w-full rounded-xl bg-[#229ED9] py-3.5 font-bold text-white hover:bg-[#1B86B8] disabled:opacity-50">
+                <button type="button" onClick={connectTelegram} disabled={loading} className="mt-7 w-full rounded-xl bg-[#0E7490] py-3.5 font-bold text-white hover:bg-[#0A6078] disabled:opacity-50">
                   {loading ? "Création du lien…" : "Connecter Telegram"}
                 </button>
               ) : (
                 <div className="mt-7 space-y-3">
-                  <a href={telegramLink} target="_blank" rel="noopener noreferrer" className="block w-full rounded-xl bg-[#229ED9] py-3.5 font-bold text-white hover:bg-[#1B86B8]">Ouvrir Telegram</a>
+                  <a href={telegramLink} target="_blank" rel="noopener noreferrer" className="block w-full rounded-xl bg-[#0E7490] py-3.5 font-bold text-white hover:bg-[#0A6078]">Ouvrir Telegram</a>
                   <button type="button" onClick={() => router.push("/home")} className="w-full rounded-xl bg-[#0E7490] py-3.5 font-bold text-white hover:bg-[#0A6078]">J’ai lancé le bot — accéder à mon espace</button>
                 </div>
               )}

@@ -237,7 +237,7 @@ export default function HomePage() {
           radarActive ? (
             <section className="mb-7 rounded-[28px] border border-[#D9E2E3] bg-white p-6 shadow-[0_18px_55px_rgba(11,42,63,.06)] md:flex md:items-center md:justify-between md:gap-6">
               <div className="flex items-start gap-4">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#229ED9] font-bold text-white shadow-[0_10px_24px_rgba(34,158,217,.22)]">G</div>
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#0E7490] font-bold text-white shadow-[0_10px_24px_rgba(14,116,144,.22)]">G</div>
                 <div>
                   <div className="inline-flex rounded-full bg-[#EAF8F5] px-3 py-1 text-xs font-bold text-[#168F73]">Connexion confirmée</div>
                   <h2 className="mt-3 text-lg font-bold text-[#0B2A3F]">Vos alertes Telegram sont actives</h2>
@@ -250,7 +250,7 @@ export default function HomePage() {
                 href={TELEGRAM_BOT_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-5 inline-flex w-full justify-center rounded-xl bg-[#229ED9] px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-[#1B86B8] md:mt-0 md:w-auto"
+                className="mt-5 inline-flex w-full justify-center rounded-xl bg-[#0E7490] px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-[#0A6078] md:mt-0 md:w-auto"
               >
                 Ouvrir le chat
               </a>
