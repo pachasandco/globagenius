@@ -189,6 +189,30 @@ STOPOVER_HUB_PAIRS: list[tuple[str, str]] = [
 
 
 IATA_TO_CITY = {
+    # ── Long-courrier / DOM-TOM (2026-08-01) ──
+    # 19 destinations alertées ou surveillées qui s'affichaient en code
+    # IATA brut dans les alertes Telegram (iata_label retombe sur le code
+    # quand le mapping manque). Relevées par balayage de sent_alerts,
+    # raw_flights et priority_destinations — pas de liste théorique.
+    "AKL": "Auckland",
+    "BIO": "Bilbao",
+    "CAY": "Cayenne",
+    "CGK": "Jakarta",
+    "FDF": "Fort-de-France",
+    "HAN": "Hanoï",
+    "HAV": "La Havane",
+    "KIX": "Osaka",
+    "MEL": "Melbourne",
+    "MEX": "Mexico",
+    "NOU": "Nouméa",
+    "POP": "Puerto Plata",
+    "PTP": "Pointe-à-Pitre",
+    "SDQ": "Saint-Domingue",
+    "SEZ": "Seychelles",
+    "SGN": "Hô Chi Minh-Ville",
+    "SXM": "Saint-Martin",
+    "TNR": "Antananarivo",
+    "VRA": "Varadero",
     # ── Aéroports de départ français ──
     "CDG": "Paris CDG",
     "ORY": "Paris Orly",

@@ -59,3 +59,33 @@ def test_three_letter_strings_pass_through_even_if_known_lowercase():
     if the brand name itself is in _AGENCY_FIXUPS, not the IATA table."""
     # "AFR" is not an IATA code (those are 2 letters), so we pass through.
     assert normalize_airline_name("AFR") == "AFR"
+
+
+# ── Fix 2026-08-01 : plus jamais de codes bruts dans les alertes ────────────
+# Codes relevés en prod (balayage raw_flights) et résolus via la base
+# officielle Travelpayouts. MW = Malta Air (filiale Ryanair), pas Mokulele.
+
+def test_recent_prod_airline_codes_resolve():
+    from app.notifications.airlines import normalize_airline_name
+    expected = {
+        "MW": "Malta Air",
+        "RR": "Buzz",
+        "W4": "Wizz Air Malta",
+        "V7": "Volotea",
+        "D8": "Norwegian",
+        "EC": "easyJet",
+    }
+    for code, name in expected.items():
+        assert normalize_airline_name(code) == name
+
+
+def test_longhaul_domtom_cities_resolve():
+    from app.config import iata_label
+    # 19 destinations qui s'affichaient en IATA brut dans les alertes
+    for code, city in [
+        ("PTP", "Pointe-à-Pitre"), ("FDF", "Fort-de-France"),
+        ("SGN", "Hô Chi Minh-Ville"), ("HAN", "Hanoï"), ("HAV", "La Havane"),
+        ("TNR", "Antananarivo"), ("KIX", "Osaka"), ("AKL", "Auckland"),
+        ("BIO", "Bilbao"), ("NOU", "Nouméa"),
+    ]:
+        assert iata_label(code) == f"{city} ({code})"
