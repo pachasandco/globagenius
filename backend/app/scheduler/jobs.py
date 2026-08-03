@@ -844,12 +844,40 @@ async def _dispatch_free_teasers(
     if not db or not free_subs:
         return 0
     from app.notifications.telegram import send_locked_teaser
+    from app.thresholds import FREE_TEASER_DAILY_LIMIT
+    # Plafond quotidien par user (2026-08-03) : une requête groupée par
+    # appel — les users déjà servis aujourd'hui sont exclus d'office.
+    # Best-effort : si la requête échoue, on n'envoie PAS (fail-closed) —
+    # rater un teaser est sans gravité, spammer ne l'est pas.
+    teased_today: dict[str, int] = {}
+    day_start = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ).isoformat()
+    try:
+        rows = (
+            db.table("sent_alerts")
+            .select("user_id")
+            .eq("alert_type", "locked_teaser")
+            .gte("sent_at", day_start)
+            .execute()
+            .data
+            or []
+        )
+        for r in rows:
+            u = r.get("user_id")
+            if u:
+                teased_today[u] = teased_today.get(u, 0) + 1
+    except Exception as e:
+        logger.warning(f"Teaser daily-cap lookup failed — skipping teasers this cycle: {e}")
+        return 0
     origin_city = _city_for_iata_label(origin)
     sent = 0
     for sub in free_subs:
         uid = sub.get("user_id")
         chat_id = sub.get("chat_id")
         if not uid or chat_id is None:
+            continue
+        if teased_today.get(uid, 0) >= FREE_TEASER_DAILY_LIMIT:
             continue
         if destination in sub.get("blocked_destinations", set()):
             continue
@@ -888,6 +916,9 @@ async def _dispatch_free_teasers(
             logger.warning(f"Locked teaser send failed user={uid}: {e}")
         if sent_ok:
             sent += 1
+            # Compte en mémoire aussi : si la persistance échoue/retarde,
+            # le prochain deal du même cycle ne re-tease pas ce user.
+            teased_today[uid] = teased_today.get(uid, 0) + 1
             await _persist_sent_alerts_with_retry(
                 {
                     "user_id": uid,

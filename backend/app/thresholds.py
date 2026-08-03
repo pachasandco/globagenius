@@ -74,3 +74,10 @@ ONEWAY_PUSH_WOW_DISCOUNT_PCT = 80.0
 # ─── Locked Premium teasers for free users ────────────────────────────────
 LONG_HAUL_TEASER_MIN_DISCOUNT_PCT = 30
 ONEWAY_TEASER_MAX_PRICE_EUR = 20.0
+# 2026-08-03 : plafond quotidien par user. Sans plafond, l'ouverture du
+# long-courrier (séjours 21j + 13 destinations) a fait qualifier assez de
+# deals « exceptionnels » pour envoyer 11 teasers/user/jour en médiane
+# (353/24h mesurés) — de la pression de conversion devenue du spam qui
+# mène au mute Telegram. 1/jour = le teaser reste rare donc précieux,
+# tout en gardant ~30 rappels Premium par mois.
+FREE_TEASER_DAILY_LIMIT = 1
