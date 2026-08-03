@@ -96,3 +96,65 @@ def test_unknown_deal_type_falls_back_to_round_trip_framing():
 def test_origin_city_defaults_when_blank():
     out = format_locked_teaser("long_haul", 30, 400, "")
     assert "Depuis Paris" in out
+
+
+# ── Plafond quotidien (2026-08-03) ──────────────────────────────────────────
+# Sans plafond, 11 teasers/user/jour mesurés en prod. La règle : un user
+# déjà servi aujourd'hui est exclu AVANT tout envoi.
+
+@pytest.mark.asyncio
+async def test_teaser_daily_cap_skips_already_teased_user():
+    from unittest.mock import MagicMock, AsyncMock, patch
+    from app.scheduler import jobs
+
+    db_mock = MagicMock()
+    chain = MagicMock()
+    for m in ("select", "eq", "gte", "limit"):
+        getattr(chain, m).return_value = chain
+    db_mock.table.return_value = chain
+    # 1er execute = requête du plafond (u_capped déjà servi aujourd'hui),
+    # suivants = dedup par deal (vides).
+    chain.execute.side_effect = [
+        MagicMock(data=[{"user_id": "u_capped"}]),
+        MagicMock(data=[]),
+    ]
+
+    send_mock = AsyncMock(return_value=True)
+    persist_mock = AsyncMock()
+    with patch.object(jobs, "db", db_mock), \
+         patch("app.notifications.telegram.send_locked_teaser", new=send_mock), \
+         patch.object(jobs, "_persist_sent_alerts_with_retry", new=persist_mock):
+        sent = await jobs._dispatch_free_teasers(
+            deal_type="long_haul",
+            destination="NRT",
+            departure_date="2026-10-01",
+            return_date="2026-10-15",
+            price=450.0,
+            discount_pct=44.0,
+            origin="CDG",
+            free_subs=[
+                {"user_id": "u_capped", "chat_id": 1, "blocked_destinations": set()},
+                {"user_id": "u_fresh", "chat_id": 2, "blocked_destinations": set()},
+            ],
+        )
+
+    assert sent == 1
+    assert send_mock.call_count == 1
+    assert send_mock.call_args.kwargs["chat_id"] == 2  # u_fresh seulement
+
+
+@pytest.mark.asyncio
+async def test_teaser_cap_lookup_failure_fails_closed():
+    from unittest.mock import MagicMock, patch
+    from app.scheduler import jobs
+
+    db_mock = MagicMock()
+    db_mock.table.side_effect = Exception("db down")
+    with patch.object(jobs, "db", db_mock):
+        sent = await jobs._dispatch_free_teasers(
+            deal_type="long_haul", destination="NRT",
+            departure_date="2026-10-01", return_date="2026-10-15",
+            price=450.0, discount_pct=44.0, origin="CDG",
+            free_subs=[{"user_id": "u1", "chat_id": 1, "blocked_destinations": set()}],
+        )
+    assert sent == 0  # rater un teaser est sans gravité, spammer non
