@@ -394,41 +394,67 @@ def test_l1_no_prior_alert_allows():
 
 
 def test_l1_recent_alert_blocks():
+    # 118 > 120 × 0.95 = 114 → less than 5% better → still blocks.
     db = _make_db([{"price": 120.0, "created_at": datetime.now(timezone.utc).isoformat()}])
     assert levier_1_destination_cooldown_blocks(
-        db=db, user_id="u", destination="LIS", new_price=110.0
+        db=db, user_id="u", destination="LIS", new_price=118.0
     ) is True
 
 
 def test_l1_significant_drop_overrides():
-    """A new price ≤ 90% of the previous alerted price re-fires.
+    """A new price ≤ 95% of the previous alerted price re-fires.
 
-    Threshold loosened from 0.70 to 0.90 on 2026-06-07 after a user-data
-    audit (17/20 missed deals over 24h were legitimate improvements that
-    fell between −10% and −30% better than the prior alert)."""
+    Threshold loosened 0.70 → 0.90 on 2026-06-07, then 0.90 → 0.95 on
+    2026-06-09 (real improvements in the −5%..−10% band were still
+    being swallowed; spam pressure is now absorbed by the BVA floor)."""
     db = _make_db([{"price": 200.0, "created_at": datetime.now(timezone.utc).isoformat()}])
-    # 130 ≤ 200 × 0.90 = 180 → meaningful improvement → push allowed
+    # 130 ≤ 200 × 0.95 = 190 → meaningful improvement → push allowed
     assert levier_1_destination_cooldown_blocks(
         db=db, user_id="u", destination="LIS", new_price=130.0
     ) is False
 
 
-def test_l1_boundary_exactly_10pct_off_passes():
-    """Exactly 10% off the previous alert is allowed (≤ not <)."""
+def test_l1_boundary_exactly_5pct_off_passes():
+    """Exactly 5% off the previous alert is allowed (≤ not <)."""
     db = _make_db([{"price": 100.0, "created_at": datetime.now(timezone.utc).isoformat()}])
-    # 90.0 == 100.0 × 0.90 → still passes
+    # 95.0 == 100.0 × 0.95 → still passes
     assert levier_1_destination_cooldown_blocks(
-        db=db, user_id="u", destination="LIS", new_price=90.0
+        db=db, user_id="u", destination="LIS", new_price=95.0
     ) is False
 
 
 def test_l1_marginal_drop_still_blocks():
-    """A 5% improvement isn't enough to re-fire — blocks."""
+    """A 3% improvement isn't enough to re-fire — blocks."""
     db = _make_db([{"price": 100.0, "created_at": datetime.now(timezone.utc).isoformat()}])
-    # 95 > 100 × 0.90 = 90 → not meaningful enough → still blocks
+    # 97 > 100 × 0.95 = 95 → not meaningful enough → still blocks
     assert levier_1_destination_cooldown_blocks(
-        db=db, user_id="u", destination="LIS", new_price=95.0
+        db=db, user_id="u", destination="LIS", new_price=97.0
     ) is True
+
+
+def test_l1_alert_types_filter_is_applied_to_query():
+    """REGRESSION (2026-06-12): a 17€ CPH one-way alert was muting a
+    197€ −40% CPH round-trip for 7 days. The A/R dispatcher now passes
+    alert_types=["flight", "split_ticket"] and the guard must forward
+    that filter to the sent_alerts query via .in_("alert_type", …)."""
+    db = _make_db([{"price": 17.0, "created_at": datetime.now(timezone.utc).isoformat()}])
+    levier_1_destination_cooldown_blocks(
+        db=db, user_id="u", destination="CPH", new_price=197.0,
+        alert_types=["flight", "split_ticket"],
+    )
+    chain = db.table.return_value
+    chain.in_.assert_called_once_with("alert_type", ["flight", "split_ticket"])
+
+
+def test_l1_no_alert_types_means_no_type_filter():
+    """Default (one-way / stopover dispatchers): all history counts,
+    no .in_ filter on the query — A/R history keeps muting one-ways."""
+    db = _make_db([{"price": 100.0, "created_at": datetime.now(timezone.utc).isoformat()}])
+    levier_1_destination_cooldown_blocks(
+        db=db, user_id="u", destination="CPH", new_price=99.0,
+    )
+    chain = db.table.return_value
+    chain.in_.assert_not_called()
 
 
 def test_l1_legacy_row_without_price_fails_open():
@@ -877,3 +903,57 @@ def test_l3_with_premium_caps_allows_exceptional_burst():
         new_discount_pct=60.0, now=now,
         caps=TIER_CAPS["premium"],
     ) is True
+
+
+# ── BVA Europe floor + route-aware pépite (2026-06-09) ─────────────────
+
+
+def test_bva_floor_blocks_short_haul_below_50():
+    from app.notifications.dispatch_guards import bva_europe_floor_blocks
+    assert bva_europe_floor_blocks(
+        origin="BVA", destination="BCN", discount_pct=45.0
+    ) is True
+
+
+def test_bva_floor_allows_short_haul_at_50():
+    from app.notifications.dispatch_guards import bva_europe_floor_blocks
+    assert bva_europe_floor_blocks(
+        origin="BVA", destination="BCN", discount_pct=50.0
+    ) is False
+
+
+def test_bva_floor_ignores_other_origins():
+    from app.notifications.dispatch_guards import bva_europe_floor_blocks
+    assert bva_europe_floor_blocks(
+        origin="CDG", destination="BCN", discount_pct=41.0
+    ) is False
+
+
+def test_bva_floor_ignores_long_haul():
+    from app.notifications.dispatch_guards import bva_europe_floor_blocks
+    # BKK is long-haul — BVA long-haul keeps the global floor.
+    assert bva_europe_floor_blocks(
+        origin="BVA", destination="BKK", discount_pct=41.0
+    ) is False
+
+
+def test_pepite_for_route_tightens_bva_price_bar():
+    """25€ A/R is a pépite from CDG but NOT from BVA short-haul —
+    that's Ryanair's everyday price floor out of Beauvais."""
+    from app.notifications.dispatch_guards import is_pepite_for_route
+    assert is_pepite_for_route("CDG", "BCN", 25.0, 40.0) is True
+    assert is_pepite_for_route("BVA", "BCN", 25.0, 40.0) is False
+    # ≤15€ stays a pépite even from BVA.
+    assert is_pepite_for_route("BVA", "BCN", 14.0, 40.0) is True
+
+
+def test_pepite_for_route_keeps_discount_path_on_bva():
+    """The ≥75% extreme-discount pépite path is unchanged for BVA."""
+    from app.notifications.dispatch_guards import is_pepite_for_route
+    assert is_pepite_for_route("BVA", "BCN", 60.0, 80.0) is True
+
+
+def test_pepite_for_route_bva_long_haul_uses_generic_rules():
+    from app.notifications.dispatch_guards import is_pepite_for_route
+    # Long-haul from BVA keeps the generic 30€ bar (theoretical case).
+    assert is_pepite_for_route("BVA", "BKK", 25.0, 40.0) is True

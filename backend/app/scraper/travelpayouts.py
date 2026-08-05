@@ -9,6 +9,7 @@ Docs: https://support.travelpayouts.com/hc/en-us/sections/201008338
 """
 
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 import httpx
 from app.config import settings
@@ -19,6 +20,83 @@ GRAPHQL_URL = "https://api.travelpayouts.com/graphql/v1/query"
 REST_URL = "https://api.travelpayouts.com"
 PRICE_MAP_URL = "https://map.aviasales.com"
 
+# ── Retry + circuit breaker (2026-06-09) ───────────────────────────────
+#
+# This module fires ~70+ requests per scrape run with zero retry; a
+# 30-second API blip used to silently void an entire batch (each caller
+# treats None as "no data" and moves on). Two compounding protections:
+#
+# - Retry: transient failures (timeout / 5xx / 429) are retried up to
+#   MAX_ATTEMPTS with a short exponential backoff. Hard 4xx (bad route,
+#   auth) are NOT retried — they would fail identically.
+# - Circuit breaker: after BREAKER_THRESHOLD *consecutive* exhausted
+#   requests, we stop hitting the API for BREAKER_COOLDOWN_SECONDS and
+#   return None immediately, so a full outage costs seconds instead of
+#   (72 routes × 3 attempts × 15s timeout). Any success resets the count.
+MAX_ATTEMPTS = 3
+RETRY_BACKOFF_SECONDS = [1, 2]  # sleep before attempt 2, attempt 3
+BREAKER_THRESHOLD = 5
+BREAKER_COOLDOWN_SECONDS = 300
+
+_consecutive_failures = 0
+_breaker_open_until: float = 0.0
+
+
+def _breaker_is_open() -> bool:
+    return time.monotonic() < _breaker_open_until
+
+
+def _record_success() -> None:
+    global _consecutive_failures
+    _consecutive_failures = 0
+
+
+def _record_failure() -> None:
+    global _consecutive_failures, _breaker_open_until
+    _consecutive_failures += 1
+    if _consecutive_failures >= BREAKER_THRESHOLD:
+        _breaker_open_until = time.monotonic() + BREAKER_COOLDOWN_SECONDS
+        _consecutive_failures = 0
+        logger.error(
+            f"Travelpayouts circuit breaker OPEN for {BREAKER_COOLDOWN_SECONDS}s "
+            f"after {BREAKER_THRESHOLD} consecutive failed requests"
+        )
+
+
+def _is_transient(exc: Exception) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        return status == 429 or status >= 500
+    # Timeouts, connection resets, DNS hiccups — all worth a retry.
+    return isinstance(exc, (httpx.TransportError, httpx.TimeoutException))
+
+
+def _request_with_retry(send) -> dict | None:
+    """Run `send(client)` with retry + breaker accounting.
+
+    `send` receives an httpx.Client and must return the parsed JSON."""
+    if _breaker_is_open():
+        return None
+    last_error: Exception | None = None
+    for attempt in range(MAX_ATTEMPTS):
+        try:
+            with httpx.Client(timeout=15) as client:
+                data = send(client)
+            _record_success()
+            return data
+        except Exception as e:
+            last_error = e
+            if not _is_transient(e):
+                break
+            if attempt < MAX_ATTEMPTS - 1:
+                time.sleep(RETRY_BACKOFF_SECONDS[attempt])
+    _record_failure()
+    logger.warning(
+        f"Travelpayouts request failed after {MAX_ATTEMPTS if _is_transient(last_error) else 1} "
+        f"attempt(s): {last_error}"
+    )
+    return None
+
 
 def _headers() -> dict:
     return {"x-access-token": settings.TRAVELPAYOUTS_TOKEN}
@@ -27,31 +105,29 @@ def _headers() -> dict:
 def _get(url: str, params: dict = None) -> dict | None:
     if not settings.TRAVELPAYOUTS_TOKEN:
         return None
-    try:
-        with httpx.Client(timeout=15) as client:
-            resp = client.get(url, headers=_headers(), params=params)
-            resp.raise_for_status()
-            return resp.json()
-    except Exception as e:
-        logger.warning(f"Travelpayouts request failed: {e}")
-        return None
+
+    def send(client: httpx.Client) -> dict:
+        resp = client.get(url, headers=_headers(), params=params)
+        resp.raise_for_status()
+        return resp.json()
+
+    return _request_with_retry(send)
 
 
 def _graphql(query: str) -> dict | None:
     if not settings.TRAVELPAYOUTS_TOKEN:
         return None
-    try:
-        with httpx.Client(timeout=15) as client:
-            resp = client.post(
-                GRAPHQL_URL,
-                headers={**_headers(), "Content-Type": "application/json"},
-                json={"query": query},
-            )
-            resp.raise_for_status()
-            return resp.json()
-    except Exception as e:
-        logger.warning(f"Travelpayouts GraphQL failed: {e}")
-        return None
+
+    def send(client: httpx.Client) -> dict:
+        resp = client.post(
+            GRAPHQL_URL,
+            headers={**_headers(), "Content-Type": "application/json"},
+            json={"query": query},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    return _request_with_retry(send)
 
 
 # ─── PRICE BASELINES ───

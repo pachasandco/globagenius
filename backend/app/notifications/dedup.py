@@ -56,6 +56,29 @@ def compute_oneway_alert_key(
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
+def compute_stopover_alert_key(
+    user_id: str,
+    origin: str,
+    hub: str,
+    destination: str,
+    leg1_date: str,
+    leg3_date: str,
+    total_price: float,
+) -> str:
+    """Stopover phase 1: dedup key for 3-leg stopover chain alerts.
+
+    Namespaced separately ('so') so a direct A/R, a split-ticket combo
+    and a stopover chain on the same dates never collide. The hub is in
+    the key: Paris→MAD→LPA and Paris→TFS→LPA on the same dates are
+    genuinely different products.
+    """
+    bucket = _price_bucket(total_price)
+    d1 = leg1_date[:10] if leg1_date else ""
+    d3 = leg3_date[:10] if leg3_date else ""
+    raw = f"{user_id}|so|{hub}|{destination}|{d1}|{d3}|{bucket}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+
 def compute_split_ticket_alert_key(
     user_id: str,
     origin: str,

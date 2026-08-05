@@ -14,6 +14,18 @@ async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
     headers,
     ...options,
   });
+  // Session expirée/invalide (ex: rotation du secret JWT) : purger et
+  // renvoyer au login au lieu d'afficher une erreur générique. On exclut
+  // les endpoints d'auth eux-mêmes — un mauvais mot de passe renvoie 401
+  // et doit afficher son message, pas boucler vers /login.
+  if (res.status === 401 && !path.startsWith("/api/auth/") && typeof window !== "undefined") {
+    localStorage.removeItem("gg_user_id");
+    localStorage.removeItem("gg_email");
+    localStorage.removeItem("gg_token");
+    clearSessionCookie();
+    window.location.href = "/login";
+    throw new Error("Session expirée — reconnectez-vous.");
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || `API error: ${res.status}`);
@@ -35,13 +47,20 @@ export function clearSessionCookie() {
   }
 }
 
-export async function signup(email: string, password: string) {
+export async function signup(email: string, password: string, marketingConsent = false) {
   const res = await fetchAPI<{ user_id: string; email: string; token: string }>("/api/auth/signup", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, marketing_consent: marketingConsent }),
   });
   _setSessionCookie();
   return res;
+}
+
+export async function updateMarketingConsent(userId: string, consent: boolean) {
+  return fetchAPI<{ marketing_consent: boolean }>(`/api/users/${userId}/marketing-consent`, {
+    method: "PUT",
+    body: JSON.stringify({ consent }),
+  });
 }
 
 export async function login(email: string, password: string) {
@@ -87,12 +106,16 @@ export interface UserPreferences {
   max_budget: number | null;
   preferred_destinations: string[] | null;
   telegram_connected: boolean;
+  /** Consentement emails marketing (colonne users, mergée par GET preferences). */
+  marketing_consent?: boolean;
   telegram_chat_id: number | null;
   notifications_enabled: boolean;
   deal_tier: string;
   blocked_destinations: string[];
   flight_trip_types: FlightTripType[];
   include_split_tickets: boolean;
+  // Long-haul with one stopover. Opt-out preference, default true.
+  accept_longhaul_stopover: boolean;
   // OG founder badge (surfaced by the preferences endpoint so the profile
   // can render the badge + share button). Absent/false for non-OG users.
   badge?: boolean;
@@ -113,6 +136,7 @@ export function updatePreferences(userId: string, prefs: {
   blocked_destinations?: string[];
   flight_trip_types?: FlightTripType[];
   include_split_tickets?: boolean;
+  accept_longhaul_stopover?: boolean;
   // V9: premium-only discount floor (40/50/60). Null or omitted = no
   // change. Free users always pass null — the field has no effect for them.
   min_discount?: number | null;

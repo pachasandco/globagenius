@@ -13,15 +13,15 @@ const PAST_DEALS = [
 ];
 
 const STEPS = [
-  { num: "1", title: "On surveille les vols depuis 9 aéroports français", desc: "CDG, Orly, Beauvais, Lyon, Marseille, Toulouse, Bordeaux, Nantes, Nice. Couverture actuelle : Europe, Méditerranée et Afrique du Nord. Long-courrier (Asie, Amériques) bientôt en beta." },
+  { num: "1", title: "On surveille les vols depuis 10 aéroports français", desc: "CDG, Orly, Beauvais, Lyon, Marseille, Toulouse, Bordeaux, Nantes, Nice, Bâle-Mulhouse. Couverture actuelle : Europe, Méditerranée et Afrique du Nord. Long-courrier (Asie, Amériques) bientôt en beta." },
   { num: "2", title: "On repère les anomalies de prix", desc: "Dès qu'un tarif chute sous le prix habituel (calculé à partir d'historiques de plusieurs semaines), on le marque comme un deal. Au départ de Paris, les prix sont rafraîchis toutes les 20 minutes. Sur les autres aéroports, toutes les 2 heures." },
   { num: "3", title: "On vérifie chaque deal avant de te l'envoyer", desc: "95% des deals sont re-vérifiés via un cross-check 2-tier — d'abord sur l'API directe de la compagnie aérienne (Ryanair, Transavia, Vueling), puis sur une source agrégateur indépendante (Travelpayouts). Si les deux confirment, l'alerte part. Sinon, on l'écarte. C'est ce qui élimine les ghost fares (prix affiché mais qui n'existe pas vraiment au moment de réserver)." },
   { num: "4", title: "Notification Telegram, 1 à 3 par jour max", desc: "Prix, dates, lien direct pour réserver. On plafonne à 3 alertes/jour étalées dans le temps — jamais 4 notifs entre 2h et 4h du matin. Les erreurs de prix disparaissent souvent en 1-4h, donc l'avance compte." },
 ];
 
 const faqs = [
-  { q: "C'est quoi GlobeGenius exactement ?", a: "On surveille en continu les prix des vols depuis 9 aéroports français vers l'Europe, la Méditerranée et l'Afrique du Nord. Quand un tarif chute significativement sous le prix habituel, on t'envoie une alerte Telegram avec dates, prix et lien direct pour réserver. On est en beta publique depuis mai 2026." },
-  { q: "Pourquoi c'est gratuit pendant la beta ?", a: "Parce que ce n'est pas encore un produit fini. La couverture est limitée à l'Europe et la Méditerranée — le long-courrier (Asie, Amériques) arrive prochainement. Les 100 premiers inscrits ont le statut « Membre fondateur » et le Premium gratuit pendant 1 an. Les vrais testeurs (usage + retours sur les alertes) gardent leur Premium à vie. Les autres repassent en Free au bout d'un an — ou peuvent prendre l'abonnement payant à 49€/an pour garder le Premium. L'accès au service est conservé dans tous les cas." },
+  { q: "C'est quoi GlobeGenius exactement ?", a: "On surveille en continu les prix des vols depuis 10 aéroports français vers l'Europe, la Méditerranée et l'Afrique du Nord. Quand un tarif chute significativement sous le prix habituel, on t'envoie une alerte Telegram avec dates, prix et lien direct pour réserver. On est en beta publique depuis mai 2026." },
+  { q: "Pourquoi c'est gratuit pendant la beta ?", a: "Parce que ce n'est pas encore un produit fini. La couverture est limitée à l'Europe et la Méditerranée — le long-courrier (Asie, Amériques) arrive prochainement. Les 100 premiers inscrits ont le statut « Membre fondateur » et le Premium gratuit pendant 1 an. Les vrais testeurs (usage + retours sur les alertes) gardent leur Premium à vie. Les autres repassent en Free au bout d'un an — ou peuvent prendre l'abonnement payant à 39€/an pour garder le Premium. L'accès au service est conservé dans tous les cas." },
   { q: "Combien d'alertes je reçois par jour ?", a: "Entre 1 et 3 alertes par jour selon ta config (aéroports + seuil de réduction minimum). On plafonne strictement à 5/24h, étalées dans le temps (jamais 4 notifs entre 2h et 4h du matin). Tu peux ajuster ton seuil à tout moment depuis ton profil." },
   { q: "Comment sont vérifiés les deals ?", a: "Cross-check 2-tier avant envoi (95% de couverture). Tier 1 : on re-requête directement l'API de la compagnie aérienne (Ryanair, Transavia, Vueling…) avec une tolérance de 5% d'écart de prix. Tier 2 : on confirme sur l'agrégateur Travelpayouts. Si les deux sources disent oui, l'alerte part. Sinon on écarte. Ça élimine les ghost fares — prix affichés mais qui n'existent pas vraiment au moment de réserver. Tu reçois moins de bruit qu'un comparateur classique." },
   { q: "Comment je gère mes préférences ?", a: "Depuis Telegram directement (commande /destinations pour bloquer une ville, /pause pour suspendre les alertes 7/30 jours, ou bouton « Masquer » sur chaque alerte) ou depuis la page Profil sur le site (aéroports, seuil de réduction minimum, destinations bloquées)." },
@@ -72,7 +72,7 @@ export function HeroContent({ foundersCount = 0, maxFounders = 100 }: HeroConten
       <h1 className="font-[family-name:var(--font-dm-serif)] text-4xl sm:text-5xl font-bold text-white leading-tight mb-4">
         Alertes vols{" "}
         <em className="not-italic text-[var(--color-coral)]">vérifiées</em>{" "}
-        depuis 9 aéroports français.
+        depuis 10 aéroports français.
       </h1>
       <p className="text-white/75 text-lg leading-relaxed mb-8 max-w-lg">
         Couverture actuelle : Europe, Méditerranée, Afrique du Nord.

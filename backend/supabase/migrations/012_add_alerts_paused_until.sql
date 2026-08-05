@@ -4,4 +4,3 @@
 
 ALTER TABLE user_preferences
     ADD COLUMN IF NOT EXISTS alerts_paused_until timestamptz;
-ok 

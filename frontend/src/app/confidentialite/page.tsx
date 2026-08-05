@@ -1,117 +1,67 @@
-import Link from "next/link";
 import type { Metadata } from "next";
-import { Wordmark } from "../_components/Wordmark";
+import { EditorialShell } from "../_components/SiteChrome";
 
 export const metadata: Metadata = {
-  title: "Politique de confidentialité — Globe Genius",
-  description: "Politique de confidentialité et protection des données personnelles de Globe Genius.",
+  title: "Politique de confidentialité — GlobeGenius",
+  description: "Politique de confidentialité et protection des données personnelles de GlobeGenius.",
   alternates: { canonical: "https://globegenius.app/confidentialite" },
   robots: { index: false, follow: false },
 };
 
 export default function Confidentialite() {
   return (
-    <div className="min-h-screen bg-[#FFF8F0]">
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
-        <div className="max-w-4xl mx-auto px-4 md:px-5 h-[80px] flex items-center">
-          <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-[19px] leading-none">
-            <Wordmark />
-          </Link>
-        </div>
-      </nav>
+    <EditorialShell eyebrow="Protection des données" title="Politique de confidentialité" intro="Les données utilisées par GlobeGenius, leur finalité et les moyens dont vous disposez pour garder le contrôle.">
+      <section>
+        <h2>Données collectées</h2>
+        <p>Lors de votre utilisation de GlobeGenius, nous pouvons collecter :</p>
+        <ul className="mt-3 list-disc space-y-2 pl-6">
+          <li><strong>À l’inscription :</strong> adresse email et mot de passe hashé, jamais stocké en clair ;</li>
+          <li><strong>Préférences de voyage :</strong> aéroports de départ, types d’offres et réglages d’alertes ;</li>
+          <li><strong>Connexion Telegram :</strong> identifiant de chat lorsque vous associez le bot à votre compte ;</li>
+          <li><strong>Paiement :</strong> les données bancaires sont traitées par Stripe et ne sont pas stockées par GlobeGenius ;</li>
+          <li><strong>Utilisation des alertes :</strong> ouverture des liens courts GlobeGenius et feedback volontaire sur la pertinence d’une alerte.</li>
+        </ul>
+      </section>
 
-      <div className="max-w-4xl mx-auto px-4 md:px-5 py-12">
-        <h1 className="font-[family-name:var(--font-dm-serif)] text-3xl md:text-4xl mb-8 text-[#082B78]">Politique de confidentialité</h1>
+      <section>
+        <h2>Utilisation des données</h2>
+        <p>Les données servent à personnaliser les alertes, gérer le compte et l’abonnement, sécuriser le service, mesurer la qualité des alertes et améliorer le produit.</p>
+        <p><strong>Les données personnelles ne sont pas vendues à des annonceurs.</strong></p>
+      </section>
 
-        <div className="prose prose-gray max-w-none text-[#082B78]/80 space-y-8">
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Données collectées</h2>
-            <p>Lors de votre utilisation de Globe Genius, nous collectons :</p>
-            <ul className="list-disc pl-6 space-y-1">
-              <li><strong>À l&apos;inscription :</strong> adresse email, mot de passe (hashé, jamais stocké en clair)</li>
-              <li><strong>Préférences de voyage :</strong> aéroports de départ, types d&apos;offres, destinations préférées, seuil minimum de réduction</li>
-              <li><strong>Connexion Telegram :</strong> identifiant de chat Telegram (si vous connectez votre compte)</li>
-              <li><strong>Paiement :</strong> les données de paiement sont traitées directement par Stripe. Globe Genius ne stocke jamais vos numéros de carte bancaire.</li>
-            </ul>
-          </section>
+      <section>
+        <h2>Prestataires techniques</h2>
+        <p>GlobeGenius utilise des prestataires nécessaires au fonctionnement du service, notamment Supabase pour la base de données, Railway pour l’hébergement applicatif, Stripe pour les paiements, Telegram pour l’envoi des alertes et Brevo pour certains emails transactionnels ou marketing lorsque le consentement requis a été donné.</p>
+        <p>Les données transmises à chaque prestataire sont limitées à ce qui est nécessaire à sa fonction.</p>
+      </section>
 
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Utilisation des données</h2>
-            <p>Vos données sont utilisées exclusivement pour :</p>
-            <ul className="list-disc pl-6 space-y-1">
-              <li>Vous envoyer des alertes personnalisées sur les vols à prix cassés correspondant à vos préférences</li>
-              <li>Gérer votre compte et votre abonnement</li>
-              <li>Améliorer le service (statistiques anonymes d&apos;utilisation)</li>
-            </ul>
-            <p className="font-semibold">Vos données ne sont jamais vendues ni partagées avec des tiers à des fins publicitaires.</p>
-          </section>
+      <section>
+        <h2>Durée de conservation</h2>
+        <p>Les données du compte sont conservées pendant la durée d’utilisation du service. Lorsqu’un compte est supprimé, les données personnelles associées sont effacées ou anonymisées dans les délais nécessaires au traitement de la demande et aux obligations légales applicables.</p>
+      </section>
 
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Stockage et sécurité</h2>
-            <p>
-              Les données sont stockées sur des serveurs sécurisés :<br />
-              Base de données : Supabase (infrastructure AWS, chiffrement au repos et en transit)<br />
-              Application : Railway (infrastructure Google Cloud, Europe)
-            </p>
-            <p>Les mots de passe sont hashés avec bcrypt. Les communications sont chiffrées via HTTPS (TLS 1.3).</p>
-          </section>
+      <section>
+        <h2>Vos droits</h2>
+        <p>Conformément au RGPD, vous disposez notamment d’un droit d’accès, de rectification, d’effacement, de limitation, de portabilité et d’opposition lorsque les conditions légales sont réunies.</p>
+        <p>Pour exercer un droit ou poser une question, écrivez à <a href="mailto:contact@globegenius.app">contact@globegenius.app</a>. Une réponse est apportée dans le délai légal applicable.</p>
+      </section>
 
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Durée de conservation</h2>
-            <p>
-              Vos données sont conservées tant que votre compte est actif. En cas de suppression de votre compte, vos données personnelles sont supprimées sous 30 jours. Les données anonymisées à des fins statistiques peuvent être conservées plus longtemps.
-            </p>
-          </section>
+      <section>
+        <h2>Cookies et mesure de campagne</h2>
+        <p>GlobeGenius utilise les éléments techniques nécessaires à l’authentification et à la continuité de session. Les paramètres de campagne présents dans une URL peuvent également être mémorisés afin d’attribuer une inscription à sa source marketing. Aucun cookie publicitaire tiers n’est requis pour utiliser le service.</p>
+      </section>
 
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Vos droits (RGPD)</h2>
-            <p>Conformément au Règlement Général sur la Protection des Données (RGPD), vous disposez des droits suivants :</p>
-            <ul className="list-disc pl-6 space-y-1">
-              <li><strong>Droit d&apos;accès :</strong> obtenir une copie de vos données personnelles</li>
-              <li><strong>Droit de rectification :</strong> corriger vos données inexactes</li>
-              <li><strong>Droit à l&apos;effacement :</strong> demander la suppression de vos données</li>
-              <li><strong>Droit à la portabilité :</strong> recevoir vos données dans un format structuré</li>
-              <li><strong>Droit d&apos;opposition :</strong> vous opposer au traitement de vos données</li>
-            </ul>
-            <p>
-              Pour exercer ces droits, contactez-nous à <a href="mailto:contact@globegenius.app" className="text-[#FF6B47] hover:underline">contact@globegenius.app</a>. Nous répondons sous 30 jours.
-            </p>
-          </section>
+      <section>
+        <h2>Liens de redirection</h2>
+        <p>Les liens d’alerte peuvent passer par une URL courte GlobeGenius avant de rediriger vers le vendeur du billet. Ce mécanisme permet d’enregistrer le fait qu’un lien a été ouvert, son heure et la destination concernée afin d’évaluer la qualité des alertes.</p>
+      </section>
 
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Cookies</h2>
-            <p>
-              Globe Genius utilise uniquement des cookies techniques nécessaires au fonctionnement du service (authentification, session utilisateur). Aucun cookie publicitaire, de tracking ou d&apos;analyse tiers n&apos;est utilisé.
-            </p>
-          </section>
+      <section>
+        <h2>Contact et réclamation</h2>
+        <p>Contact : <a href="mailto:contact@globegenius.app">contact@globegenius.app</a>. Vous pouvez également introduire une réclamation auprès de l’autorité de contrôle compétente si vous estimez que vos droits ne sont pas respectés.</p>
+      </section>
 
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Services tiers</h2>
-            <ul className="list-disc pl-6 space-y-1">
-              <li><strong>Stripe :</strong> traitement des paiements (soumis à la <a href="https://stripe.com/privacy" className="text-[#FF6B47] hover:underline" target="_blank" rel="noopener noreferrer">politique de confidentialité Stripe</a>)</li>
-              <li><strong>Telegram :</strong> envoi des alertes (soumis à la <a href="https://telegram.org/privacy" className="text-[#FF6B47] hover:underline" target="_blank" rel="noopener noreferrer">politique de confidentialité Telegram</a>)</li>
-              <li><strong>Travelpayouts/Aviasales :</strong> données de prix des vols et liens affiliés</li>
-              <li><strong>Liens de rédirection (globegenius.app/r/…) :</strong> chaque lien d’alerte Telegram passe par un identifiant court qui nous permet de mesurer si le lien a été cliqué. Nous enregistrons uniquement la destination, le fait qu’un clic a eu lieu et l’heure. Aucune donnée de navigation tierce n’est collectée.</li>
-            </ul>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Contact</h2>
-            <p>
-              Pour toute question relative à la protection de vos données :<br />
-              Email : <a href="mailto:contact@globegenius.app" className="text-[#FF6B47] hover:underline">contact@globegenius.app</a>
-            </p>
-          </section>
-
-          <p className="text-sm text-[#082B78]/40 pt-4">Dernière mise à jour : avril 2026</p>
-        </div>
-      </div>
-
-      <footer className="border-t border-gray-100 py-6">
-        <div className="max-w-4xl mx-auto px-4 md:px-5 text-center text-xs text-gray-300">
-          Globe Genius © 2026 · <Link href="/mentions-legales" className="hover:text-gray-500">Mentions légales</Link> · <Link href="/conditions" className="hover:text-gray-500">CGV</Link>
-        </div>
-      </footer>
-    </div>
+      <p className="mt-10 border-t border-[#D9E2E3] pt-6 text-sm text-slate-400">Dernière mise à jour : 31 juillet 2026.</p>
+    </EditorialShell>
   );
 }

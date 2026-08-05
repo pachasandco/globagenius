@@ -32,6 +32,18 @@ _AGENCY_FIXUPS: dict[str, str] = {
 # IATA 2-letter carrier codes → human-friendly French label.
 # Only the most common carriers we actually see in qualifications.
 _IATA_FIXUPS: dict[str, str] = {
+    # 2026-08-01 : codes vus en brut dans les alertes (balayage raw_flights
+    # 10k lignes), résolus via la base officielle Travelpayouts
+    # (api.travelpayouts.com/data/en/airlines.json) — la source même de nos
+    # données, pour ne jamais mal étiqueter une compagnie. NB : MW = Malta
+    # Air (filiale Ryanair), PAS Mokulele comme le pack UGC l'avait supposé.
+    "MW": "Malta Air",
+    "RR": "Buzz",
+    "W4": "Wizz Air Malta",
+    "V7": "Volotea",
+    "D8": "Norwegian",
+    "EC": "easyJet",
+    "AL": "Alpavia",
     "AF": "Air France",
     "U2": "easyJet",
     "FR": "Ryanair",

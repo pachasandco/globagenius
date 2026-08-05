@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getPreferences, updatePreferences, changePassword, clearSessionCookie, getTelegramStatus, generateTelegramLink, cancelSubscription, type FlightTripType, type CancellationReason } from "@/lib/api";
+import { getPreferences, updatePreferences, changePassword, clearSessionCookie, getTelegramStatus, generateTelegramLink, cancelSubscription, updateMarketingConsent, type FlightTripType, type CancellationReason } from "@/lib/api";
 import { Wordmark } from "../_components/Wordmark";
 
 const AIRPORTS = [
@@ -16,6 +16,7 @@ const AIRPORTS = [
   { code: "NTE", label: "Nantes Atlantique" },
   { code: "TLS", label: "Toulouse Blagnac" },
   { code: "BVA", label: "Paris Beauvais" },
+  { code: "BSL", label: "Bâle-Mulhouse" },
 ];
 
 const OFFER_TYPES = [
@@ -159,6 +160,12 @@ export default function ProfilePage() {
   const [offerTypes, setOfferTypes] = useState<string[]>([]);
   const [flightTripTypes, setFlightTripTypes] = useState<FlightTripType[]>(["round_trip"]);
   const [includeSplitTickets, setIncludeSplitTickets] = useState<boolean>(false);
+  // Long-haul with one stopover. Opt-out: default true.
+  const [acceptLonghaulStopover, setAcceptLonghaulStopover] = useState<boolean>(true);
+  // Emails marketing (récaps deals / offres) — sauvegarde immédiate au clic,
+  // indépendante du bouton « Enregistrer » (c'est un consentement CNIL).
+  const [marketingConsent, setMarketingConsent] = useState<boolean>(false);
+  const [consentSaving, setConsentSaving] = useState(false);
   const [dealTier, setDealTier] = useState<string>("regular");
   // V9: premium-only discount floor. 40 = "voir tous les bons plans",
   // 50 = "seulement les très bonnes affaires", 60 = "uniquement les
@@ -242,6 +249,12 @@ export default function ProfilePage() {
         }
         if (typeof prefs.include_split_tickets === "boolean") {
           setIncludeSplitTickets(prefs.include_split_tickets);
+        }
+        if (typeof prefs.accept_longhaul_stopover === "boolean") {
+          setAcceptLonghaulStopover(prefs.accept_longhaul_stopover);
+        }
+        if (typeof prefs.marketing_consent === "boolean") {
+          setMarketingConsent(prefs.marketing_consent);
         }
         // V9: load min_discount with strict whitelist. Anything outside
         // {40, 50, 60} (e.g. legacy 20/30 from V7) is coerced to 40 so the
@@ -371,6 +384,8 @@ export default function ProfilePage() {
         flight_trip_types: flightTripTypes.length > 0 ? flightTripTypes : ["round_trip"],
         // Combos require A/R tracking — silently disable if user dropped round_trip.
         include_split_tickets: includeSplitTickets && flightTripTypes.includes("round_trip"),
+        // Long-haul with 1 stopover (Europe stays direct regardless).
+        accept_longhaul_stopover: acceptLonghaulStopover,
         // V9: only premium users get the min_discount filter. Sending
         // null for free users keeps the backend from quietly persisting
         // a value that has no effect.
@@ -523,6 +538,18 @@ export default function ProfilePage() {
             <Link href="/planificateur" className="text-gray-400 text-sm hover:text-gray-600">
               Planificateur
             </Link>
+            <button
+              onClick={() => {
+                localStorage.removeItem("gg_user_id");
+                localStorage.removeItem("gg_email");
+                localStorage.removeItem("gg_token");
+                clearSessionCookie();
+                router.push("/");
+              }}
+              className="text-gray-400 text-sm hover:text-red-500"
+            >
+              Déconnexion
+            </button>
           </div>
         </div>
       </div>
@@ -945,9 +972,70 @@ export default function ProfilePage() {
             </div>
           )}
 
+          {/* Long-haul with 1 stopover — Europe stays direct regardless */}
+          <div className="mt-3">
+            <label className="flex items-start gap-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={acceptLonghaulStopover}
+                onChange={(e) => setAcceptLonghaulStopover(e.target.checked)}
+                className="mt-0.5 w-4 h-4 accent-cyan-500 cursor-pointer"
+              />
+              <div className="flex-1">
+                <div className="text-sm font-medium text-[#082B78] group-hover:text-cyan-700 transition-colors">
+                  🌍 Vols long-courrier avec escale
+                </div>
+                <div className="text-xs text-gray-500 mt-0.5">
+                  Recevez aussi les longs-courriers avec 1 escale (ex&nbsp;: Paris→Sydney à -55&nbsp;%).
+                  <span className="block mt-0.5 text-gray-400">
+                    Les vols en Europe restent toujours directs.
+                  </span>
+                </div>
+              </div>
+            </label>
+          </div>
+
           <p className="text-xs text-gray-400 mt-2">
             Au moins un type doit rester sélectionné.
           </p>
+        </div>
+
+        {/* ── Emails ── */}
+        <div className="mb-12">
+          <h2 className="text-xl font-semibold mb-1">Emails</h2>
+          <p className="text-gray-400 text-sm mb-4">
+            Indépendant des alertes Telegram — concerne uniquement les emails.
+          </p>
+          <label className="flex items-start gap-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={marketingConsent}
+              disabled={consentSaving}
+              onChange={async (e) => {
+                const v = e.target.checked;
+                setMarketingConsent(v);
+                setConsentSaving(true);
+                try {
+                  await updateMarketingConsent(userId, v);
+                } catch {
+                  setMarketingConsent(!v); // rollback visuel si échec
+                } finally {
+                  setConsentSaving(false);
+                }
+              }}
+              className="mt-0.5 w-4 h-4 accent-cyan-500 cursor-pointer"
+            />
+            <div className="flex-1">
+              <div className="text-sm font-medium text-[#082B78] group-hover:text-cyan-700 transition-colors">
+                ✉️ Récapitulatifs de deals et offres par email
+              </div>
+              <div className="text-xs text-gray-500 mt-0.5">
+                Recevez le récap hebdomadaire des deals correspondant à vos
+                préférences, les nouveautés et les offres GlobeGenius.
+                Désactivable à tout moment ici.
+              </div>
+            </div>
+          </label>
         </div>
 
         {/* ── V9 Niveau de promo (Premium only) ── */}

@@ -249,6 +249,8 @@ def test_format_cluster_report_fits_in_under_12_lines():
         "total_parsed": 2314,
         "total_with_unknown": 2318,
         "mature_coverage_pct": 54.5,
+        "usable_by_qualifier": 1500,
+        "usable_pct": 64.8,
         "median_cold_eta_days": 45,
     }
     text = format_cluster_report_for_telegram(
@@ -258,8 +260,11 @@ def test_format_cluster_report_fits_in_under_12_lines():
     )
     lines = text.splitlines()
     assert len(lines) <= 12, f"Expected ≤12 lines, got {len(lines)}: {text}"
-    assert "Couverture mature" in text
-    assert "54" in text  # %
+    # Headline is now the usable-by-qualifier coverage; the strict
+    # "mature" (>=30 samples) figure remains as a secondary quality %.
+    assert "Exploitables" in text
+    assert "65" in text  # usable_pct headline (64.8 rounded)
+    assert "54" in text  # mature quality % still shown
     assert "Hot" in text and "162" in text
     assert "Warm" in text and "487" in text
     assert "Cold" in text and "542" in text

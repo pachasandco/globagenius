@@ -3,6 +3,7 @@ import secrets
 from datetime import datetime
 from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import TimedOut
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -106,86 +107,144 @@ def _get_bot() -> Bot | None:
 
 
 def format_deal_alert(package: dict, flight: dict, accommodation: dict) -> str:
+    """Vol + hôtel package alert.
+
+    Harmonised 2026-06-10 with the other deal templates: same badge
+    ladder (_deal_badge), Markdown bold price + "-XX %" always present,
+    strike-through baseline, FR dates, per-item CTA links. The internal
+    score and the "GLOBE GENIUS" banner are gone — no other alert type
+    exposes them. AI-enriched fields (description / reason / tip) keep
+    their slots when present.
+    """
     from app.config import iata_label
-    origin_city = iata_label(package["origin"])
-    dest_city = iata_label(package["destination"])
+    origin_label = iata_label(package["origin"])
+    dest_label = iata_label(package["destination"])
 
-    # Alert level badge
-    alert_level = package.get("ai_alert_level", "good_deal")
-    if alert_level == "fare_mistake":
-        alert_badge = "🔴 ERREUR DE PRIX"
-    elif alert_level == "flash_promo":
-        alert_badge = "🟠 PROMO FLASH"
-    else:
-        alert_badge = "🟡 BON DEAL"
+    disc = int(round(package.get("discount_pct") or 0))
+    total = int(round(package.get("total_price") or 0))
+    badge = _deal_badge(disc)
+    dep_str = _fmt_date_fr(str(package.get("departure_date") or "")[:10])
+    ret_str = _fmt_date_fr(str(package.get("return_date") or "")[:10])
 
-    # Check if AI-enriched
+    lines = [
+        f"*{badge} · 🏝 Vol + hôtel*",
+        "",
+        f"🛫 *{origin_label} → {dest_label}*",
+        "",
+        f"💰 *{total} € · -{disc} %*",
+        f"📅 {dep_str} – {ret_str}",
+    ]
+    baseline_total = package.get("baseline_total")
+    if baseline_total:
+        lines.append(f"   Prix habituel : ~{int(round(baseline_total))} €~")
+
     ai_desc = package.get("ai_description")
-    ai_reason = package.get("ai_reason")
-    ai_tip = package.get("ai_tip")
-    ai_tags = package.get("ai_tags")
-
     if ai_desc:
-        # Enriched format
-        tags_str = " ".join(ai_tags) if ai_tags else ""
-        return (
-            f"✈️ GLOBE GENIUS — {alert_badge}\n\n"
-            f"🌍 {origin_city} → {dest_city}\n"
-            f"📅 {package['departure_date']} – {package['return_date']}\n\n"
-            f"{ai_desc}\n\n"
-            f"💰 {package['total_price']}€ au lieu de {package['baseline_total']}€ · -{package['discount_pct']}%\n"
-            f"📊 {ai_reason}\n\n"
-            f"💡 {ai_tip}\n\n"
-            f"🎯 Score : {package['score']}/100\n"
-            f"{tags_str}\n\n"
-            f"👉 Vol : {flight.get('source_url', 'N/A')}\n"
-            f"👉 Hotel : {accommodation.get('source_url', 'N/A')}"
-        )
-    else:
-        # Basic format (fallback)
-        return (
-            f"✈️ GLOBE GENIUS — {alert_badge}\n\n"
-            f"🌍 {origin_city} → {dest_city}\n"
-            f"📅 {package['departure_date']} – {package['return_date']}\n"
-            f"🏨 {accommodation['name']} ⭐ {accommodation.get('rating', 'N/A')}/5\n"
-            f"💰 {package['total_price']}€  |  🔥 -{package['discount_pct']}% vs marche\n"
-            f"🎯 Score : {package['score']}/100\n\n"
-            f"👉 Vol : {flight.get('source_url', 'N/A')}\n"
-            f"👉 Hotel : {accommodation.get('source_url', 'N/A')}"
-        )
+        lines += ["", ai_desc]
+    ai_reason = package.get("ai_reason")
+    if ai_reason:
+        lines.append(f"📊 {ai_reason}")
+    ai_tip = package.get("ai_tip")
+    if ai_tip:
+        lines += ["", f"💡 {ai_tip}"]
+
+    lines += [
+        "",
+        f"🏨 {accommodation['name']} ⭐ {accommodation.get('rating', 'N/A')}/5",
+    ]
+    flight_url = flight.get("source_url") or ""
+    if flight_url and flight_url != "N/A":
+        lines.append(f"👉 [Voir le vol]({flight_url})")
+    hotel_url = accommodation.get("source_url") or ""
+    if hotel_url and hotel_url != "N/A":
+        lines.append(f"👉 [Voir l'hôtel]({hotel_url})")
+
+    return "\n".join(lines)
+
+
+# Per-deal-subtype prefix for the digest lines — mirrors the headers of
+# the dedicated alert templates so the digest reads as a summary of the
+# same products, not a different one.
+_DIGEST_SUBTYPE_PREFIX = {
+    "roundtrip": "🛫",
+    "oneway_exceptional": "➡️ Aller simple ·",
+    "split_ticket": "💡 Combo malin ·",
+    "stopover": "🧳 Stopover ·",
+}
 
 
 def format_digest(packages: list[dict]) -> str:
+    """Daily digest — top deals of the day, all subtypes mixed.
+
+    Harmonised 2026-06-10 with the alert templates: Markdown, city
+    labels via iata_label, FR dates, always a discount %, no internal
+    score. Each entry needs: origin, destination, price (or legacy
+    total_price), discount_pct, departure_date; optional: return_date,
+    deal_subtype, metadata (stopover entries carry hub /
+    final_destination there).
+    """
+    from app.config import iata_label
+
     today = datetime.now().strftime("%d/%m/%Y")
-    lines = [f"📬 GLOBE GENIUS DIGEST — {today}\n"]
-    lines.append(f"Top {len(packages)} deals du jour :\n")
+    lines = [f"📬 *Le digest GlobeGenius — {today}*", ""]
     for i, pkg in enumerate(packages, 1):
-        lines.append(
-            f"{i}. {pkg['origin']} → {pkg['destination']} | "
-            f"{pkg['total_price']}€ (-{pkg['discount_pct']}%) | "
-            f"Score {pkg['score']}/100 | "
-            f"{pkg['departure_date']} → {pkg['return_date']}"
-        )
+        subtype = pkg.get("deal_subtype") or "roundtrip"
+        prefix = _DIGEST_SUBTYPE_PREFIX.get(subtype, "🛫")
+        price = int(round(pkg.get("price") or pkg.get("total_price") or 0))
+        disc = int(round(pkg.get("discount_pct") or 0))
+
+        origin_label = iata_label(pkg.get("origin") or "")
+        dest_label = iata_label(pkg.get("destination") or "")
+        # Stopover chains show the full 2-destination routing — the hub
+        # is the selling point, not an implementation detail.
+        metadata = pkg.get("metadata") or {}
+        if subtype == "stopover" and metadata.get("hub"):
+            hub_label = iata_label(metadata["hub"])
+            final_label = iata_label(metadata.get("final_destination") or "")
+            route = f"{origin_label} → {hub_label} → {final_label or dest_label}"
+        else:
+            route = f"{origin_label} → {dest_label}"
+
+        dep = _fmt_date_fr((pkg.get("departure_date") or "")[:10])
+        ret = _fmt_date_fr((pkg.get("return_date") or "")[:10]) if pkg.get("return_date") else ""
+        dates = f"{dep} – {ret}" if ret else dep
+
+        lines.append(f"{i}. {prefix} *{route}*")
+        lines.append(f"   💰 *{price} € · -{disc} %* · 📅 {dates}")
+    lines += ["", f"👉 [Toutes les offres]({settings.FRONTEND_URL}/home)"]
     return "\n".join(lines)
 
 
 def format_admin_report(stats: dict) -> str:
     today = datetime.now().strftime("%d/%m/%Y")
+
+    def _breakdown(d: dict) -> str:
+        if not d:
+            return ""
+        # e.g. "280 A/R · 23 split · 10 OW"
+        label = {"flight": "A/R", "round_trip": "A/R", "one_way": "OW",
+                 "split_ticket": "split", "stopover": "stopover"}
+        parts = [f"{n} {label.get(k, k)}" for k, n in sorted(d.items(), key=lambda x: -x[1])]
+        return " · ".join(parts)
+
+    qi_bd = _breakdown(stats.get("qualified_by_type", {}))
+    sa_bd = _breakdown(stats.get("alerts_by_type", {}))
     lines = [
         f"📊 GLOBE GENIUS — Rapport {today}\n",
-        f"Scrapes : {stats['flight_scrapes']} vols ✅ | {stats['accommodation_scrapes']} hebergements ✅",
-        f"Donnees : {stats['total_flights']} vols | {stats['total_accommodations']} hebergements",
+        f"Scrapes : {stats['flight_scrapes']} runs · {stats['total_flights']} vols collectés",
         f"Erreurs : {stats['errors']}",
-        f"Packages qualifies : {stats['packages_qualified']} (taux : {stats['qualification_rate']}%)",
-        f"Alertes envoyees : {stats['alerts_sent']}",
+        f"Deals qualifiés : {stats.get('qualified', 0)}" + (f"  ({qi_bd})" if qi_bd else ""),
+        f"Alertes envoyées : {stats['alerts_sent']}" + (f"  ({sa_bd})" if sa_bd else ""),
+        f"Users touchés : {stats.get('users_reached', 0)}",
         f"Baselines actives : {stats['active_baselines']} routes",
     ]
 
     warnings = []
-    if stats["qualification_rate"] < 5:
-        warnings.append("⚠️ Taux qualification < 5% — surveiller les baselines")
-    if stats["errors"] > 0:
-        warnings.append(f"⚠️ {stats['errors']} erreurs detectees")
+    # Real red flag: scraping ran but nothing reached users.
+    if stats["flight_scrapes"] > 0 and stats["alerts_sent"] == 0:
+        warnings.append("🚨 0 alerte envoyée alors que le scraping tourne — dispatch à vérifier")
+    if stats["errors"] > 30:
+        warnings.append(f"⚠️ {stats['errors']} erreurs (au-delà du bruit de queue habituel)")
 
     if warnings:
         lines.append("")
@@ -584,6 +643,163 @@ def format_split_ticket_alert(
     return "\n".join(lines)
 
 
+def format_stopover_alert(
+    leg1: dict,
+    leg2: dict,
+    leg3: dict,
+    roundtrip_baseline: float,
+    user_id: str | None = None,
+    alert_key: str | None = None,
+    has_guide: bool = False,
+) -> str:
+    """Stopover phase 1: format a 3-leg two-destination chain alert.
+
+    leg1 = origin → hub, leg2 = hub → final destination, leg3 = final
+    destination → origin. Visually aligned with format_split_ticket_alert
+    (same badge ladder, strike-through baseline, per-leg deal links).
+
+    All legs must include origin, destination, departure_date, price;
+    airline and source_url are optional (Aviasales fallback link built
+    per leg when missing).
+    """
+    from app.config import iata_label
+    from app.notifications.airlines import (
+        normalize_airline_name,
+        is_agency,
+        baggage_url,
+    )
+    from app.notifications.aviasales import build_aviasales_oneway_url
+
+    origin = leg1["origin"]
+    hub = leg1["destination"]
+    dest = leg2["destination"]
+    origin_label = iata_label(origin)
+    hub_label = iata_label(hub)
+    dest_label = iata_label(dest)
+
+    total = int(round(leg1["price"] + leg2["price"] + leg3["price"]))
+    rt_baseline = int(round(roundtrip_baseline))
+    savings = max(0, rt_baseline - total)
+    saving_pct = int(round((savings / rt_baseline) * 100)) if rt_baseline > 0 else 0
+    badge = _deal_badge(saving_pct)
+
+    def _carrier_label(raw: str | None) -> str:
+        name = normalize_airline_name(raw)
+        if not name or is_agency(name):
+            return "—"
+        bag = baggage_url(name)
+        if bag:
+            return f"{name} · [🎒]({bag})"
+        return name
+
+    def _leg_url(leg: dict) -> str:
+        url = leg.get("source_url") or ""
+        if not url or url == "N/A":
+            try:
+                url = build_aviasales_oneway_url(
+                    leg["origin"], leg["destination"],
+                    leg.get("departure_date", ""),
+                    marker=settings.TRAVELPAYOUTS_MARKER or None,
+                )
+            except Exception:
+                url = ""
+        return url
+
+    def _wrap(url: str) -> str:
+        # All legs share the same alert_key — a click on any leg counts
+        # as engagement on the chain (same product decision as combos).
+        if user_id and alert_key:
+            return _make_redirect_token(
+                user_id, alert_key, origin, dest, url,
+                trip_type="stopover",
+                qualification_method="stopover_chain",
+            )
+        return _add_utms(url, origin, dest)
+
+    lines = [
+        f"*{badge} · 🧳 Stopover malin — 2 destinations*",
+        "",
+        f"🗺️ *{origin_label} → {hub_label} → {dest_label} → {origin_label}*",
+        "",
+        f"💰 *{total} € total · -{saving_pct} %*",
+        f"   Prix habituel A/R direct {origin_label} → {dest_label} : ~{rt_baseline} €~",
+        f"   Économie : {savings} € — et vous visitez {hub_label} en bonus",
+        "   ✅ 3 billets vérifiés",
+        "",
+    ]
+    for label, leg in (
+        (f"Étape 1 — {origin_label} → {hub_label}", leg1),
+        (f"Étape 2 — {hub_label} → {dest_label}", leg2),
+        (f"Retour — {dest_label} → {origin_label}", leg3),
+    ):
+        carrier = _carrier_label(leg.get("airline"))
+        price = int(round(leg["price"]))
+        dep = _fmt_date_fr(leg.get("departure_date", ""))
+        lines.append(f"✈️ *{label}*")
+        lines.append(f"   {carrier} · {price} € · {dep}")
+        url = _leg_url(leg)
+        if url and url != "N/A":
+            lines.append(f"   👉 [Voir le billet]({_wrap(url)})")
+        lines.append("")
+
+    lines.append("⚠️ 3 billets séparés : bagages et annulation gérés indépendamment.")
+    if has_guide:
+        lines += ["", f"📖 [Le guide complet de {dest_label}]({settings.FRONTEND_URL}/destination/{dest.lower()})"]
+    return "\n".join(lines)
+
+
+async def send_stopover_alert(
+    chat_id: int,
+    leg1: dict,
+    leg2: dict,
+    leg3: dict,
+    roundtrip_baseline: float,
+    user_id: str | None = None,
+    alert_key: str | None = None,
+    has_guide: bool = False,
+    message_id: str | None = None,
+) -> bool:
+    """Stopover phase 1: send a Telegram alert for a 3-leg stopover chain.
+
+    Same tracking/feedback contract as send_split_ticket_alert: a click
+    on any leg counts as engagement; message_id (when set) enables the
+    [👍/👎/⏱️] feedback row.
+    """
+    bot = _get_bot()
+    if not bot:
+        logger.warning("Telegram bot not configured, skipping stopover alert")
+        return False
+    msg = format_stopover_alert(
+        leg1, leg2, leg3, roundtrip_baseline,
+        user_id=user_id, alert_key=alert_key, has_guide=has_guide,
+    )
+    # Chain destination = the FINAL destination (leg2's arrival) — the
+    # hub is a bonus stop, the user's travel intent is the spoke city.
+    dest_iata = leg2.get("destination", "")
+    reply_markup = _build_alert_keyboard(
+        user_id=user_id,
+        destination_iata=dest_iata,
+        dest_label=_city_for_iata(dest_iata),
+        message_id=message_id,
+    )
+    try:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=msg,
+            parse_mode="Markdown",
+            reply_markup=reply_markup,
+        )
+        return True
+    except TimedOut:
+        # See send_grouped_flight_alerts: a read-timeout after dispatch
+        # almost always means delivered — record it so dedup holds.
+        logger.warning(f"Stopover send to {chat_id} timed out post-dispatch — assuming delivered")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send stopover alert to {chat_id}: {e}")
+        return False
+
+
 async def send_oneway_deal_alert(
     chat_id: int,
     flight: dict,
@@ -623,6 +839,9 @@ async def send_oneway_deal_alert(
             parse_mode="Markdown",
             reply_markup=reply_markup,
         )
+        return True
+    except TimedOut:
+        logger.warning(f"One-way send to {chat_id} timed out post-dispatch — assuming delivered")
         return True
     except Exception as e:
         logger.error(f"Failed to send one-way alert to {chat_id}: {e}")
@@ -671,8 +890,97 @@ async def send_split_ticket_alert(
             reply_markup=reply_markup,
         )
         return True
+    except TimedOut:
+        logger.warning(f"Split-ticket send to {chat_id} timed out post-dispatch — assuming delivered")
+        return True
     except Exception as e:
         logger.error(f"Failed to send split-ticket alert to {chat_id}: {e}")
+        return False
+
+
+def _coarse_price_bucket(price: float) -> int:
+    """Round a price to a coarse order-of-magnitude bucket for the teaser.
+
+    The teaser must NEVER reveal the exact qualified price (that would be
+    actionable). We round to the nearest coarse step: 10€ below 50€ (so a
+    19€ one-way reads "~20€", not "~0€"), 50€ below 300€, 100€ at or above
+    300€. e.g. 19€ → 20€, 272€ → 250€, 420€ → 400€, 318€ → 300€.
+    """
+    p = max(0.0, float(price or 0))
+    if p < 50:
+        step = 10
+    elif p < 300:
+        step = 50
+    else:
+        step = 100
+    return int(round(p / step) * step)
+
+
+def format_locked_teaser(
+    deal_type: str,
+    discount_pct: float,
+    price: float,
+    origin_city: str,
+) -> str:
+    """Format the BLURRED teaser sent to FREE-tier users for an exceptional
+    premium deal. Reveals the deal TYPE + discount % + a coarse price bucket
+    and the origin CITY only — NEVER the destination, dates, or booking link.
+
+    deal_type ∈ {"long_haul", "one_way", "split_ticket"} drives the first line:
+      - long_haul    → "Vol long-courrier −XX %"
+      - one_way      → "Aller simple à ~XX €"
+      - split_ticket → "Combo malin −XX %"
+
+    The price is shown as a coarse bucket (see _coarse_price_bucket) so it's an
+    order of magnitude, not the exact actionable fare.
+    """
+    bucket = _coarse_price_bucket(price)
+    disc = int(round(discount_pct or 0))
+    city = (origin_city or "Paris").strip() or "Paris"
+
+    if deal_type == "one_way":
+        headline = f"🔒 Aller simple à ~{bucket} €"
+        price_line = f"Depuis {city} · aller simple"
+    elif deal_type == "split_ticket":
+        headline = f"🔒 Combo malin −{disc} %"
+        price_line = f"Depuis {city} · ~{bucket} € A/R"
+    else:  # long_haul (and any unknown type falls back to the round-trip framing)
+        headline = f"🔒 Vol long-courrier −{disc} %"
+        price_line = f"Depuis {city} · ~{bucket} € A/R"
+
+    cta = f"👉 [Débloque la destination + le lien → Premium]({settings.FRONTEND_URL}/profile)"
+    return "\n".join([headline, price_line, cta])
+
+
+async def send_locked_teaser(
+    chat_id: int,
+    deal_type: str,
+    discount_pct: float,
+    price: float,
+    origin_city: str,
+) -> bool:
+    """Send a blurred 'locked teaser' to a FREE-tier user for an exceptional
+    premium deal. Mirrors send_oneway_deal_alert: TimedOut is treated as a
+    successful delivery (the message is in the user's chat, the ACK was lost).
+    """
+    bot = _get_bot()
+    if not bot:
+        logger.warning("Telegram bot not configured, skipping locked teaser")
+        return False
+    msg = format_locked_teaser(deal_type, discount_pct, price, origin_city)
+    try:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=msg,
+            parse_mode="Markdown",
+            disable_web_page_preview=True,
+        )
+        return True
+    except TimedOut:
+        logger.warning(f"Locked teaser send to {chat_id} timed out post-dispatch — assuming delivered")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send locked teaser to {chat_id}: {e}")
         return False
 
 
@@ -771,12 +1079,14 @@ def format_grouped_flight_alerts(
     verification_line = _price_verification_line(
         price_confidences, any_young_baseline
     )
-    # When we softened the badge because the baseline is young, drop the
-    # "-XX %" claim from each offer line and use a softer "Prix observé
-    # récemment" framing for the strikethrough. The discount number is
-    # not a lie per se, but with very few observations it's a statistical
-    # artefact more than a defensible promise.
-    show_discount_pct = not any_young_baseline
+    # 2026-06-10 (homogénéité): the discount % is now ALWAYS shown —
+    # users flagged that some alerts carried "-XX %" and others didn't,
+    # which read as two different products. The young-baseline honesty
+    # safeguard (2026-05) survives as a "≈" prefix + the softer "Prix
+    # observé récemment" framing instead of dropping the number: with
+    # very few observations the figure is an estimate, and we say so,
+    # but the presentation stays uniform across every alert type.
+    approx_discount = any_young_baseline
 
     from app.config import iata_label
 
@@ -853,15 +1163,14 @@ def format_grouped_flight_alerts(
             if multi_origin and o.get("origin"):
                 origin_tag = f"  ·  via {o['origin']}"
 
-            # 2026-05: drop the "-XX %" claim when the baseline behind
-            # this alert is young — the savings figure rests on too few
-            # observations to be defensible. The price stays prominent
-            # so users see the absolute number, which is what they'll
-            # pay regardless of baseline maturity.
+            # 2026-06-10: the "-XX %" claim is always present. When the
+            # baseline behind this alert is young the figure rests on
+            # few observations, so it's framed as an estimate ("≈")
+            # rather than dropped — see approx_discount above.
             price_line = (
-                f"\n💰 *{price} € A/R · -{disc} %*{origin_tag}"
-                if show_discount_pct
-                else f"\n💰 *{price} € A/R*{origin_tag}"
+                f"\n💰 *{price} € A/R · ≈ -{disc} %*{origin_tag}"
+                if approx_discount
+                else f"\n💰 *{price} € A/R · -{disc} %*{origin_tag}"
             )
 
             # 2026-05-21: surface the operating carrier + a 🎒 link to
@@ -916,7 +1225,19 @@ def format_grouped_flight_alerts(
         )
 
     msg_parts.append("")
-    msg_parts.append(f"👉 [Toutes les offres {destination_iata}]({settings.FRONTEND_URL}/home?dest={destination_iata})")
+    # 2026-06-10: the catalogue link goes through /r/:token like the
+    # deal links. It was the only untracked click path in the alert —
+    # testers who browsed deals via /home registered ZERO "openings",
+    # which made half the 👍 feedback look like "liked without opening"
+    # and contradicted the survey ("j'ai déjà cliqué, si si !" at 57%).
+    catalogue_url = f"{settings.FRONTEND_URL}/home?dest={destination_iata}"
+    if user_id and alert_key:
+        catalogue_url = _make_redirect_token(
+            user_id, alert_key, origin_iata or "", destination_iata, catalogue_url,
+            trip_type="catalogue",
+            qualification_method=None,
+        )
+    msg_parts.append(f"👉 [Toutes les offres {destination_iata}]({catalogue_url})")
 
     msg = "\n".join(msg_parts)
 
@@ -928,21 +1249,6 @@ def format_grouped_flight_alerts(
     return msg
 
 
-# Threshold below which a user is considered "new" and shown feedback
-# buttons in place of the Pause menu.
-#
-# Temporarily raised to 5000 during the beta phase (2026-05-18): we want
-# ALL founders to see the feedback row so the operator gets continuous
-# signal to calibrate seuils, not just the freshest 5 inscrits. Counting
-# rows (not messages) — 1 grouped alert = N rows, so 5000 ≈ 1000-1500
-# real Telegram messages, which covers every current founder.
-#
-# Once we've collected ~50 feedback clicks across the cohort, lower
-# this back to 30 so newly onboarded users keep the calibration window
-# but stabilised users get Pause back.
-FEEDBACK_ONBOARDING_ALERT_LIMIT = 5000
-
-
 def _build_alert_keyboard(
     *,
     user_id: str | None,
@@ -951,13 +1257,15 @@ def _build_alert_keyboard(
     message_id: str | None,
 ) -> InlineKeyboardMarkup | None:
     """Shared inline-keyboard builder for all alert types (grouped flight,
-    one-way, split-ticket combo). Three responsibilities:
+    one-way, split-ticket combo). Two buttons:
 
       1. "Masquer <destination>" — one-tap dismiss for the destination.
-      2. Feedback row [👍][👎][⏱️] for the first FEEDBACK_ONBOARDING_ALERT_LIMIT
-         alerts of a user's lifetime, when message_id is set. The callback
-         handler writes to sent_alerts.feedback (last click wins).
-      3. Otherwise, the Pause-menu button.
+      2. Pause-menu button.
+
+    The feedback row [👍][👎][⏱️] was removed for production (2026-07-15);
+    it was a beta signal-collection tool. The `feedback:` callback handler
+    stays in bot_handler for backward compatibility with old alerts still
+    carrying the buttons in users' chats.
 
     Returns None when user_id is missing — alerts sent in test contexts
     (no DB user) skip the buttons entirely.
@@ -965,51 +1273,16 @@ def _build_alert_keyboard(
     if not user_id:
         return None
     short_dest = (dest_label or destination_iata)[:18]
-    rows: list[list[InlineKeyboardButton]] = [
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton(
             f"🚫 Masquer {short_dest}",
             callback_data=f"block:{user_id}:{destination_iata}",
         )],
-    ]
-    show_feedback = (
-        message_id is not None
-        and _count_alerts_lifetime(user_id) < FEEDBACK_ONBOARDING_ALERT_LIMIT
-    )
-    if show_feedback:
-        rows.append([
-            InlineKeyboardButton("👍 Bon", callback_data=f"feedback:good:{message_id}"),
-            InlineKeyboardButton("👎 Faux", callback_data=f"feedback:bad:{message_id}"),
-            InlineKeyboardButton("⏱️ Trop tard", callback_data=f"feedback:late:{message_id}"),
-        ])
-    else:
-        rows.append([
-            InlineKeyboardButton("⏸ Pause les alertes", callback_data=f"pause_menu:{user_id}"),
-        ])
-    return InlineKeyboardMarkup(rows)
-
-
-def _count_alerts_lifetime(user_id: str) -> int:
-    """How many sent_alerts rows exist for this user, ever. Used by
-    send_grouped_flight_alerts to decide whether to show feedback
-    buttons or the standard Pause menu. Fails open (returns a high
-    number) on DB error → fall back to Pause menu, which is the
-    safer default (we never strand the user without a way to pause).
-    """
-    from app.db import db
-    if not db or not user_id:
-        return 9999
-    try:
-        r = (
-            db.table("sent_alerts")
-            .select("id", count="exact")
-            .eq("user_id", user_id)
-            .limit(1)
-            .execute()
-        )
-        return r.count or 0
-    except Exception as e:
-        logger.warning(f"_count_alerts_lifetime failed for {user_id}: {e}")
-        return 9999
+        [InlineKeyboardButton(
+            "⏸ Pause les alertes",
+            callback_data=f"pause_menu:{user_id}",
+        )],
+    ])
 
 
 async def send_grouped_flight_alerts(
@@ -1051,6 +1324,20 @@ async def send_grouped_flight_alerts(
             reply_markup=reply_markup,
         )
         return True
+    except TimedOut:
+        # PTB read-timeout AFTER Telegram processed the send: the message
+        # is almost always delivered, only our HTTP response was slow.
+        # Returning False here is what caused the 2026-06-12 duplicate
+        # storm (same AGP alert delivered 5× in 100 min to two users):
+        # the caller skipped the sent_alerts persist, so every following
+        # cycle re-sent a message the user already had. Treat as
+        # delivered: worst case (genuinely dropped send) is one missed
+        # alert, vs a guaranteed duplicate every 20 min otherwise.
+        logger.warning(
+            f"Telegram send to {chat_id} timed out AFTER dispatch — "
+            f"assuming delivered (returning True so dedup records it)"
+        )
+        return True
     except Exception as e:
         logger.error(f"Failed to send grouped flight alert to {chat_id}: {e}")
         return False
@@ -1068,7 +1355,10 @@ async def send_deal_alert(chat_id: int, package: dict, flight: dict, accommodati
             "Créez un compte premium pour débloquer ce deal."
         )
     try:
-        await bot.send_message(chat_id=chat_id, text=msg)
+        # parse_mode added 2026-06-10 — the harmonised template uses the
+        # same Markdown (bold price, ~strike~ baseline) as every other
+        # alert type.
+        await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
         return True
     except Exception as e:
         logger.error(f"Failed to send Telegram alert to {chat_id}: {e}")
@@ -1079,11 +1369,13 @@ async def send_digest(chat_id: int, packages: list[dict]) -> bool:
     bot = _get_bot()
     if not bot:
         return False
-    msg = format_digest(packages)
     try:
-        await bot.send_message(chat_id=chat_id, text=msg)
+        msg = format_digest(packages)
+        await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
         return True
     except Exception as e:
+        # Formatting errors are caught too — a malformed deal row must
+        # not crash the whole digest loop for every subscriber.
         logger.error(f"Failed to send digest to {chat_id}: {e}")
         return False
 
@@ -1170,39 +1462,6 @@ async def send_broadcast(message: str, chat_ids: list[int]) -> tuple[int, int]:
             failed += 1
             logger.warning(f"Broadcast send failed for chat {cid}: {e}")
         await _asyncio.sleep(0.05)  # ~20 msg/s, safely under the limit
-    return delivered, failed
-
-
-async def send_survey(
-    message: str,
-    options: list[tuple[str, str]],
-    survey_key: str,
-    chat_ids: list[int],
-) -> tuple[int, int]:
-    """Send a survey message with inline-button options to each chat.
-
-    `options` is a list of (choice_code, label) — one button per row so
-    long French labels render fully. callback_data is
-    "survey:<survey_key>:<choice>", handled in bot_handler._record_survey.
-    Returns (delivered, failed). Throttled like send_broadcast."""
-    import asyncio as _asyncio
-    bot = _get_bot()
-    if not bot:
-        return 0, len(chat_ids)
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton(label, callback_data=f"survey:{survey_key}:{code}")]
-        for code, label in options
-    ])
-    delivered = 0
-    failed = 0
-    for cid in chat_ids:
-        try:
-            await bot.send_message(chat_id=cid, text=message, reply_markup=keyboard)
-            delivered += 1
-        except Exception as e:
-            failed += 1
-            logger.warning(f"Survey send failed for chat {cid}: {e}")
-        await _asyncio.sleep(0.05)
     return delivered, failed
 
 

@@ -51,7 +51,7 @@ def _fetch_baselines() -> list[dict]:
     while True:
         chunk = (
             db.table("price_baselines")
-            .select("route_key,sample_count,avg_price,std_dev")
+            .select("route_key,sample_count,avg_price,std_dev,calculated_at")
             .range(offset, offset + 999)
             .execute()
         )

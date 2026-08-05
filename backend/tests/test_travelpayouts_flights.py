@@ -320,3 +320,35 @@ def test_scrape_all_flights_counts_errors_per_airport():
     assert errors == 1
     assert len(flights) == 1
     assert flights[0]["origin"] == "MRS"
+
+
+def test_long_haul_gate_respects_long_haul_origins():
+    """2026-06-10: the long-haul gate reads settings.LONG_HAUL_ORIGINS
+    (default ["CDG"]) instead of a hardcoded origin != "CDG". Adding an
+    origin to the env var opens its long-haul routes without a deploy."""
+    from app.scraper.travelpayouts_flights import scrape_flights_for_airport
+
+    seen_routes = []
+
+    def fake_route(origin, dest):
+        seen_routes.append((origin, dest))
+        return []
+
+    with patch("app.scraper.travelpayouts_flights.scrape_flights_for_route", side_effect=fake_route), \
+         patch("app.scraper.travelpayouts_flights.get_priority_destinations", return_value=["BCN", "JFK"]), \
+         patch("app.scraper.travelpayouts_flights.settings") as mock_settings:
+        # ORY not in LONG_HAUL_ORIGINS → JFK skipped.
+        mock_settings.LONG_HAUL_ORIGINS = ["CDG"]
+        scrape_flights_for_airport("ORY")
+        assert seen_routes == [("ORY", "BCN")]
+
+        # ORY added → JFK scraped too.
+        seen_routes.clear()
+        mock_settings.LONG_HAUL_ORIGINS = ["CDG", "ORY"]
+        scrape_flights_for_airport("ORY")
+        assert seen_routes == [("ORY", "BCN"), ("ORY", "JFK")]
+
+
+def test_long_haul_origins_default_is_cdg_only():
+    from app.config import Settings
+    assert Settings().LONG_HAUL_ORIGINS == ["CDG"]

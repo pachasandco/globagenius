@@ -1,10 +1,34 @@
+import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+from app.api.freemium import router as freemium_router
+from app.api.preferences_freemium import (
+    normalize_all_free_subscriptions,
+    router as preferences_freemium_router,
+)
+from app.api.public_recent_deals import router as public_recent_deals_router
 from app.api.routes import router
+from app.api.signup_public import router as signup_public_router
+from app.api.stripe_checkout_39 import router as stripe_checkout_39_router
+from app.freemium_policy import (
+    guarded_send_grouped_flight_alerts,
+    link_account_with_trial,
+    reconcile_legacy_access,
+    send_unlinked_welcome,
+)
+from app.notifications import bot_handler as bot_handler_module
+from app.notifications import freemium_digest as freemium_digest_module
+from app.notifications import telegram as telegram_module
 from app.notifications.bot_handler import bot_router
+from app.notifications.climate_cards import install_climate_card_formatters
+from app.notifications.freemium_savings_guard import install_freemium_savings_guard
+from app.scheduler import jobs as scheduler_jobs
 from app.scheduler.jobs import get_scheduler_jobs
 
 logging.basicConfig(
@@ -13,13 +37,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-import os
+# Add an honest monthly climate estimate to Telegram deal cards. This patches
+# only the message formatters: deal detection, quotas and dispatch stay intact.
+install_climate_card_formatters(telegram_module)
+
+# Protect Freemium email value claims: rank the best missed deal by real euro
+# savings and reject incoherent/implausible baselines from the marketing block.
+install_freemium_savings_guard(freemium_digest_module)
+
+# Keep the mature ranking/dispatch pipeline intact and replace only its final
+# entitlement boundary. The webhook resolves these module globals at runtime,
+# so patching here also updates Telegram account linking without duplicating a
+# second webhook route.
+scheduler_jobs.send_grouped_flight_alerts = guarded_send_grouped_flight_alerts
+bot_handler_module._link_account = link_account_with_trial
+bot_handler_module._send_welcome = send_unlinked_welcome
 
 # ── Sentry init ──
-# Initialised before anything else so any boot-time exception (DB
-# connection, Stripe key validation, Telegram token check) gets reported.
-# DSN is read from SENTRY_DSN env var; if absent, sentry-sdk is a no-op
-# so dev / CI runs stay quiet.
 _SENTRY_DSN = os.getenv("SENTRY_DSN", "")
 if _SENTRY_DSN:
     try:
@@ -27,52 +61,55 @@ if _SENTRY_DSN:
         from sentry_sdk.integrations.fastapi import FastApiIntegration
         from sentry_sdk.integrations.logging import LoggingIntegration
 
-        # Sample rate is env-driven so we can crank it up while
-        # diagnosing perf issues, then dial it back. Default 100% is
-        # fine at current volume; lower it (e.g. 0.1) once traffic grows.
         _traces_rate = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "1.0"))
         sentry_sdk.init(
             dsn=_SENTRY_DSN,
             environment=os.getenv("APP_ENV", "production"),
             release=os.getenv("RAILWAY_GIT_COMMIT_SHA", "dev"),
             traces_sample_rate=_traces_rate,
-            profiles_sample_rate=0.0,  # profiling off, costs extra
+            profiles_sample_rate=0.0,
             integrations=[
                 FastApiIntegration(transaction_style="endpoint"),
-                LoggingIntegration(level=None, event_level=40),  # WARNING+
+                LoggingIntegration(level=None, event_level=40),
             ],
-            send_default_pii=False,  # never send Authorization headers / cookies
+            send_default_pii=False,
         )
         logger.info("Sentry initialised — environment=%s", os.getenv("APP_ENV", "production"))
-    except Exception as e:
-        # Never block startup on a Sentry import / init issue.
-        logger.error("Sentry init failed (continuing without it): %s", e)
+    except Exception as exc:
+        logger.error("Sentry init failed (continuing without it): %s", exc)
 
-logger.info(f"Starting Globe Genius Pipeline — ENV={os.getenv('APP_ENV', 'unknown')} PORT={os.getenv('PORT', 'not set')}")
+logger.info(
+    "Starting Globe Genius Pipeline — ENV=%s PORT=%s",
+    os.getenv("APP_ENV", "unknown"),
+    os.getenv("PORT", "not set"),
+)
 
 scheduler = AsyncIOScheduler()
-
-# Set RUN_SCHEDULER=0 on API workers when running multiple Uvicorn workers,
-# so cron jobs only fire once. Default ON to keep current behaviour.
 _RUN_SCHEDULER = os.getenv("RUN_SCHEDULER", "1") == "1"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.config import settings
+
     if not settings.TELEGRAM_BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN is not set — Telegram alerts will be silently disabled")
     else:
         logger.info("Telegram bot token configured ✓")
 
-    # APScheduler defaults misfire_grace_time to 1 second, which means a
-    # cron job whose firing instant is missed by even a brief Railway
-    # restart is silently skipped. We saw this on update_destinations:
-    # the priority_destinations table hadn't been refreshed for 9 days
-    # because the Monday 03:00 firing was always missed during deploys.
-    # 1h is plenty of slack for any of our cron jobs to recover.
-    DEFAULT_MISFIRE_GRACE_SECONDS = 3600
+    # Idempotent production cutover: OG badges retain lifetime Premium; legacy
+    # founder grants without a badge are revoked and those users become free.
+    try:
+        stats = await asyncio.to_thread(reconcile_legacy_access)
+        logger.info("Access model reconciled: %s", stats)
+        normalized = await asyncio.to_thread(normalize_all_free_subscriptions)
+        logger.info("Freemium subscriptions normalized: %s users", normalized)
+    except Exception as exc:
+        # Do not prevent the service from starting, but surface the failure
+        # loudly because access reconciliation is commercially important.
+        logger.exception("Access reconciliation failed: %s", exc)
 
+    default_misfire_grace_seconds = 3600
     if not _RUN_SCHEDULER:
         logger.info("Scheduler disabled (RUN_SCHEDULER=0) — API-only worker, jobs will not run here")
 
@@ -88,38 +125,24 @@ async def lifespan(app: FastAPI):
             if "minutes" in job_def:
                 kwargs["minutes"] = job_def["minutes"]
             scheduler.add_job(
-                func, "interval", id=job_id,
-                misfire_grace_time=DEFAULT_MISFIRE_GRACE_SECONDS,
-                # coalesce=True so missed runs during Railway deploys
-                # are caught up at most once when the worker comes back,
-                # rather than silently dropped (the bug that left
-                # update_destinations stale for 9 days). max_instances=1
-                # forbids two copies of the same job overlapping if a
-                # previous run is still finishing.
+                func,
+                "interval",
+                id=job_id,
+                misfire_grace_time=default_misfire_grace_seconds,
                 coalesce=True,
                 max_instances=1,
                 **kwargs,
             )
         elif trigger == "cron":
             cron_kwargs = {}
-            if "hour" in job_def:
-                cron_kwargs["hour"] = job_def["hour"]
-            if "minute" in job_def:
-                cron_kwargs["minute"] = job_def["minute"]
-            if "day_of_week" in job_def:
-                cron_kwargs["day_of_week"] = job_def["day_of_week"]
-            # Per-job timezone override. The scheduler defaults to the
-            # container TZ (UTC on Railway), which is what every
-            # maintenance/scrape job wants. User-facing jobs that should
-            # fire at a fixed *local* French time (e.g. onboarding
-            # relances at 10:00 Paris, stable across DST) set
-            # "timezone": "Europe/Paris" in their job_def.
-            if "timezone" in job_def:
-                cron_kwargs["timezone"] = job_def["timezone"]
+            for key in ("hour", "minute", "day_of_week", "day", "timezone"):
+                if key in job_def:
+                    cron_kwargs[key] = job_def[key]
             scheduler.add_job(
-                func, "cron", id=job_id,
-                misfire_grace_time=DEFAULT_MISFIRE_GRACE_SECONDS,
-                # See interval branch above — same rationale.
+                func,
+                "cron",
+                id=job_id,
+                misfire_grace_time=default_misfire_grace_seconds,
                 coalesce=True,
                 max_instances=1,
                 **cron_kwargs,
@@ -127,39 +150,40 @@ async def lifespan(app: FastAPI):
 
     if _RUN_SCHEDULER:
         scheduler.start()
-        logger.info(f"Scheduler started with {len(scheduler.get_jobs())} jobs")
+        logger.info("Scheduler started with %s jobs", len(scheduler.get_jobs()))
 
-    # Wire RAG retriever to the travel planner (Supabase full-text search)
+    # Kept for compatibility with historical internal jobs even though the
+    # public travel-planner page and endpoints have been removed.
     try:
         from app.api.routes import db as rag_db
-        from app.agents.rag import set_rag_retriever, RagRetriever
+        from app.agents.rag import RagRetriever, set_rag_retriever
+
         if rag_db:
             set_rag_retriever(RagRetriever(rag_db))
             logger.info("RAG retriever initialised ✓")
         else:
             logger.warning("RAG retriever skipped — db not available")
-    except Exception as e:
-        logger.warning(f"RAG retriever init failed: {e}")
+    except Exception as exc:
+        logger.warning("RAG retriever init failed: %s", exc)
 
-    # Register the bot's command list with Telegram so the hamburger
-    # menu (and "/" typeahead) shows them. setMyCommands is idempotent,
-    # so it's safe to call on every startup. We don't fail the boot
-    # if the call breaks — the commands still work via the handler,
-    # the menu would just stay empty.
     try:
         from app.notifications.telegram import _get_bot
+
         bot = _get_bot()
         if bot:
             from telegram import BotCommand
-            await bot.set_my_commands([
-                BotCommand("pause", "Mettre en pause les alertes"),
-                BotCommand("destinations", "Voir / bloquer des destinations"),
-                BotCommand("status", "État du pipeline"),
-                BotCommand("help", "Aide et commandes"),
-            ])
+
+            await bot.set_my_commands(
+                [
+                    BotCommand("pause", "Mettre en pause les alertes"),
+                    BotCommand("destinations", "Voir / bloquer des destinations"),
+                    BotCommand("status", "État du pipeline"),
+                    BotCommand("help", "Aide et commandes"),
+                ]
+            )
             logger.info("Telegram bot commands registered ✓")
-    except Exception as e:
-        logger.warning(f"setMyCommands failed (menu may be empty): {e}")
+    except Exception as exc:
+        logger.warning("setMyCommands failed (menu may be empty): %s", exc)
 
     yield
 
@@ -181,12 +205,21 @@ app.add_middleware(
         "http://localhost:3000",
         "https://www.globegenius.app",
         "https://globegenius.app",
-        "https://globagenius-production-b887.up.railway.app",
+        # b887 : ancien domaine Railway mort (404) — retiré à l'audit sécu
+        # 2026-07-31. Le domaine backend actif est ...-1380, jamais appelé
+        # cross-origin (le front passe par son proxy même-origine).
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# These routers are registered before the historical monolithic router so their
+# modern public endpoints and entitlement-aware preference route take priority.
+app.include_router(public_recent_deals_router)
+app.include_router(signup_public_router)
+app.include_router(preferences_freemium_router)
+app.include_router(freemium_router)
+app.include_router(stripe_checkout_39_router)
 app.include_router(router)
 app.include_router(bot_router)

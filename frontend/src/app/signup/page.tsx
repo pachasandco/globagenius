@@ -1,187 +1,159 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { signup, getBetaCount } from "@/lib/api";
 import { suggestEmailCorrection } from "@/lib/email-suggestion";
 import { Wordmark } from "../_components/Wordmark";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  // CNIL : case décochée par défaut, consentement explicite uniquement.
+  const [marketingConsent, setMarketingConsent] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  // Beta cohort cap: when 100 founders are reached, the signup form is
-  // replaced by a "closed" message. We fetch the live count once on mount;
-  // null = loading, true/false = decision. A failed fetch defaults to open
-  // so a transient API hiccup doesn't lock genuine signups out.
-  const [cohortFull, setCohortFull] = useState<boolean | null>(null);
   const router = useRouter();
-
-  useEffect(() => {
-    getBetaCount()
-      .then((c) => setCohortFull(c.founders_count >= c.max_founders))
-      .catch(() => setCohortFull(false));
-  }, []);
-
   const emailSuggestion = useMemo(() => suggestEmailCorrection(email), [email]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function createAccount() {
+    const response = await fetch(`${API_URL}/api/auth/signup-public`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password, marketing_consent: marketingConsent }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(body.detail || "Erreur lors de l’inscription.");
+    }
+    document.cookie = "gg_session=1; path=/; SameSite=Lax; max-age=2592000";
+    return body as { user_id: string; email: string; token: string };
+  }
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
     setError("");
 
     if (password.length < 6) {
-      setError("Le mot de passe doit contenir au moins 6 caracteres");
+      setError("Le mot de passe doit contenir au moins 6 caractères.");
       return;
     }
     if (password !== confirmPassword) {
-      setError("Les mots de passe ne correspondent pas");
+      setError("Les mots de passe ne correspondent pas.");
       return;
     }
 
     setLoading(true);
     try {
-      const res = await signup(email, password);
-      localStorage.setItem("gg_user_id", res.user_id);
-      localStorage.setItem("gg_email", res.email);
-      localStorage.setItem("gg_token", res.token);
+      const response = await createAccount();
+      localStorage.setItem("gg_user_id", response.user_id);
+      localStorage.setItem("gg_email", response.email);
+      localStorage.setItem("gg_token", response.token);
       router.push("/onboarding");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Erreur lors de l'inscription";
-      // Backend returns 403 once the 100-founder cap is reached. The
-      // initial mount check might have raced, so flip to the closed
-      // state on the spot rather than just showing a red error.
-      if (/inscriptions/i.test(msg) && /fermées|fermees|100 places/i.test(msg)) {
-        setCohortFull(true);
-      } else {
-        setError(msg);
-      }
+      setError(err instanceof Error ? err.message : "Erreur lors de l’inscription.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="min-h-screen bg-[#FFF8F0] flex items-start sm:items-center justify-center px-4 md:px-5 py-8 sm:py-0">
-      <div className="w-full max-w-sm">
-        <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-xl leading-none block text-center mb-10">
-          <Wordmark />
-        </Link>
+    <div className="min-h-screen bg-[#F7F3EA] px-4 py-8 sm:flex sm:items-center sm:justify-center sm:py-12">
+      <div className="w-full max-w-md">
+        <Link href="/" className="mb-9 block text-center font-[family-name:var(--font-dm-serif)] text-xl"><Wordmark /></Link>
 
-        {cohortFull === true ? (
+        <div className="rounded-[28px] border border-[#D9E2E3] bg-white p-6 shadow-[0_22px_60px_rgba(11,42,63,.07)] sm:p-8">
           <div className="text-center">
-            <h1 className="font-[family-name:var(--font-dm-serif)] text-2xl mb-3">
-              Inscriptions fermées
-            </h1>
-            <p className="text-gray-500 text-sm leading-relaxed mb-6">
-              Les <strong>100 places fondateurs</strong> de l&apos;Active Beta sont
-              prises. Merci à toutes et tous pour l&apos;engouement 🙏
-            </p>
-            <p className="text-gray-500 text-sm leading-relaxed mb-8">
-              Le lancement public arrive bientôt. En attendant, tu peux suivre
-              les coulisses sur la <Link href="/" className="text-[#FF6B47] hover:underline">page d&apos;accueil</Link>{" "}
-              ou nous écrire à{" "}
-              <a href="mailto:contact@globegenius.app" className="text-[#FF6B47] hover:underline">
-                contact@globegenius.app
-              </a>.
-            </p>
-            <Link
-              href="/"
-              className="inline-block bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold px-6 py-3 rounded-xl transition-colors"
-            >
-              ← Retour à l&apos;accueil
-            </Link>
-            <p className="text-center text-sm text-gray-400 mt-8">
-              Déjà membre ?{" "}
-              <Link href="/login" className="text-cyan-600 font-medium hover:underline">
-                Se connecter
-              </Link>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0E7490]">Radar français · compte Freemium</p>
+            <h1 className="mt-3 font-[family-name:var(--font-dm-serif)] text-3xl text-[#0B2A3F]">Activez le radar de votre aéroport</h1>
+            <p className="mt-3 text-sm leading-6 text-slate-500">
+              Créez votre compte, choisissez votre véritable aéroport de départ puis connectez Telegram pour recevoir les deals vérifiés.
             </p>
           </div>
-        ) : (
-        <>
-        <h1 className="font-[family-name:var(--font-dm-serif)] text-2xl text-center mb-2">
-          Creer un compte
-        </h1>
-        <p className="text-gray-400 text-sm text-center mb-8">
-          Recevez les meilleurs deals voyage directement sur Telegram.
-        </p>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="votre@email.com"
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none text-sm transition-colors"
-            />
-            {emailSuggestion && (
-              <p className="text-xs text-gray-500 mt-1.5">
-                Vouliez-vous dire{" "}
-                <button
-                  type="button"
-                  onClick={() => setEmail(emailSuggestion)}
-                  className="text-[#FF6B47] font-semibold hover:underline"
-                >
-                  {emailSuggestion}
-                </button>
-                {" "}?
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Mot de passe</label>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="6 caracteres minimum"
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none text-sm transition-colors"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Confirmer le mot de passe</label>
-            <input
-              type="password"
-              required
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Retapez votre mot de passe"
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none text-sm transition-colors"
-            />
-          </div>
-
-          {error && (
-            <div className="bg-red-50 text-red-600 text-sm rounded-xl px-4 py-3">
-              {error}
+          <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-[#0B2A3F]">Email</label>
+              <input
+                type="email"
+                required
+                autoComplete="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="votre@email.com"
+                className="w-full rounded-xl border border-[#D9E2E3] px-4 py-3 text-sm outline-none transition-colors focus:border-[#0E7490] focus:ring-1 focus:ring-[#0E7490]"
+              />
+              {emailSuggestion && (
+                <p className="mt-1.5 text-xs text-slate-500">
+                  Vouliez-vous dire{" "}
+                  <button type="button" onClick={() => setEmail(emailSuggestion)} className="font-semibold text-[#0E7490] hover:underline">{emailSuggestion}</button> ?
+                </p>
+              )}
             </div>
-          )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-[#FF6B47] hover:bg-[#E55A38] text-white font-semibold py-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? "Creation..." : "S'inscrire"}
-          </button>
-        </form>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-[#0B2A3F]">Mot de passe</label>
+              <input
+                type="password"
+                required
+                autoComplete="new-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="6 caractères minimum"
+                className="w-full rounded-xl border border-[#D9E2E3] px-4 py-3 text-sm outline-none transition-colors focus:border-[#0E7490] focus:ring-1 focus:ring-[#0E7490]"
+              />
+            </div>
 
-        <p className="text-center text-sm text-gray-400 mt-6">
-          Deja un compte ?{" "}
-          <Link href="/login" className="text-cyan-600 font-medium hover:underline">
-            Se connecter
-          </Link>
-        </p>
-        </>
-        )}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-[#0B2A3F]">Confirmer le mot de passe</label>
+              <input
+                type="password"
+                required
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                placeholder="Retapez votre mot de passe"
+                className="w-full rounded-xl border border-[#D9E2E3] px-4 py-3 text-sm outline-none transition-colors focus:border-[#0E7490] focus:ring-1 focus:ring-[#0E7490]"
+              />
+            </div>
+
+            <label className="flex cursor-pointer select-none items-start gap-2.5">
+              <input
+                type="checkbox"
+                checked={marketingConsent}
+                onChange={(event) => setMarketingConsent(event.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-[#D9E2E3] accent-[#0E7490]"
+              />
+              <span className="text-xs leading-relaxed text-slate-500">
+                J&apos;accepte de recevoir par email les récapitulatifs de deals,
+                les nouveautés et les offres de GlobeGenius. (facultatif —
+                modifiable à tout moment depuis mon profil)
+              </span>
+            </label>
+
+            {error && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>}
+
+            <button type="submit" disabled={loading} className="w-full rounded-xl bg-[#0E7490] py-3.5 font-bold text-white transition-colors hover:bg-[#0A6078] disabled:cursor-not-allowed disabled:opacity-50">
+              {loading ? "Création du compte…" : "Créer mon compte gratuit"}
+            </button>
+          </form>
+
+          <div className="mt-5 space-y-3 rounded-2xl bg-[#E9F5F7] p-4 text-sm leading-6 text-slate-600">
+            <p><strong className="text-[#0B2A3F]">Freemium :</strong> 2 alertes complètes par semaine, 1 pépite exceptionnelle et 1 joker par mois.</p>
+            <p><strong className="text-[#0B2A3F]">Couverture :</strong> Paris et plusieurs grands aéroports régionaux. La fréquence varie selon les vrais prix disponibles ; aucun volume fixe n’est garanti.</p>
+            <p><strong className="text-[#0B2A3F]">Premium :</strong> alertes sans quota, plusieurs aéroports, allers simples et combos malins pour 39 € par an.</p>
+            <p>Aucune carte bancaire et aucun paiement ne sont demandés aujourd’hui.</p>
+          </div>
+
+          <p className="mt-5 text-center text-xs leading-5 text-slate-400">
+            En créant un compte, vous acceptez les <Link href="/conditions" className="underline hover:text-[#0E7490]">conditions d’utilisation</Link> et la <Link href="/confidentialite" className="underline hover:text-[#0E7490]">politique de confidentialité</Link>.
+          </p>
+        </div>
+
+        <p className="mt-6 text-center text-sm text-slate-400">Déjà un compte ? <Link href="/login" className="font-medium text-[#0E7490] hover:underline">Se connecter</Link></p>
       </div>
     </div>
   );

@@ -1,125 +1,45 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Wordmark } from "../_components/Wordmark";
+import { EditorialShell } from "../_components/SiteChrome";
 
 export const metadata: Metadata = {
-  title: "Conditions Générales de Vente — Globe Genius",
-  description: "Conditions générales de vente et d'utilisation du service Globe Genius Premium.",
+  title: "Conditions d’utilisation et de vente — GlobeGenius",
+  description: "Conditions de la formule Freemium GlobeGenius et de l’offre Premium à 39 € par an.",
   alternates: { canonical: "https://globegenius.app/conditions" },
   robots: { index: false, follow: false },
 };
 
 export default function Conditions() {
   return (
-    <div className="min-h-screen bg-[#FFF8F0]">
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
-        <div className="max-w-4xl mx-auto px-4 md:px-5 h-[80px] flex items-center">
-          <Link href="/" className="font-[family-name:var(--font-dm-serif)] text-[19px] leading-none">
-            <Wordmark />
-          </Link>
-        </div>
-      </nav>
-
-      <div className="max-w-4xl mx-auto px-4 md:px-5 py-12">
-        <h1 className="font-[family-name:var(--font-dm-serif)] text-3xl md:text-4xl mb-8 text-[#082B78]">Conditions Générales de Vente</h1>
-
-        <div className="prose prose-gray max-w-none text-[#082B78]/80 space-y-8">
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 1 — Objet</h2>
-            <p>
-              Les présentes Conditions Générales de Vente (CGV) régissent l&apos;utilisation du service Globe Genius, accessible à l&apos;adresse <strong>globegenius.app</strong>, et la souscription à l&apos;abonnement Premium.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 2 — Description du service</h2>
-            <p>Globe Genius est un service de détection automatique de vols à prix anormalement bas au départ de 9 aéroports français. Le service comprend :</p>
-            <ul className="list-disc pl-6 space-y-1">
-              <li><strong>Formule Gratuite :</strong> accès aux deals avec une réduction d&apos;au moins 40% par rapport au prix moyen du marché, dans la limite de 3 alertes complètes par semaine glissante. Les deals au-delà de 50% de réduction sont affichés avec prix masqué.</li>
-              <li><strong>Formule Premium (49€/an) :</strong> accès à tous les deals sans limite (réductions de 40% et plus, incluant les erreurs de prix et les promos flash), alertes Telegram illimitées avec prix et liens de réservation directs vers Aviasales et Booking.com.</li>
-            </ul>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 3 — Prix et paiement</h2>
-            <p>
-              L&apos;abonnement Premium est proposé au tarif de <strong>49€ par an</strong>, payable en une seule fois. Le paiement est effectué par carte bancaire via la plateforme sécurisée Stripe. Le prix est indiqué en euros, toutes taxes comprises.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 4 — Droit de rétractation et garantie satisfait ou remboursé</h2>
-            <p>
-              Conformément à l&apos;article L221-28 du Code de la consommation, le droit de rétractation ne s&apos;applique pas aux services pleinement exécutés avant la fin du délai de rétractation.
-            </p>
-            <p>
-              Toutefois, Globe Genius offre une <strong>garantie satisfait ou remboursé de 30 jours</strong> à compter de la date de souscription. Si vous n&apos;êtes pas satisfait du service, envoyez un email à <a href="mailto:contact@globegenius.app" className="text-[#FF6B47] hover:underline">contact@globegenius.app</a> dans les 30 jours suivant l&apos;achat pour obtenir un remboursement intégral, sans condition.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 5 — Durée et renouvellement</h2>
-            <p>
-              L&apos;abonnement Premium est souscrit pour une durée d&apos;un an. Il est renouvelé automatiquement à chaque échéance annuelle, sauf résiliation par l&apos;utilisateur depuis son espace Stripe Customer Portal ou par email à contact@globegenius.app, au plus tard 24 heures avant la date de renouvellement.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 6 — Résiliation</h2>
-            <p>
-              L&apos;utilisateur peut résilier son abonnement Premium à tout moment depuis son espace client ou par email. La résiliation prend effet à la fin de la période en cours. Aucun remboursement au prorata n&apos;est effectué en dehors de la période de garantie de 30 jours.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 7 — Programme fondateur et accès à vie</h2>
-            <p>
-              Pendant la phase de beta publique, les <strong>100 premiers comptes inscrits</strong> rejoignent le programme fondateur (« membres OG »). Ce programme comporte deux avantages distincts qu&apos;il convient de ne pas confondre :
-            </p>
-            <ul className="list-disc pl-6 space-y-2">
-              <li>
-                <strong>Accès gratuit à vie (garanti et inconditionnel).</strong> Les membres fondateurs conservent gratuitement l&apos;accès au service, à vie, y compris après le lancement officiel et la mise en place de l&apos;abonnement payant. Cet accès gratuit ne peut leur être retiré, quelle que soit leur activité.
-              </li>
-              <li>
-                <strong>Statut Premium gratuit (conditionné à l&apos;activité).</strong> En plus de l&apos;accès gratuit, les membres fondateurs bénéficient gratuitement du statut Premium (alertes illimitées, deals au-delà de 50% avec prix affiché, liens directs) <strong>tant qu&apos;ils participent activement à la beta</strong> : utilisation du service et retours sur la qualité des alertes (boutons 👍 / 👎 / « trop tard »).
-              </li>
-            </ul>
-            <p>
-              En cas d&apos;inactivité totale et prolongée (aucune ouverture d&apos;alerte ni aucun retour pendant plusieurs mois), le statut Premium gratuit peut être suspendu et le compte repasser en formule Gratuite. Dans ce cas, <strong>l&apos;accès gratuit à vie est conservé</strong> : seul l&apos;avantage Premium est concerné, et il est automatiquement rétabli dès que le membre redevient actif. Le nombre de places fondateur est limité à 100 et n&apos;est pas reconductible une fois atteint.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 8 — Limitation de responsabilité</h2>
-            <p>
-              Globe Genius détecte et signale des anomalies de prix sur les vols à partir de données fournies par des tiers (Travelpayouts/Aviasales). Les prix affichés sont indicatifs et peuvent varier entre le moment de la détection et la réservation effective. Globe Genius ne se substitue pas à une agence de voyage et ne vend pas de billets d&apos;avion.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 9 — Droit applicable</h2>
-            <p>
-              Les présentes CGV sont soumises au droit français. En cas de litige, une solution amiable sera recherchée avant toute action judiciaire. À défaut, les tribunaux français seront compétents.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-[family-name:var(--font-dm-serif)] text-xl text-[#082B78]">Article 10 — Contact</h2>
-            <p>
-              Pour toute question relative aux présentes CGV ou au service Globe Genius :<br />
-              Email : <a href="mailto:contact@globegenius.app" className="text-[#FF6B47] hover:underline">contact@globegenius.app</a>
-            </p>
-          </section>
-
-          <p className="text-sm text-[#082B78]/40 pt-4">Dernière mise à jour : mai 2026</p>
-        </div>
+    <EditorialShell eyebrow="Cadre contractuel" title="Conditions d’utilisation et de vente" intro="Le fonctionnement du compte Freemium, de l’offre Premium et des alertes GlobeGenius, présenté sans ambiguïté.">
+      <div className="gg-status-success rounded-2xl border p-5 text-sm leading-7">
+        <strong>Avant l’ouverture commerciale :</strong> Premium est fixé à 39 € TTC par an. Tant que le bouton public de souscription n’est pas ouvert, la création et l’utilisation d’un compte Freemium n’entraînent aucun paiement, aucun renouvellement et aucune demande de carte bancaire.
       </div>
 
-      <footer className="border-t border-gray-100 py-6">
-        <div className="max-w-4xl mx-auto px-4 md:px-5 text-center text-xs text-gray-300">
-          Globe Genius © 2026 · <Link href="/mentions-legales" className="hover:text-gray-500">Mentions légales</Link> · <Link href="/confidentialite" className="hover:text-gray-500">Confidentialité</Link>
-        </div>
-      </footer>
-    </div>
+      <section><h2>1. Objet</h2><p>Les présentes conditions encadrent l’utilisation de GlobeGenius, accessible sur globegenius.app, ainsi que la souscription à l’offre Premium lorsqu’elle sera commercialement ouverte.</p></section>
+      <section><h2>2. Description du service</h2><p>GlobeGenius détecte des tarifs aériens susceptibles d’être anormalement bas, les compare à un prix habituel observé, effectue des contrôles supplémentaires et envoie des alertes sur Telegram. GlobeGenius ne vend pas les billets et n’agit pas comme agence de voyage.</p></section>
+      <section>
+        <h2>3. Formule Freemium</h2>
+        <p>La formule Freemium permet actuellement :</p>
+        <ul className="mt-3 list-disc space-y-2 pl-6">
+          <li>la surveillance d’un aéroport de départ principal ;</li>
+          <li>jusqu’à deux alertes aller-retour complètes et instantanées par période glissante de sept jours ;</li>
+          <li>une alerte aller-retour exceptionnelle complète par période glissante de trente jours ;</li>
+          <li>un joker par période glissante de trente jours pour révéler le prix, les dates et le lien d’un deal Premium présenté dans l’espace utilisateur ;</li>
+          <li>l’accès aux teasers des autres opportunités, aux préférences essentielles et aux guides destination.</li>
+        </ul>
+        <p>Les allers simples, les combinaisons de billets, les alertes sans quota, les réglages avancés et l’utilisation de plusieurs aéroports restent réservés aux comptes Premium. Les alertes gratuites ne sont pas retardées artificiellement : GlobeGenius limite leur nombre plutôt que d’envoyer un tarif potentiellement périmé.</p>
+      </section>
+      <section><h2>4. Fin de Premium Découverte</h2><p>La période Premium Découverte n’est plus proposée. Les comptes qui disposaient d’un essai automatique utilisent désormais la formule Freemium, sauf s’ils détiennent un badge OG, un abonnement Premium payant actif ou un droit Premium administratif distinct.</p></section>
+      <section><h2>5. Badge OG</h2><p>Le maintien du Premium fondateur est réservé aux comptes auxquels GlobeGenius a effectivement attribué un <strong>badge OG</strong>. Ce badge matérialise une contribution reconnue à la phase fondatrice du produit.</p><p>Les anciens comptes de beta qui ne disposent pas de ce badge utilisent la formule Freemium. Les droits liés à un abonnement payant actif ou à une attribution administrative distincte ne sont pas concernés par cette règle.</p></section>
+      <section><h2>6. Offre Premium</h2><p>L’offre Premium est fixée au tarif public de <strong>39 € TTC par an</strong>, payable en une fois et renouvelable annuellement. Elle est destinée à inclure toutes les alertes qualifiées sans quota Freemium, plusieurs aéroports, les deals exceptionnels, les allers simples, les combos malins et des options de personnalisation supplémentaires.</p><p>Les comparaisons de rentabilité présentées sur le site sont des illustrations. GlobeGenius ne garantit ni le montant d’une économie, ni la disponibilité d’un tarif, ni la réalisation d’une réservation.</p></section>
+      <section><h2>7. Paiement et renouvellement</h2><p>Le paiement est traité par Stripe. Avant toute validation, l’utilisateur voit le prix, la durée, les conditions de renouvellement et le moyen d’annulation. Aucun prélèvement n’est effectué avant une action explicite de souscription.</p></section>
+      <section><h2>8. Garantie commerciale prévue</h2><p>À l’ouverture commerciale de Premium, GlobeGenius prévoit une garantie satisfait ou remboursé de 30 jours à compter de la souscription. Les modalités opérationnelles seront rappelées au moment du paiement et pourront être exercées par email à <a href="mailto:contact@globegenius.app">contact@globegenius.app</a>.</p></section>
+      <section><h2>9. Prix et disponibilité des vols</h2><p>Les prix proviennent de partenaires et de systèmes tiers. Ils peuvent évoluer ou disparaître entre la détection, l’alerte et la réservation. Les frais de bagages, options, conditions de modification et conditions d’annulation relèvent du vendeur du billet.</p></section>
+      <section><h2>10. Responsabilité</h2><p>GlobeGenius fournit un service d’information et de mise en relation. L’utilisateur reste seul responsable de la vérification du trajet, des dates, des formalités, des visas, des correspondances et des conditions du vendeur avant de réserver.</p></section>
+      <section><h2>11. Données, évolution du service et suppression du compte</h2><p>Les modalités relatives aux données personnelles sont décrites dans la <Link href="/confidentialite">politique de confidentialité</Link>. La suppression du compte peut être demandée depuis l’espace utilisateur ou par email. Les limites du Freemium peuvent évoluer pour préserver la qualité, les coûts et l’équilibre du service ; toute modification substantielle sera présentée clairement aux utilisateurs.</p></section>
+      <section><h2>12. Droit applicable et contact</h2><p>Les présentes conditions sont soumises au droit français. Toute question peut être adressée à <a href="mailto:contact@globegenius.app">contact@globegenius.app</a>.</p></section>
+      <p className="mt-10 border-t border-[#D9E2E3] pt-6 text-sm text-slate-400">Dernière mise à jour : 30 juillet 2026.</p>
+    </EditorialShell>
   );
 }
